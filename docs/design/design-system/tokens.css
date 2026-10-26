@@ -1,0 +1,134 @@
+/* TabWallet design tokens — generated from tokens.json. Do not edit by hand. */
+
+@font-face { font-family: "Manrope"; src: url("./fonts/manrope-latin-wght-normal.woff2") format("woff2"); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-style: normal; font-display: swap; }
+
+:root,
+[data-theme="light"] {
+  --bg-canvas: #f4f5f8;
+  --bg-surface: #ffffff;
+  --bg-subtle: #eceef3;
+  --border: #dcdfe6;
+  --border-strong: #808a9c;
+  --text-primary: #161a23;
+  --text-secondary: #5b6475;
+  --brand-primary: #4b3fd6;
+  --brand-primary-hover: #3e33b8;
+  --brand-secondary: #8b83f0;
+  --brand-soft: #eceafd;
+  --on-brand: #ffffff;
+  --logo-tab: var(--brand-secondary);
+  --logo-clasp: var(--brand-secondary);
+  --income: #0a7a52;
+  --income-soft: #e3f4ec;
+  --expense: #c22a42;
+  --expense-soft: #fbe7ea;
+  --on-expense: #ffffff;
+  --warning: #9a5b00;
+  --warning-soft: #fdf1dc;
+  --focus-ring: var(--brand-primary);
+  --overlay: rgba(22, 26, 35, 0.48);
+  --shadow-sm: 0 1px 2px rgba(22, 26, 35, 0.06);
+  --shadow-md: 0 8px 24px rgba(22, 26, 35, 0.1);
+  --shadow-lg: 0 24px 64px rgba(22, 26, 35, 0.18);
+}
+
+[data-theme="dark"] {
+  --bg-canvas: #161a23;
+  --bg-surface: #1f2330;
+  --bg-subtle: #272c3a;
+  --border: #343a4a;
+  --border-strong: #737d92;
+  --text-primary: #f4f5f8;
+  --text-secondary: #a9b0bf;
+  --brand-primary: #8b83f0;
+  --brand-primary-hover: #a59ff4;
+  --brand-secondary: #c9c4fa;
+  --brand-soft: #25224a;
+  --on-brand: #161a23;
+  --logo-tab: var(--brand-secondary);
+  --logo-clasp: var(--bg-canvas);
+  --income: #3dd598;
+  --income-soft: #12352a;
+  --expense: #ff6b7f;
+  --expense-soft: #3d1a22;
+  --on-expense: #161a23;
+  --warning: #f5b544;
+  --warning-soft: #3a2a0c;
+  --focus-ring: var(--brand-primary);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+/* Follow the OS on first visit when no theme was chosen */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg-canvas: #161a23;
+    --bg-surface: #1f2330;
+    --bg-subtle: #272c3a;
+    --border: #343a4a;
+    --border-strong: #737d92;
+    --text-primary: #f4f5f8;
+    --text-secondary: #a9b0bf;
+    --brand-primary: #8b83f0;
+    --brand-primary-hover: #a59ff4;
+    --brand-secondary: #c9c4fa;
+    --brand-soft: #25224a;
+    --on-brand: #161a23;
+    --logo-tab: var(--brand-secondary);
+    --logo-clasp: var(--bg-canvas);
+    --income: #3dd598;
+    --income-soft: #12352a;
+    --expense: #ff6b7f;
+    --expense-soft: #3d1a22;
+    --on-expense: #161a23;
+    --warning: #f5b544;
+    --warning-soft: #3a2a0c;
+    --focus-ring: var(--brand-primary);
+    --overlay: rgba(0, 0, 0, 0.6);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
+  }
+}
+
+:root {
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  --control-sm: 32px;
+  --control-md: 40px;
+  --control-lg: 48px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+}
+
+/* Type styles */
+.display { font-family: var(--font-display); font-size: 40px; line-height: 48px; font-weight: 800; letter-spacing: -0.02em; }
+.heading-1 { font-family: var(--font-display); font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: -0.01em; }
+.heading-2 { font-family: var(--font-display); font-size: 24px; line-height: 32px; font-weight: 700; }
+.heading-3 { font-family: var(--font-display); font-size: 20px; line-height: 28px; font-weight: 600; }
+.body { font-family: var(--font-body); font-size: 16px; line-height: 24px; font-weight: 400; }
+.body-sm { font-family: var(--font-body); font-size: 14px; line-height: 20px; font-weight: 400; }
+.label { font-family: var(--font-body); font-size: 14px; line-height: 20px; font-weight: 500; }
+.caption { font-family: var(--font-body); font-size: 12px; line-height: 16px; font-weight: 500; }
+.money-lg { font-family: var(--font-body); font-size: 32px; line-height: 40px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.money-md { font-family: var(--font-body); font-size: 16px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.code { font-family: var(--font-mono); font-size: 14px; line-height: 20px; font-weight: 400; }
