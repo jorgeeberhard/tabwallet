@@ -61,6 +61,7 @@
   --warning-soft: #fdf1dc;
   --logo-tab: #8b83f0;
   --logo-clasp: #8b83f0;
+  --overlay: rgba(22, 26, 35, 0.48);  /* scrim atrás de diálogos (tokens.json: overlay) */
 }
 
 .dark {
@@ -109,6 +110,7 @@
   --warning-soft: #3a2a0c;
   --logo-tab: #c9c4fa;
   --logo-clasp: #161a23;
+  --overlay: rgba(0, 0, 0, 0.6);
 }
 
 @theme inline {
@@ -169,6 +171,7 @@
   --color-warning-soft: var(--warning-soft);
   --color-logo-tab: var(--logo-tab);
   --color-logo-clasp: var(--logo-clasp);
+  --color-overlay: var(--overlay);
 }
 
 @layer base {
