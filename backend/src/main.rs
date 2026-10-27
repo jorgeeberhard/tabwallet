@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use tabwallet_backend::{
     app::{AppState, build_router},
+    clock::SystemClock,
     db,
 };
 use tokio::net::TcpListener;
@@ -10,8 +13,7 @@ async fn main() {
     let _ = dotenvy::dotenv();
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -27,7 +29,11 @@ async fn main() {
         .await
         .expect("failed to bind the listener");
     tracing::info!("listening on {bind_addr}");
-    axum::serve(listener, build_router(AppState { pool }))
+    let state = AppState {
+        pool,
+        clock: Arc::new(SystemClock),
+    };
+    axum::serve(listener, build_router(state))
         .await
         .expect("server error");
 }

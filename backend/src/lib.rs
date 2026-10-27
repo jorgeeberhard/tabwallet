@@ -6,6 +6,7 @@
 //! - `repositories`: the only code that talks to PostgreSQL (via `sqlx`).
 
 pub mod app;
+pub mod clock;
 pub mod db;
 pub mod handlers;
 pub mod repositories;

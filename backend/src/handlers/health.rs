@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use crate::{app::AppState, repositories::health::HealthRepository, use_cases::CheckHealthUseCase};
 
 pub async fn health(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
-    let use_case = CheckHealthUseCase::new(HealthRepository::new(state.pool));
+    let use_case = CheckHealthUseCase::new(HealthRepository::new(state.pool), state.clock);
     let report = use_case.execute().await;
 
     let (status_code, status, database) = if report.database_up {
@@ -12,5 +12,10 @@ pub async fn health(State(state): State<AppState>) -> (StatusCode, Json<Value>) 
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "degraded", "down")
     };
-    (status_code, Json(json!({ "status": status, "database": database })))
+    let body = json!({
+        "status": status,
+        "database": database,
+        "today": report.today.to_string(),
+    });
+    (status_code, Json(body))
 }

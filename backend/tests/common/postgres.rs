@@ -27,9 +27,7 @@ static NEXT_DATABASE: AtomicUsize = AtomicUsize::new(0);
 /// Returns a pool connected to a new, empty, fully migrated database.
 pub async fn fresh_database() -> PgPool {
     let admin_url = ADMIN_URL
-        .get_or_init(|| {
-            std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| start_container())
-        })
+        .get_or_init(|| std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| start_container()))
         .clone();
 
     let name = format!(
@@ -44,7 +42,9 @@ pub async fn fresh_database() -> PgPool {
         .await
         .unwrap();
 
-    let pool = db::connect(&with_database(&admin_url, &name)).await.unwrap();
+    let pool = db::connect(&with_database(&admin_url, &name))
+        .await
+        .unwrap();
     db::migrate(&pool).await.unwrap();
     pool
 }
