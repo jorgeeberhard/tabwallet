@@ -207,3 +207,126 @@ async fn occurrences_follow_the_statement_filters_and_page_with_the_transactions
     assert_eq!(second_page["items"].as_array().unwrap().len(), 1);
     assert_eq!(second_page["items"][0]["date"], json!("2026-02-05"));
 }
+
+fn occurrence_path(recurring_id: &str, month: &str) -> String {
+    format!("/recurring-transactions/{recurring_id}/occurrences/{month}")
+}
+
+/// The Occurrences of the statement as `(YYYY-MM, amount_cents, is_edited)`,
+/// oldest first, between two days.
+async fn months_between(browser: &Session, from: &str, to: &str) -> Vec<(String, i64, bool)> {
+    let body = statement(browser, &format!("?from={from}&to={to}")).await;
+    let mut found: Vec<(String, i64, bool)> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["kind"] == json!("occurrence"))
+        .map(|item| {
+            (
+                item["month"].as_str().unwrap().to_string(),
+                item["amount_cents"].as_i64().unwrap(),
+                item["is_edited"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    found.reverse();
+    found
+}
+
+#[tokio::test]
+async fn deleting_or_editing_one_occurrence_leaves_the_other_months_alone() {
+    let app = TestApp::spawn().await; // today is 2026-01-15
+    let ana = signed_up(&app, "ana@example.com").await;
+    let rent = create_recurring(&ana, "expense", 100_000, 5, "Aluguel").await;
+
+    let edited = ana
+        .patch_json(
+            &occurrence_path(&rent, "2026-03"),
+            &json!({ "amount_cents": 80_000 }),
+        )
+        .await;
+    assert_eq!(edited.status(), 200);
+    let body: Value = edited.json().await.unwrap();
+    assert_eq!(body["occurrence"]["amount_cents"], json!(80_000));
+    assert_eq!(body["occurrence"]["date"], json!("2026-03-05"));
+    assert_eq!(body["occurrence"]["is_edited"], json!(true));
+    assert_eq!(
+        ana.delete(&occurrence_path(&rent, "2026-04"))
+            .await
+            .status(),
+        204
+    );
+
+    assert_eq!(
+        months_between(&ana, "2026-02-01", "2026-05-31").await,
+        vec![
+            ("2026-02".to_string(), 100_000, false),
+            ("2026-03".to_string(), 80_000, true),
+            ("2026-05".to_string(), 100_000, false),
+        ]
+    );
+    // Jan, Feb, edited Mar, no Apr, May.
+    app.set_today(2026, 5, 10);
+    assert_eq!(current_balance(&ana).await, -380_000);
+
+    // A deleted Occurrence, one before the start and a malformed month do not
+    // exist.
+    for month in ["2026-04", "2025-12", "2026-13", "abril"] {
+        let response = ana.delete(&occurrence_path(&rent, month)).await;
+        assert_eq!(response.status(), 404, "month {month}");
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["error"]["code"], json!("occurrence_not_found"));
+    }
+    let response = ana
+        .patch_json(
+            &occurrence_path(&rent, "2026-04"),
+            &json!({ "amount_cents": 5 }),
+        )
+        .await;
+    assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn an_occurrence_edit_needs_a_valid_amount_and_an_owner() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let bia = signed_up(&app, "bia@example.com").await;
+    let rent = create_recurring(&ana, "expense", 100_000, 5, "Aluguel").await;
+
+    let zero = ana
+        .patch_json(
+            &occurrence_path(&rent, "2026-03"),
+            &json!({ "amount_cents": 0 }),
+        )
+        .await;
+    assert_eq!(zero.status(), 422);
+    let body: Value = zero.json().await.unwrap();
+    assert_eq!(
+        body["error"]["fields"]["amount_cents"],
+        json!("amount_range")
+    );
+
+    let foreign = bia
+        .patch_json(
+            &occurrence_path(&rent, "2026-03"),
+            &json!({ "amount_cents": 5 }),
+        )
+        .await;
+    assert_eq!(foreign.status(), 404);
+    let body: Value = foreign.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"],
+        json!("recurring_transaction_not_found")
+    );
+    assert_eq!(
+        bia.delete(&occurrence_path(&rent, "2026-03"))
+            .await
+            .status(),
+        404
+    );
+    // Nothing happened to Ana's.
+    assert_eq!(
+        months_between(&ana, "2026-03-01", "2026-03-31").await.len(),
+        1
+    );
+}
