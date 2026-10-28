@@ -144,18 +144,21 @@ pub async fn update(
     Path(id): Path<String>,
     ValidatedJson(request): ValidatedJson<UpdateRequest>,
 ) -> Result<Json<CreditCardEnvelope>, ApiError> {
-    let view = UpdateCreditCardUseCase::new(CreditCardRepository::new(state.pool.clone()))
-        .execute(
-            auth_user.id,
-            parse_id(&id)?,
-            CreditCardChanges {
-                name: request.name,
-                closing_day: request.closing_day,
-                due_day: request.due_day,
-            },
-            state.clock.today(),
-        )
-        .await?;
+    let view = UpdateCreditCardUseCase::new(
+        CreditCardRepository::new(state.pool.clone()),
+        InstallmentPurchaseRepository::new(state.pool.clone()),
+    )
+    .execute(
+        auth_user.id,
+        parse_id(&id)?,
+        CreditCardChanges {
+            name: request.name,
+            closing_day: request.closing_day,
+            due_day: request.due_day,
+        },
+        state.clock.today(),
+    )
+    .await?;
     Ok(envelope(view))
 }
 

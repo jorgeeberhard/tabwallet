@@ -6,7 +6,7 @@ use crate::{
     ids::{InstallmentPurchaseId, UserId},
     ledger::{
         Ledger,
-        cards::{InvoiceCycle, InvoiceState, PlannedInstallment},
+        cards::{CardFacts, InvoiceCycle, InvoiceState, PlannedInstallment},
     },
     repositories::{
         card_purchases::CardPurchaseRepository,
@@ -143,6 +143,65 @@ pub(super) async fn invoice_installments(
                 })
         })
         .collect())
+}
+
+/// Gives the card's Installments the invoices its new days put them in.
+///
+/// A single purchase follows its date, so changing the closing day moves it
+/// by itself. An Installment is stored with its invoice, so the purchases
+/// whose Installments are all still unpaid are planned again with the card's
+/// days as they are now (the same rule as when they were launched); one with
+/// a paid Installment is history and stays as it is.
+pub(super) async fn reallocate_for_card(
+    repository: &InstallmentPurchaseRepository,
+    user_id: UserId,
+    card: &CardFacts,
+    today: NaiveDate,
+) -> Result<(), InstallmentPurchaseError> {
+    let purchases = repository
+        .list_for_card(user_id, card.id)
+        .await
+        .map_err(InstallmentPurchaseError::internal)?;
+    let ids: Vec<InstallmentPurchaseId> = purchases.iter().map(|purchase| purchase.id).collect();
+    let installments = repository
+        .installments(user_id, &ids)
+        .await
+        .map_err(InstallmentPurchaseError::internal)?;
+    for purchase in purchases {
+        let any_paid = installments
+            .iter()
+            .filter(|installment| installment.installment_purchase_id == purchase.id)
+            .any(|installment| {
+                card.cycle_of(installment.invoice_month(), today).state == InvoiceState::Paid
+            });
+        if any_paid || purchase.cancelled {
+            continue;
+        }
+        let Some(plan) = card.plan_installments(
+            purchase.date,
+            purchase.total_cents,
+            purchase.installment_count as u32,
+            today,
+        ) else {
+            continue;
+        };
+        if plan
+            .first()
+            .is_some_and(|first| first.cycle.state == InvoiceState::Paid)
+        {
+            continue;
+        }
+        repository
+            .update(
+                user_id,
+                purchase.id,
+                InstallmentPurchaseChanges::default(),
+                Some(&allocations_of(&plan)),
+            )
+            .await
+            .map_err(InstallmentPurchaseError::internal)?;
+    }
+    Ok(())
 }
 
 /// The views of these purchases (same order); one whose card is unknown to

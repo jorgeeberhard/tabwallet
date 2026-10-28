@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     card_purchase::CardPurchaseView,
-    installment_purchase::{InvoiceInstallment, invoice_installments},
+    installment_purchase::{InvoiceInstallment, invoice_installments, reallocate_for_card},
 };
 
 /// Why a credit-card use case failed. Unaware of HTTP: the handler layer
@@ -188,11 +188,18 @@ pub struct CreditCardChanges {
 /// closed and paid invoices keep the days they had.
 pub struct UpdateCreditCardUseCase {
     cards: CreditCardRepository,
+    installment_purchases: InstallmentPurchaseRepository,
 }
 
 impl UpdateCreditCardUseCase {
-    pub fn new(cards: CreditCardRepository) -> Self {
-        Self { cards }
+    pub fn new(
+        cards: CreditCardRepository,
+        installment_purchases: InstallmentPurchaseRepository,
+    ) -> Self {
+        Self {
+            cards,
+            installment_purchases,
+        }
     }
 
     pub async fn execute(
@@ -238,6 +245,21 @@ impl UpdateCreditCardUseCase {
                 .map_err(CreditCardError::internal)?
                 .remove(&id)
                 .ok_or(CreditCardError::NotFound)?;
+            // Installments are stored with their invoice, so the new days
+            // must move them the way they move single purchases.
+            reallocate_for_card(
+                &self.installment_purchases,
+                user_id,
+                &CardFacts {
+                    id,
+                    schedule: schedule.clone(),
+                    spending: Vec::new(),
+                    installments: Vec::new(),
+                },
+                today,
+            )
+            .await
+            .map_err(CreditCardError::internal)?;
         }
         Ok(CreditCardView::new(card, &schedule))
     }
