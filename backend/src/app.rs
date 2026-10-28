@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     middleware::from_fn_with_state,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use sqlx::PgPool;
 
@@ -27,6 +27,7 @@ pub fn build_router(state: AppState) -> Router {
     // an `AuthUser`, whose `id` every query must be scoped to.
     let protected = Router::new()
         .route("/auth/me", get(handlers::auth::me))
+        .route("/profile", patch(handlers::profile::update))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

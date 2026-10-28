@@ -46,6 +46,7 @@ fn trimmed<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, 
 pub struct UserResponse {
     id: UserId,
     email: String,
+    name: String,
     created_at: DateTime<Utc>,
 }
 
@@ -54,6 +55,7 @@ impl From<User> for UserResponse {
         Self {
             id: user.id,
             email: user.email,
+            name: user.name,
             created_at: user.created_at,
         }
     }
@@ -61,7 +63,7 @@ impl From<User> for UserResponse {
 
 #[derive(Serialize)]
 pub struct UserEnvelope {
-    user: UserResponse,
+    pub user: UserResponse,
 }
 
 /// `POST /auth/login`: checks the credentials and starts a session.
