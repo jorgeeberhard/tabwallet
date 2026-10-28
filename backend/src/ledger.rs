@@ -10,7 +10,12 @@
 //! (projected balance, invoice state, reports) to this same module, so the
 //! rules that depend on dates stay in one place.
 
+pub mod cards;
+
 use chrono::NaiveDate;
+
+use crate::ids::CreditCardId;
+use cards::{CardFacts, Invoice, InvoiceCycle, Month};
 
 /// Which way money moves in a [`CashFlow`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +44,10 @@ pub struct LedgerFacts {
     /// negative.
     pub opening_balance_cents: Option<i64>,
     pub cash_flows: Vec<CashFlow>,
+    /// The user's credit cards with their closing and due days and their
+    /// purchases. Card purchases never enter `cash_flows`: they reach the
+    /// balance only through invoice payments (a later ticket).
+    pub cards: Vec<CardFacts>,
 }
 
 /// Answers balance questions about one user's [`LedgerFacts`].
@@ -68,5 +77,49 @@ impl Ledger {
             })
             .sum();
         self.facts.opening_balance_cents.unwrap_or(0) + flows
+    }
+
+    fn card(&self, card_id: CreditCardId) -> Option<&CardFacts> {
+        self.facts.cards.iter().find(|card| card.id == card_id)
+    }
+
+    /// The invoices of a card, oldest first: those that have purchases and the
+    /// first open one. Empty for an unknown card.
+    pub fn invoices(&self, card_id: CreditCardId, today: NaiveDate) -> Vec<Invoice> {
+        self.card(card_id)
+            .map(|card| card.invoices(today))
+            .unwrap_or_default()
+    }
+
+    /// One invoice of a card by its closing month, if it exists (see
+    /// [`Ledger::invoices`]).
+    pub fn invoice(
+        &self,
+        card_id: CreditCardId,
+        closing_month: Month,
+        today: NaiveDate,
+    ) -> Option<Invoice> {
+        self.card(card_id)?.find_invoice(closing_month, today)
+    }
+
+    /// The invoice a purchase made on `date` with this card belongs to: a
+    /// purchase on or before the closing day enters the invoice closing that
+    /// month, a later one the next month's.
+    pub fn invoice_for_purchase(
+        &self,
+        card_id: CreditCardId,
+        date: NaiveDate,
+        today: NaiveDate,
+    ) -> Option<InvoiceCycle> {
+        self.card(card_id)
+            .map(|card| card.cycle_for_purchase(date, today))
+    }
+
+    /// Whether any invoice of the card still has something to pay on `today`.
+    /// A card in this state cannot be deactivated.
+    pub fn has_remaining_invoice(&self, card_id: CreditCardId, today: NaiveDate) -> bool {
+        self.invoices(card_id, today)
+            .iter()
+            .any(|invoice| invoice.remaining_cents > 0)
     }
 }

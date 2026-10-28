@@ -10,13 +10,19 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use super::extract::{ValidatedJson, trimmed, trimmed_opt};
+use super::{
+    card_purchases::CardPurchaseResponse,
+    extract::{ValidatedJson, trimmed, trimmed_opt},
+};
 use crate::{
     app::AppState,
     auth::AuthUser,
     error::ApiError,
-    ids::{CategoryId, TransactionId},
+    ids::{CategoryId, CreditCardId, TransactionId},
+    repositories::card_purchases::CardPurchaseRepository,
     repositories::categories::CategoryRepository,
+    repositories::credit_cards::CreditCardRepository,
+    repositories::statement::StatementRepository,
     repositories::transactions::{
         NewTransaction, Transaction, TransactionChanges, TransactionFilter, TransactionRepository,
         TransactionType,
@@ -43,6 +49,17 @@ pub struct TransactionCategory {
     kind: &'static str,
     /// A deactivated category stays on the transactions that already use it.
     active: bool,
+}
+
+impl TransactionCategory {
+    pub fn new(id: CategoryId, name: String, kind: &'static str, active: bool) -> Self {
+        Self {
+            id,
+            name,
+            kind,
+            active,
+        }
+    }
 }
 
 /// The public view of a Transaction.
@@ -131,12 +148,14 @@ pub async fn create(
     ))
 }
 
-/// One entry of the statement; `kind` says what the rest of the object is, so
-/// card purchases and invoice payments can join later with their own shapes.
+/// One entry of the statement; `kind` says what the rest of the object is
+/// (`transaction` or `card_purchase`), so invoice payments can join later with
+/// their own shape.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StatementItemResponse {
     Transaction(TransactionResponse),
+    CardPurchase(CardPurchaseResponse),
 }
 
 #[derive(Serialize)]
@@ -157,6 +176,8 @@ pub struct ListParams {
     category_id: Option<CategoryId>,
     #[serde(rename = "type")]
     kind: Option<TransactionType>,
+    /// Only purchases made with this credit card.
+    credit_card_id: Option<CreditCardId>,
     limit: Option<i64>,
     offset: Option<i64>,
 }
@@ -186,6 +207,7 @@ impl ListParams {
             to: self.to,
             category_id: self.category_id,
             kind: self.kind,
+            credit_card_id: self.credit_card_id,
         };
         Ok((filter, limit, offset))
     }
@@ -193,7 +215,9 @@ impl ListParams {
 
 /// `GET /transactions` (protected): the user's statement, newest first.
 /// Optional query: `from` and `to` (days, inclusive), `category_id`,
-/// `type=income|expense`, `limit` (1 to 200, default 50) and `offset`.
+/// `type=income|expense`, `credit_card_id` (only that card's purchases),
+/// `limit` (1 to 200, default 50) and `offset`. Card purchases appear as
+/// items with `kind: "card_purchase"`, showing the card and the invoice.
 pub async fn list(
     State(state): State<AppState>,
     auth_user: AuthUser,
@@ -201,17 +225,24 @@ pub async fn list(
 ) -> Result<Json<StatementResponse>, ApiError> {
     let Query(params) = params.map_err(|_| ApiError::InvalidRequest)?;
     let (filter, limit, offset) = params.parse()?;
-    let Statement { items, total } =
-        ListTransactionsUseCase::new(TransactionRepository::new(state.pool.clone()))
-            .execute(auth_user.id, filter, limit, offset)
-            .await?;
     let today = state.clock.today();
+    let Statement { items, total } = ListTransactionsUseCase::new(
+        StatementRepository::new(state.pool.clone()),
+        TransactionRepository::new(state.pool.clone()),
+        CardPurchaseRepository::new(state.pool.clone()),
+        CreditCardRepository::new(state.pool.clone()),
+    )
+    .execute(auth_user.id, filter, limit, offset, today)
+    .await?;
     Ok(Json(StatementResponse {
         items: items
             .into_iter()
             .map(|item| match item {
                 StatementItem::Transaction(transaction) => {
                     StatementItemResponse::Transaction(TransactionResponse::new(transaction, today))
+                }
+                StatementItem::CardPurchase(view) => {
+                    StatementItemResponse::CardPurchase(CardPurchaseResponse::new(view, today))
                 }
             })
             .collect(),

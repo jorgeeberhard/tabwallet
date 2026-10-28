@@ -69,6 +69,7 @@ impl GetBalanceUseCase {
         let ledger = Ledger::new(LedgerFacts {
             opening_balance_cents,
             cash_flows,
+            ..LedgerFacts::default()
         });
         Ok(BalanceReport {
             current_balance_cents: ledger.current_balance(today),

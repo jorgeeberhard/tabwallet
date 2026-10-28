@@ -56,6 +56,32 @@ pub fn build_router(state: AppState) -> Router {
             "/transactions/{id}",
             patch(handlers::transactions::update).delete(handlers::transactions::delete),
         )
+        .route(
+            "/credit-cards",
+            get(handlers::credit_cards::list).post(handlers::credit_cards::create),
+        )
+        .route("/credit-cards/{id}", patch(handlers::credit_cards::update))
+        .route(
+            "/credit-cards/{id}/deactivate",
+            post(handlers::credit_cards::deactivate),
+        )
+        .route(
+            "/credit-cards/{id}/reactivate",
+            post(handlers::credit_cards::reactivate),
+        )
+        .route(
+            "/credit-cards/{id}/invoices",
+            get(handlers::credit_cards::invoices),
+        )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}",
+            get(handlers::credit_cards::invoice),
+        )
+        .route("/card-purchases", post(handlers::card_purchases::create))
+        .route(
+            "/card-purchases/{id}",
+            patch(handlers::card_purchases::update).delete(handlers::card_purchases::delete),
+        )
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

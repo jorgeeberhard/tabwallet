@@ -3,7 +3,7 @@ use sqlx::PgPool;
 
 use super::categories::CategoryType;
 use crate::{
-    ids::{CategoryId, TransactionId, UserId},
+    ids::{CategoryId, CreditCardId, TransactionId, UserId},
     ledger::{CashFlow, FlowKind},
 };
 
@@ -56,6 +56,9 @@ pub struct TransactionFilter {
     pub to: Option<NaiveDate>,
     pub category_id: Option<CategoryId>,
     pub kind: Option<TransactionType>,
+    /// Only purchases made with this credit card (plain Transactions have no
+    /// card, so none of them match).
+    pub credit_card_id: Option<CreditCardId>,
 }
 
 /// The columns of [`Transaction`]; `t` is the transactions table (or a CTE
@@ -176,6 +179,25 @@ impl TransactionRepository {
         .bind(user_id)
         .bind(id)
         .fetch_optional(&self.pool)
+        .await
+    }
+
+    /// The user's transactions with these ids, in no particular order.
+    pub async fn find_many(
+        &self,
+        user_id: UserId,
+        ids: &[TransactionId],
+    ) -> Result<Vec<Transaction>, sqlx::Error> {
+        let ids: Vec<uuid::Uuid> = ids.iter().map(|id| id.0).collect();
+        sqlx::query_as::<_, Transaction>(concat!(
+            "SELECT ",
+            columns!(),
+            " FROM transactions t JOIN categories c ON c.id = t.category_id
+             WHERE t.user_id = $1 AND t.id = ANY($2)"
+        ))
+        .bind(user_id)
+        .bind(ids)
+        .fetch_all(&self.pool)
         .await
     }
 

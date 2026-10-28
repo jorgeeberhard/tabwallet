@@ -1,9 +1,11 @@
 mod auth_error;
 mod balance;
+mod card_purchase;
 mod category_error;
 mod check_health;
 mod create_category;
 mod create_transaction;
+mod credit_card;
 mod delete_transaction;
 mod get_current_user;
 mod list_categories;
@@ -20,10 +22,19 @@ mod update_transaction;
 
 pub use auth_error::{AuthError, Session};
 pub use balance::{BalanceError, BalanceReport, GetBalanceUseCase, SetOpeningBalanceUseCase};
+pub use card_purchase::{
+    CardProblem, CardPurchaseError, CardPurchaseView, CreateCardPurchaseUseCase,
+    DeleteCardPurchaseUseCase, UpdateCardPurchaseUseCase,
+};
 pub use category_error::CategoryError;
 pub use check_health::{CheckHealthUseCase, HealthReport};
 pub use create_category::CreateCategoryUseCase;
 pub use create_transaction::CreateTransactionUseCase;
+pub use credit_card::{
+    CreateCreditCardUseCase, CreditCardChanges, CreditCardError, CreditCardView,
+    DeactivateCreditCardUseCase, GetInvoiceUseCase, InvoiceDetail, ListCreditCardsUseCase,
+    ListInvoicesUseCase, ReactivateCreditCardUseCase, UpdateCreditCardUseCase,
+};
 pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
 pub use list_categories::ListCategoriesUseCase;
