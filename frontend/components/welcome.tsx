@@ -25,7 +25,7 @@ export function Welcome() {
         <Skeleton className="h-6 w-64" />
       )}
       <p className="max-w-prose text-muted-foreground">
-        Em breve aqui: faturas de cartão, saldo dos próximos meses e orçamentos.
+        Em breve aqui: pagamento de faturas, saldo dos próximos meses e orçamentos.
       </p>
     </div>
   )

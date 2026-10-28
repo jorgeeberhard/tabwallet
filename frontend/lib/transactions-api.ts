@@ -1,6 +1,11 @@
 import { api } from "@/lib/api"
 import type { CategoryType } from "@/lib/categories-api"
 import { centsToReais } from "@/lib/amount"
+import {
+  type CardPurchase,
+  type CardPurchasePayload,
+  toCardPurchase,
+} from "@/lib/credit-cards-api"
 
 export type TransactionType = CategoryType
 
@@ -47,10 +52,13 @@ function toTransaction(payload: TransactionPayload): Transaction {
 }
 
 /**
- * One entry of the statement. Only Transactions exist today; card purchases
- * and invoice payments will join as other `kind`s with their own shapes.
+ * One entry of the statement: a Transaction outside the card or a card
+ * purchase (with its card and invoice). Invoice payments will join as another
+ * `kind` with its own shape.
  */
-export type StatementItem = { kind: "transaction" } & Transaction
+export type StatementItem =
+  | ({ kind: "transaction" } & Transaction)
+  | ({ kind: "card_purchase" } & CardPurchase)
 
 export interface Statement {
   items: StatementItem[]
@@ -66,6 +74,8 @@ export interface TransactionFilters {
   to?: string
   categoryId?: string
   type?: TransactionType
+  /** Only purchases made with this credit card. */
+  creditCardId?: string
   limit?: number
   offset?: number
 }
@@ -86,17 +96,26 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
   if (filters.to) query.set("to", filters.to)
   if (filters.categoryId) query.set("category_id", filters.categoryId)
   if (filters.type) query.set("type", filters.type)
+  if (filters.creditCardId) query.set("credit_card_id", filters.creditCardId)
   query.set("limit", String(filters.limit ?? PAGE_SIZE))
   if (filters.offset) query.set("offset", String(filters.offset))
 
   const payload = await api<{
-    items: ({ kind: "transaction" } & TransactionPayload)[]
+    items: (
+      | ({ kind: "transaction" } & TransactionPayload)
+      | ({ kind: "card_purchase" } & CardPurchasePayload)
+    )[]
     total: number
     limit: number
     offset: number
   }>(`/transactions?${query.toString()}`)
   return {
-    items: payload.items.map((item) => ({ kind: "transaction", ...toTransaction(item) })),
+    items: payload.items.map(
+      (item): StatementItem =>
+        item.kind === "card_purchase"
+          ? { kind: "card_purchase", ...toCardPurchase(item) }
+          : { kind: "transaction", ...toTransaction(item) },
+    ),
     total: payload.total,
     limit: payload.limit,
     offset: payload.offset,

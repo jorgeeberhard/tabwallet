@@ -89,6 +89,39 @@ describe("TransactionsScreen", () => {
     expect(screen.getAllByRole("button", { name: "Nova transação" })).not.toHaveLength(0)
   })
 
+  it("shows card purchases with their card and invoice, next to the transactions", async () => {
+    rows = [
+      {
+        kind: "card_purchase",
+        id: "p1",
+        amount_cents: 12000,
+        date: "2026-01-11",
+        description: "Restaurante",
+        category: { id: "c1", name: "Alimentação", type: "expense", active: true },
+        credit_card: { id: "k1", name: "Nubank", active: true },
+        invoice: {
+          closing_month: "2026-02",
+          closing_date: "2026-02-10",
+          due_date: "2026-02-17",
+          reference_month: "2026-02",
+          state: "open",
+        },
+        reference_month: "2026-02",
+        is_projection: false,
+      },
+      item("2", "Mercado", "2026-01-10"),
+    ]
+    renderScreen()
+
+    const january = await screen.findByRole("list", { name: "Transações de janeiro de 2026" })
+    expect(within(january).getByText("Restaurante")).toBeInTheDocument()
+    expect(within(january).getByText("Nubank")).toBeInTheDocument()
+    expect(
+      within(january).getByText("Fatura de fevereiro de 2026 · aberta"),
+    ).toBeInTheDocument()
+    expect(within(january).getByText("Mercado")).toBeInTheDocument()
+  })
+
   it("sends the type filter to the API and offers to clear filters when nothing matches", async () => {
     renderScreen()
     await screen.findByText("Nenhuma transação ainda")
