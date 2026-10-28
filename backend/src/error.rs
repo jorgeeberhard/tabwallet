@@ -19,8 +19,8 @@ use validator::ValidationErrors;
 use crate::{
     ids::CategoryId,
     use_cases::{
-        AuthError, BalanceError, CardProblem, CardPurchaseError, CategoryError, CategoryProblem,
-        CreditCardError, RecurringError, TransactionError,
+        AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
+        CategoryProblem, CreditCardError, RecurringError, TransactionError,
     },
 };
 
@@ -149,6 +149,17 @@ impl From<BalanceError> for ApiError {
         match error {
             BalanceError::OpeningBalanceAlreadySet => Self::OpeningBalanceAlreadySet,
             BalanceError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<BalanceSeriesError> for ApiError {
+    fn from(error: BalanceSeriesError) -> Self {
+        match error {
+            BalanceSeriesError::InvalidPeriod { field, rule } => {
+                Self::Validation(BTreeMap::from([(field.to_string(), rule.to_string())]))
+            }
+            BalanceSeriesError::Internal(cause) => Self::Internal(cause),
         }
     }
 }

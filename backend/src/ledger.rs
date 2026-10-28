@@ -9,10 +9,12 @@
 //! [`Ledger::occurrences`]. Later tickets add facts (card invoices, budgets)
 //! and questions (projected balance, invoice state, reports) to this same
 //! module, so the rules that depend on dates stay in one place. Recurring
-//! Transactions and their Occurrences live in [`recurring`].
+//! Transactions and their Occurrences live in [`recurring`]; the balance
+//! history and the Projected Balance (series of points over time) in [`series`].
 
 pub mod cards;
 mod recurring;
+mod series;
 
 use chrono::{Datelike, NaiveDate};
 
@@ -20,6 +22,8 @@ pub use recurring::{
     AmountFrom, Occurrence, OccurrenceChange, OccurrenceException, RecurringDefinition,
     date_in_month, first_of_month, last_day_of_month, next_month, previous_month,
 };
+
+pub use series::{BalancePoint, Granularity, MAX_SERIES_POINTS, SeriesError};
 
 use crate::ids::RecurringTransactionId;
 
