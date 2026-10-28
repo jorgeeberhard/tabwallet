@@ -4,19 +4,33 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argon2 = "0.6.0"
 async-trait = "0.1.92"
 axum = "0.8.9"
-chrono = "0.4.45"
+axum-extra = { version = "0.12.6", features = ["cookie"] }
+chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 dotenvy = "0.15.7"
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "chrono", "macros"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "chrono", "macros", "uuid"] }
 thiserror = "2.0.21"
+time = "0.3.55"
 tokio = { version = "1.54.1", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
+validator = { version = "0.21.0", features = ["derive"] }
 
 [dev-dependencies]
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
+
+# Argon2 is deliberately slow: unoptimised, it makes every signup and login in
+# the integration tests take seconds.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
