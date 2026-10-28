@@ -540,10 +540,17 @@ async fn a_card_with_an_invoice_to_pay_cannot_be_deactivated_until_it_is_paid() 
         .post_empty(&format!("/credit-cards/{nubank}/deactivate"))
         .await;
     assert_eq!(allowed.status(), 200);
-    // History stays: the purchase is still in the statement and in its invoice.
+    // History stays: the purchase is still in the statement and in its invoice
+    // (and so is the invoice payment the Due Day made).
     let statement: Value = ana.get("/transactions").await.json().await.unwrap();
-    assert_eq!(statement["total"], json!(1));
-    assert_eq!(statement["items"][0]["credit_card"]["active"], json!(false));
+    assert_eq!(statement["total"], json!(2));
+    let purchase = statement["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == json!("card_purchase"))
+        .unwrap();
+    assert_eq!(purchase["credit_card"]["active"], json!(false));
 }
 
 // --- the statement ----------------------------------------------------
@@ -557,9 +564,15 @@ async fn the_statement_shows_card_purchases_with_card_and_invoice() {
 
     let statement: Value = ana.get("/transactions").await.json().await.unwrap();
 
-    assert_eq!(statement["total"], json!(1));
-    let item = &statement["items"][0];
-    assert_eq!(item["kind"], json!("card_purchase"));
+    // The purchase and the automatic payment its invoice will get (a
+    // projection, on the Due Day).
+    assert_eq!(statement["total"], json!(2));
+    let item = statement["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == json!("card_purchase"))
+        .unwrap();
     assert_eq!(item["amount_cents"], json!(12_000));
     assert_eq!(item["credit_card"]["name"], json!("Nubank"));
     assert_eq!(item["invoice"]["closing_month"], json!("2026-02"));
@@ -588,12 +601,14 @@ async fn the_statement_mixes_transactions_and_purchases_and_filters_by_card() {
     purchase(&ana, &itau, 3_000, "2026-01-05").await;
 
     let all: Value = ana.get("/transactions").await.json().await.unwrap();
-    assert_eq!(all["total"], json!(3));
+    // Three entries, plus the automatic payment of each card's invoice.
+    assert_eq!(all["total"], json!(5));
     let kinds: Vec<&Value> = all["items"]
         .as_array()
         .unwrap()
         .iter()
         .map(|item| &item["kind"])
+        .filter(|kind| **kind != json!("invoice_payment"))
         .collect();
     assert_eq!(
         kinds,
@@ -610,10 +625,14 @@ async fn the_statement_mixes_transactions_and_purchases_and_filters_by_card() {
         .json()
         .await
         .unwrap();
-    assert_eq!(only_nubank["total"], json!(1));
-    assert_eq!(
-        only_nubank["items"][0]["credit_card"]["name"],
-        json!("Nubank")
+    // The card's purchase and its invoice payment.
+    assert_eq!(only_nubank["total"], json!(2));
+    assert!(
+        only_nubank["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["credit_card"]["name"] == json!("Nubank"))
     );
 
     let incomes: Value = ana
@@ -629,8 +648,8 @@ async fn the_statement_mixes_transactions_and_purchases_and_filters_by_card() {
         .json()
         .await
         .unwrap();
-    assert_eq!(paged["total"], json!(3));
-    assert_eq!(paged["items"].as_array().unwrap().len(), 1);
+    assert_eq!(paged["total"], json!(5));
+    assert_eq!(paged["items"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -673,6 +692,14 @@ async fn the_card_filter_leaves_out_occurrences_and_the_statement_mixes_all_kind
         .json()
         .await
         .unwrap();
-    assert_eq!(only_card["total"], json!(1));
-    assert_eq!(only_card["items"][0]["kind"], json!("card_purchase"));
+    // The purchase and the payment of its invoice, but no occurrence.
+    assert_eq!(only_card["total"], json!(2));
+    let kinds: Vec<&str> = only_card["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"card_purchase") && kinds.contains(&"invoice_payment"));
+    assert!(!kinds.contains(&"occurrence"));
 }

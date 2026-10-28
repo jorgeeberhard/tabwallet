@@ -75,9 +75,11 @@ impl Ledger {
     /// pass [`projection_horizon`]. Purchases not yet recorded are not known
     /// and stay out.
     ///
-    /// Invoices are not part of it yet: the ticket on invoice payments
-    /// subtracts, at each point, the remaining amount of the invoices due up
-    /// to that date, inside [`Ledger::projected_balances_at`].
+    /// Invoices are part of it: at each point comes off the amount still
+    /// unpaid of every invoice due up to that date (the automatic Invoice
+    /// Payment of its due date), and the Early Payments already made, which
+    /// are in the Current Balance, stay off. See
+    /// [`Ledger::projected_balances_at`].
     pub fn projected_balance(
         &self,
         to: NaiveDate,
@@ -95,15 +97,16 @@ impl Ledger {
     }
 
     /// The projected balance at the end of each of `dates` (ascending, none
-    /// before today). Without invoices it equals the running total of cash
-    /// flows; with them, the amount still owed on invoices due by each date
-    /// comes off here.
+    /// before today): the running total of cash flows, Occurrences and Invoice
+    /// Payments. The amount still owed on an invoice due by a date comes off
+    /// as the automatic payment on its due date.
     fn projected_balances_at(&self, dates: &[NaiveDate]) -> Vec<BalancePoint> {
         self.balances_at(dates)
     }
 
     /// The balance at the end of each of `dates`, which must be ascending:
-    /// the Opening Balance plus every flow and Occurrence dated up to it.
+    /// the Opening Balance plus every flow and Occurrence dated up to it, less
+    /// the Invoice Payments (early and automatic) dated up to it.
     fn balances_at(&self, dates: &[NaiveDate]) -> Vec<BalancePoint> {
         let Some(&last) = dates.last() else {
             return Vec::new();
@@ -123,6 +126,11 @@ impl Ledger {
                             signed(occurrence.kind, occurrence.amount_cents),
                         )
                     }),
+            )
+            .chain(
+                self.invoice_payments(NaiveDate::MIN, last)
+                    .iter()
+                    .map(|payment| (payment.date, -payment.amount_cents)),
             )
             .collect();
         events.sort_by_key(|(date, _)| *date);

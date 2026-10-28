@@ -4,10 +4,13 @@ use crate::{
     ids::UserId,
     ledger::{Ledger, LedgerFacts},
     repositories::{
+        card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
         transactions::TransactionRepository,
     },
 };
+
+use super::credit_card::card_facts;
 
 /// Why a balance use case failed. Unaware of HTTP: the handler layer decides
 /// the status code.
@@ -40,6 +43,8 @@ pub struct GetBalanceUseCase {
     transactions: TransactionRepository,
     opening_balance: OpeningBalanceRepository,
     recurring: RecurringRepository,
+    cards: CreditCardRepository,
+    purchases: CardPurchaseRepository,
 }
 
 impl GetBalanceUseCase {
@@ -47,11 +52,15 @@ impl GetBalanceUseCase {
         transactions: TransactionRepository,
         opening_balance: OpeningBalanceRepository,
         recurring: RecurringRepository,
+        cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
     ) -> Self {
         Self {
             transactions,
             opening_balance,
             recurring,
+            cards,
+            purchases,
         }
     }
 
@@ -78,11 +87,14 @@ impl GetBalanceUseCase {
             .into_iter()
             .map(|recurring| recurring.definition)
             .collect();
+        let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
+            .await
+            .map_err(BalanceError::internal)?;
         let ledger = Ledger::new(LedgerFacts {
             opening_balance_cents,
             cash_flows,
             recurring,
-            ..LedgerFacts::default()
+            cards,
         });
         Ok(BalanceReport {
             current_balance_cents: ledger.current_balance(today),
