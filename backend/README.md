@@ -33,6 +33,11 @@ A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}`.
 | `JWT_SECRET` | sim | Segredo que assina os tokens de sessão (HS256), com pelo menos 32 caracteres. Gere um por ambiente (`openssl rand -base64 48`) e nunca versione. |
 | `COOKIE_SECURE` | não | O cookie de sessão é `Secure` (só HTTPS) a menos que seja `false`. Só use `false` no desenvolvimento local, sem HTTPS. |
 | `BIND_ADDR` | não | Endereço de escuta (padrão `0.0.0.0:8080`). |
+| `APP_ENV` | não | `development` ou `production` (padrão). Só em `development` a API aceita subir sem provedor de e-mail e assume `APP_URL=http://localhost:3000`. |
+| `APP_URL` | em produção | Endereço público do front-end, usado no link do e-mail de recuperação de senha. |
+| `EMAIL_PROVIDER` | em produção | `resend` (API HTTP no formato do Resend). Sem ele, em desenvolvimento, o e-mail só é escrito no log. |
+| `EMAIL_API_KEY`, `EMAIL_FROM` | com `EMAIL_PROVIDER` | Chave da API (nunca versione) e remetente, por exemplo `TabWallet <no-reply@seu-dominio>`. |
+| `EMAIL_API_URL` | não | Endereço da API de e-mail (padrão `https://api.resend.com/emails`). |
 
 ## Autenticação (UC01 e UC02)
 
@@ -46,6 +51,18 @@ A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}`.
 A senha é guardada com Argon2id. A sessão é um JWT (7 dias) no cookie `tabwallet_session`: `HttpOnly`, `SameSite=Lax`, `Path=/` e `Secure` conforme `COOKIE_SECURE`. O front-end acessa a API pela mesma origem (rewrite do Next), o que evita CORS e CSRF entre sites.
 
 Erros têm sempre a forma `{"error": {"code", "message", "fields"?}}`; o front-end usa o `code` estável (`email_taken`, `invalid_credentials`, `unauthenticated`, `validation_failed`, `invalid_request`).
+
+## Perfil e recuperação de senha (UC14 e UC03)
+
+| Rota | Efeito |
+| --- | --- |
+| `PATCH /profile` (protegida) `{name?, email?, new_password?, current_password?}` | Edita só o que vier no corpo e devolve `{user}`. Trocar `email` ou `new_password` exige `current_password`: ausente dá `422` (`fields.current_password = "required"`), errada dá `403` (`invalid_current_password`). Trocar a senha cancela os links de recuperação pendentes. `GET /auth/me` devolve também `name` (vazio se não definido). |
+| `POST /auth/password-reset/request` `{email}` | Envia por e-mail um link de redefinição para o e-mail de login. Responde `202` igual com ou sem conta, e também se o provedor falhar (só vai ao log), para não revelar quais e-mails existem. Um novo pedido invalida o link anterior. |
+| `POST /auth/password-reset/confirm` `{token, password}` | Define a nova senha. `204` em caso de sucesso (não inicia sessão); `400 invalid_reset_token` para link desconhecido, expirado ou já usado. |
+
+O link é `APP_URL/reset-password?token=...`, vale 60 minutos e só funciona uma vez. O token tem 64 caracteres hexadecimais aleatórios e o banco guarda apenas o SHA-256 dele. O envio passa pelo trait `EmailSender` (`src/email.rs`): `HttpEmailSender` em produção, `LogEmailSender` (escreve o link no log, nível info) em desenvolvimento sem provedor, e um fake que grava as mensagens nos testes. Não há verificação de e-mail no cadastro.
+
+**Limitação conhecida.** A sessão é um JWT sem estado, que não pode ser revogado: depois de trocar a senha (no perfil ou pela recuperação), os navegadores já logados continuam logados até o token expirar (7 dias). O envio do e-mail é aguardado antes de responder, então o tempo de resposta pode, em tese, diferir para e-mails cadastrados; a resposta em si é idêntica.
 
 **Rotas protegidas.** Registre a rota em `protected` em `src/app.rs`: o middleware `require_auth` devolve `401` sem sessão válida e o handler recebe o usuário como argumento `AuthUser`. Todo repositório recebe o `UserId` (`auth_user.id`) e filtra por ele, para que dados de um usuário nunca apareçam para outro.
 

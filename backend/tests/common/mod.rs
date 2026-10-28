@@ -11,7 +11,8 @@ mod postgres;
 
 use std::sync::{Arc, Mutex};
 
-use chrono::NaiveDate;
+use async_trait::async_trait;
+use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::{
     Response,
     header::{COOKIE, SET_COOKIE},
@@ -21,6 +22,7 @@ use tabwallet_backend::{
     app::{AppState, build_router},
     auth::Auth,
     clock::Clock,
+    email::{EmailError, EmailMessage, EmailSender},
 };
 use tokio::net::TcpListener;
 
@@ -29,20 +31,41 @@ pub use tabwallet_backend::auth::SESSION_COOKIE;
 /// The JWT secret the test API signs with; tests use it to forge tokens.
 pub const TEST_JWT_SECRET: &str = "test-secret-test-secret-test-secret-0123";
 
-/// A clock whose "today" the test moves by hand.
+/// A clock whose "today" the test moves by hand. `now` is the real instant
+/// plus a shift the test sets with `TestApp::advance_time`.
 #[derive(Clone)]
-pub struct TestClock(Arc<Mutex<NaiveDate>>);
+pub struct TestClock(Arc<Mutex<NaiveDate>>, Arc<Mutex<chrono::Duration>>);
 
 impl Clock for TestClock {
     fn today(&self) -> NaiveDate {
         *self.0.lock().unwrap()
     }
+
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now() + *self.1.lock().unwrap()
+    }
 }
+
+/// An e-mail sender that sends nothing and remembers every message.
+#[derive(Clone, Default)]
+pub struct RecordingEmailSender(Arc<Mutex<Vec<EmailMessage>>>);
+
+#[async_trait]
+impl EmailSender for RecordingEmailSender {
+    async fn send(&self, message: EmailMessage) -> Result<(), EmailError> {
+        self.0.lock().unwrap().push(message);
+        Ok(())
+    }
+}
+
+/// The address the test API puts in e-mail links.
+pub const TEST_APP_URL: &str = "http://app.test";
 
 pub struct TestApp {
     address: String,
     client: reqwest::Client,
     clock: TestClock,
+    emails: RecordingEmailSender,
 }
 
 /// A browser-like client: it remembers the session cookie the API sets and
@@ -149,14 +172,18 @@ impl TestApp {
     /// at 2026-01-15; use `set_today` to move it.
     pub async fn spawn() -> Self {
         let pool = postgres::fresh_database().await;
-        let clock = TestClock(Arc::new(Mutex::new(
-            NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
-        )));
+        let clock = TestClock(
+            Arc::new(Mutex::new(NaiveDate::from_ymd_opt(2026, 1, 15).unwrap())),
+            Arc::new(Mutex::new(chrono::Duration::zero())),
+        );
+        let emails = RecordingEmailSender::default();
         let state = AppState {
             pool,
             clock: Arc::new(clock.clone()),
             // Plain HTTP in tests, so the cookie cannot be `Secure`.
             auth: Auth::new(TEST_JWT_SECRET, false).unwrap(),
+            email: Arc::new(emails.clone()),
+            app_url: TEST_APP_URL.to_string(),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = format!("http://{}", listener.local_addr().unwrap());
@@ -167,7 +194,19 @@ impl TestApp {
             address,
             client: reqwest::Client::new(),
             clock,
+            emails,
         }
+    }
+
+    /// Moves the instant the API sees as "now" forward (for links that
+    /// expire after some minutes). It does not change "today".
+    pub fn advance_time(&self, by: chrono::Duration) {
+        *self.clock.1.lock().unwrap() += by;
+    }
+
+    /// Every e-mail the API tried to send, oldest first.
+    pub fn sent_emails(&self) -> Vec<EmailMessage> {
+        self.emails.0.lock().unwrap().clone()
     }
 
     /// A new "browser" with no cookies.

@@ -10,6 +10,12 @@ use chrono_tz::America::Sao_Paulo;
 pub trait Clock: Send + Sync {
     /// The current calendar day in America/Sao_Paulo.
     fn today(&self) -> NaiveDate;
+
+    /// The current instant, for things that expire at a time of day (such as
+    /// password-reset links) rather than on a calendar day. Tests override it.
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
 }
 
 /// The production clock, backed by the system time.

@@ -10,6 +10,7 @@ use sqlx::PgPool;
 use crate::{
     auth::{Auth, require_auth},
     clock::Clock,
+    email::EmailSender,
     handlers,
 };
 
@@ -19,6 +20,10 @@ pub struct AppState {
     pub pool: PgPool,
     pub clock: Arc<dyn Clock>,
     pub auth: Auth,
+    /// Sends transactional e-mail (password-reset links).
+    pub email: Arc<dyn EmailSender>,
+    /// Public address of the front-end, for the links in e-mails.
+    pub app_url: String,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -35,6 +40,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/auth/signup", post(handlers::auth::sign_up))
         .route("/auth/login", post(handlers::auth::log_in))
         .route("/auth/logout", post(handlers::auth::log_out))
+        .route(
+            "/auth/password-reset/request",
+            post(handlers::password_reset::request),
+        )
+        .route(
+            "/auth/password-reset/confirm",
+            post(handlers::password_reset::confirm),
+        )
         .merge(protected)
         .with_state(state)
 }
