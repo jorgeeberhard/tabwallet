@@ -44,6 +44,17 @@ pub struct TransactionChanges {
     pub category_id: Option<CategoryId>,
 }
 
+/// Which of the user's transactions to list; `None` means "any".
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TransactionFilter {
+    /// First day, inclusive.
+    pub from: Option<NaiveDate>,
+    /// Last day, inclusive.
+    pub to: Option<NaiveDate>,
+    pub category_id: Option<CategoryId>,
+    pub kind: Option<TransactionType>,
+}
+
 /// The columns of [`Transaction`]; `t` is the transactions table (or a CTE
 /// with its columns) and the Category is joined as `c`.
 ///
@@ -90,11 +101,13 @@ impl TransactionRepository {
         .await
     }
 
-    /// One page of the user's transactions, newest first. The order is total
-    /// (date, then creation, then id), so pages never overlap or skip.
+    /// One page of the user's transactions that match the filter, newest
+    /// first. The order is total (date, then creation, then id), so pages
+    /// never overlap or skip.
     pub async fn list(
         &self,
         user_id: UserId,
+        filter: TransactionFilter,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Transaction>, sqlx::Error> {
@@ -103,22 +116,45 @@ impl TransactionRepository {
             columns!(),
             " FROM transactions t JOIN categories c ON c.id = t.category_id
              WHERE t.user_id = $1
+               AND ($2::date IS NULL OR t.date >= $2)
+               AND ($3::date IS NULL OR t.date <= $3)
+               AND ($4::uuid IS NULL OR t.category_id = $4)
+               AND ($5::text IS NULL OR t.type = $5)
              ORDER BY t.date DESC, t.created_at DESC, t.id DESC
-             LIMIT $2 OFFSET $3"
+             LIMIT $6 OFFSET $7"
         ))
         .bind(user_id)
+        .bind(filter.from)
+        .bind(filter.to)
+        .bind(filter.category_id)
+        .bind(filter.kind.map(TransactionType::as_str))
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
         .await
     }
 
-    /// How many transactions the user has.
-    pub async fn count(&self, user_id: UserId) -> Result<i64, sqlx::Error> {
-        sqlx::query_scalar("SELECT count(*) FROM transactions WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_one(&self.pool)
-            .await
+    /// How many transactions of the user match the filter, across all pages.
+    pub async fn count(
+        &self,
+        user_id: UserId,
+        filter: TransactionFilter,
+    ) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM transactions t
+             WHERE t.user_id = $1
+               AND ($2::date IS NULL OR t.date >= $2)
+               AND ($3::date IS NULL OR t.date <= $3)
+               AND ($4::uuid IS NULL OR t.category_id = $4)
+               AND ($5::text IS NULL OR t.type = $5)",
+        )
+        .bind(user_id)
+        .bind(filter.from)
+        .bind(filter.to)
+        .bind(filter.category_id)
+        .bind(filter.kind.map(TransactionType::as_str))
+        .fetch_one(&self.pool)
+        .await
     }
 
     /// One of the user's transactions, or `None` if there is none with this id

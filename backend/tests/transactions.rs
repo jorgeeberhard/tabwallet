@@ -476,3 +476,165 @@ async fn transactions_need_a_session() {
         401
     );
 }
+
+fn descriptions(listed: &Value) -> Vec<String> {
+    listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["description"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Ana's statement used by the filter tests (today is 2026-01-15):
+/// Aluguel (expense, Moradia, 01-05), Salário (income, Salário, 01-05),
+/// Mercado (expense, Alimentação, 01-10), Cinema (expense, Lazer, 01-20,
+/// a Projection) and Freela (income, Outros, 02-01, a Projection).
+async fn seeded_statement(ana: &Session) {
+    let rows = [
+        ("expense", "2026-01-05", "Aluguel", "Moradia"),
+        ("income", "2026-01-05", "Salário", "Salário"),
+        ("expense", "2026-01-10", "Mercado", "Alimentação"),
+        ("expense", "2026-01-20", "Cinema", "Lazer"),
+        ("income", "2026-02-01", "Freela", "Outros"),
+    ];
+    for (kind, date, description, category) in rows {
+        let response = create(ana, kind, 1000, date, description, (category, kind)).await;
+        assert_eq!(response.status(), 201);
+    }
+}
+
+#[tokio::test]
+async fn the_list_is_newest_first_and_a_tie_on_the_date_puts_the_latest_entry_first() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    seeded_statement(&ana).await;
+
+    let listed = list(&ana, "").await;
+
+    assert_eq!(
+        descriptions(&listed),
+        ["Freela", "Cinema", "Mercado", "Salário", "Aluguel"]
+    );
+}
+
+#[tokio::test]
+async fn the_period_filter_is_inclusive_and_can_be_open_ended() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    seeded_statement(&ana).await;
+
+    let both = list(&ana, "?from=2026-01-05&to=2026-01-10").await;
+    assert_eq!(descriptions(&both), ["Mercado", "Salário", "Aluguel"]);
+    assert_eq!(both["total"], json!(3));
+    let from_only = list(&ana, "?from=2026-01-11").await;
+    assert_eq!(descriptions(&from_only), ["Freela", "Cinema"]);
+    let to_only = list(&ana, "?to=2026-01-05").await;
+    assert_eq!(descriptions(&to_only), ["Salário", "Aluguel"]);
+}
+
+#[tokio::test]
+async fn the_list_filters_by_type_and_by_category_and_combines_filters() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    seeded_statement(&ana).await;
+    let leisure = category_id(&ana, "Lazer", "expense").await;
+
+    let incomes = list(&ana, "?type=income").await;
+    assert_eq!(descriptions(&incomes), ["Freela", "Salário"]);
+    let expenses = list(&ana, "?type=expense").await;
+    assert_eq!(descriptions(&expenses), ["Cinema", "Mercado", "Aluguel"]);
+    let in_leisure = list(&ana, &format!("?category_id={leisure}")).await;
+    assert_eq!(descriptions(&in_leisure), ["Cinema"]);
+    let combined = list(
+        &ana,
+        &format!("?category_id={leisure}&type=expense&from=2026-01-20&to=2026-01-20"),
+    )
+    .await;
+    assert_eq!(descriptions(&combined), ["Cinema"]);
+    let none = list(&ana, &format!("?category_id={leisure}&type=income")).await;
+    assert_eq!(none["total"], json!(0));
+    assert!(none["items"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn filtering_by_another_users_category_finds_nothing() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let bia = signed_up(&app, "bia@example.com").await;
+    seeded_statement(&ana).await;
+    let anas_housing = category_id(&ana, "Moradia", "expense").await;
+
+    let listed = list(&bia, &format!("?category_id={anas_housing}")).await;
+
+    assert_eq!(listed["total"], json!(0));
+}
+
+#[tokio::test]
+async fn pages_do_not_overlap_and_the_total_counts_all_matches() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    seeded_statement(&ana).await;
+
+    let first = list(&ana, "?limit=2").await;
+    let second = list(&ana, "?limit=2&offset=2").await;
+    let third = list(&ana, "?limit=2&offset=4").await;
+
+    assert_eq!(descriptions(&first), ["Freela", "Cinema"]);
+    assert_eq!(descriptions(&second), ["Mercado", "Salário"]);
+    assert_eq!(descriptions(&third), ["Aluguel"]);
+    for page in [&first, &second, &third] {
+        assert_eq!(page["total"], json!(5));
+    }
+    assert_eq!(first["limit"], json!(2));
+    assert_eq!(second["offset"], json!(2));
+}
+
+#[tokio::test]
+async fn a_page_has_fifty_items_by_default_and_never_more_than_two_hundred() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let food = category_id(&ana, "Alimentação", "expense").await;
+    for n in 0..51 {
+        let response = create_with(&ana, valid_body(&food)).await;
+        assert_eq!(response.status(), 201, "transaction {n}");
+    }
+
+    let default_page = list(&ana, "").await;
+
+    assert_eq!(default_page["items"].as_array().unwrap().len(), 50);
+    assert_eq!(default_page["total"], json!(51));
+    assert_eq!(default_page["limit"], json!(50));
+    assert_eq!(
+        list(&ana, "?limit=200").await["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        51
+    );
+    for query in ["?limit=201", "?limit=0", "?limit=-1"] {
+        let response = ana.get(&format!("/transactions{query}")).await;
+        expect_field_error(response, "limit", "limit_range").await;
+    }
+    let response = ana.get("/transactions?offset=-1").await;
+    expect_field_error(response, "offset", "offset_range").await;
+}
+
+#[tokio::test]
+async fn the_list_refuses_a_backwards_period_and_malformed_filters() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+
+    let backwards = ana.get("/transactions?from=2026-02-01&to=2026-01-01").await;
+    expect_field_error(backwards, "to", "period_order").await;
+    for query in [
+        "?from=01/02/2026",
+        "?to=2026-02-30",
+        "?type=transfer",
+        "?category_id=not-an-id",
+        "?limit=abc",
+    ] {
+        let response = ana.get(&format!("/transactions{query}")).await;
+        assert_eq!(response.status(), 400, "query {query}");
+    }
+}

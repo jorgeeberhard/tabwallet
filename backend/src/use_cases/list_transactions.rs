@@ -1,6 +1,6 @@
 use crate::{
     ids::UserId,
-    repositories::transactions::{Transaction, TransactionRepository},
+    repositories::transactions::{Transaction, TransactionFilter, TransactionRepository},
 };
 
 use super::TransactionError;
@@ -19,7 +19,8 @@ pub struct Statement {
     pub total: i64,
 }
 
-/// UC08: lists the user's transactions, newest first.
+/// UC08: lists the user's transactions, newest first, optionally narrowed by
+/// period, Category and type.
 pub struct ListTransactionsUseCase {
     transactions: TransactionRepository,
 }
@@ -32,17 +33,18 @@ impl ListTransactionsUseCase {
     pub async fn execute(
         &self,
         user_id: UserId,
+        filter: TransactionFilter,
         limit: i64,
         offset: i64,
     ) -> Result<Statement, TransactionError> {
         let transactions = self
             .transactions
-            .list(user_id, limit, offset)
+            .list(user_id, filter, limit, offset)
             .await
             .map_err(TransactionError::internal)?;
         let total = self
             .transactions
-            .count(user_id)
+            .count(user_id, filter)
             .await
             .map_err(TransactionError::internal)?;
         Ok(Statement {

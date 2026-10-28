@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
+
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -16,7 +18,8 @@ use crate::{
     ids::{CategoryId, TransactionId},
     repositories::categories::CategoryRepository,
     repositories::transactions::{
-        NewTransaction, Transaction, TransactionChanges, TransactionRepository, TransactionType,
+        NewTransaction, Transaction, TransactionChanges, TransactionFilter, TransactionRepository,
+        TransactionType,
     },
     use_cases::{
         CreateTransactionUseCase, DeleteTransactionUseCase, ListTransactionsUseCase, Statement,
@@ -29,6 +32,7 @@ use crate::{
 pub const MAX_AMOUNT_CENTS: i64 = 100_000_000_000;
 pub const MAX_DESCRIPTION_LEN: u64 = 200;
 pub const DEFAULT_LIMIT: i64 = 50;
+pub const MAX_LIMIT: i64 = 200;
 
 /// The Category of a transaction, as shown with it.
 #[derive(Serialize)]
@@ -144,15 +148,62 @@ pub struct StatementResponse {
     offset: i64,
 }
 
+#[derive(Deserialize)]
+pub struct ListParams {
+    /// First day, inclusive.
+    from: Option<NaiveDate>,
+    /// Last day, inclusive.
+    to: Option<NaiveDate>,
+    category_id: Option<CategoryId>,
+    #[serde(rename = "type")]
+    kind: Option<TransactionType>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+impl ListParams {
+    /// The filter and the page, or the fields that are out of range.
+    fn parse(self) -> Result<(TransactionFilter, i64, i64), ApiError> {
+        let limit = self.limit.unwrap_or(DEFAULT_LIMIT);
+        let offset = self.offset.unwrap_or(0);
+        let mut fields = BTreeMap::new();
+        if !(1..=MAX_LIMIT).contains(&limit) {
+            fields.insert("limit".to_string(), "limit_range".to_string());
+        }
+        if offset < 0 {
+            fields.insert("offset".to_string(), "offset_range".to_string());
+        }
+        if let (Some(from), Some(to)) = (self.from, self.to)
+            && from > to
+        {
+            fields.insert("to".to_string(), "period_order".to_string());
+        }
+        if !fields.is_empty() {
+            return Err(ApiError::Validation(fields));
+        }
+        let filter = TransactionFilter {
+            from: self.from,
+            to: self.to,
+            category_id: self.category_id,
+            kind: self.kind,
+        };
+        Ok((filter, limit, offset))
+    }
+}
+
 /// `GET /transactions` (protected): the user's statement, newest first.
+/// Optional query: `from` and `to` (days, inclusive), `category_id`,
+/// `type=income|expense`, `limit` (1 to 200, default 50) and `offset`.
 pub async fn list(
     State(state): State<AppState>,
     auth_user: AuthUser,
+    params: Result<Query<ListParams>, axum::extract::rejection::QueryRejection>,
 ) -> Result<Json<StatementResponse>, ApiError> {
-    let (limit, offset) = (DEFAULT_LIMIT, 0);
+    let Query(params) = params.map_err(|_| ApiError::InvalidRequest)?;
+    let (filter, limit, offset) = params.parse()?;
     let Statement { items, total } =
         ListTransactionsUseCase::new(TransactionRepository::new(state.pool.clone()))
-            .execute(auth_user.id, limit, offset)
+            .execute(auth_user.id, filter, limit, offset)
             .await?;
     let today = state.clock.today();
     Ok(Json(StatementResponse {
