@@ -28,6 +28,7 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { formatAmountInput, parseAmountToCents } from "@/lib/amount"
+import { BALANCE_KEY } from "@/lib/balance-api"
 import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
 import { todayInSaoPaulo } from "@/lib/today"
 import {
@@ -81,6 +82,7 @@ export function TransactionDialog({ mode, onClose }: TransactionDialogProps) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: TRANSACTIONS_KEY })
+      void queryClient.invalidateQueries({ queryKey: BALANCE_KEY })
       toast.success(editing ? "Transação atualizada." : "Transação lançada.")
       onClose()
     },

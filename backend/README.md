@@ -97,6 +97,19 @@ Regras (erros `422 validation_failed`, com `error.fields`): `amount_cents` entre
 
 **Pronto para os próximos tickets.** Cada entrada da listagem tem `kind` (hoje só `"transaction"`), e o use case devolve um enum `StatementItem`: Compras no cartão e Pagamentos de fatura entram como novas variantes, cada uma com a sua tabela e o seu formato, sem forçar a tabela `transactions` a carregar campos de cartão. O filtro por cartão entra em `TransactionFilter`/`ListParams`. A tabela `transactions` referencia `(category_id, type)`, então o banco também recusa uma Categoria do outro tipo.
 
+## Saldo atual e Saldo inicial (UC10, parcial, e UC22)
+
+Rotas protegidas; cada usuário só enxerga o próprio saldo. Valores em centavos inteiros.
+
+| Rota | Efeito |
+| --- | --- |
+| `GET /balance` | Devolve `{current_balance_cents, opening_balance_set, opening_balance_cents}`. `opening_balance_cents` é `null` enquanto o Saldo inicial não foi informado. |
+| `POST /balance/opening` `{amount_cents}` | Informa o Saldo inicial, uma única vez. `201` com o mesmo corpo do `GET /balance`. Zero e negativo valem (mesmo zero conta como informado); `amount_cents` fora de ±100.000.000.000 dá `422` (`fields.amount_cents = amount_range`) e não gasta a única chance. Uma segunda tentativa dá `409 opening_balance_already_set` e o valor guardado não muda. |
+
+**Regra.** Saldo atual = Saldo inicial (0 se não informado) + Receitas - Despesas com data até hoje (America/Sao_Paulo, pelo relógio injetável). Projeções (data depois de hoje) ficam de fora até o dia chegar, sem nenhum job: a cada leitura o saldo é calculado de novo (ADR-0002). O saldo pode ficar negativo e nada bloqueia um lançamento por isso. O Saldo inicial fica na coluna `users.opening_balance_cents` (`NULL` = não informado); gravá-lo é um único `UPDATE ... WHERE opening_balance_cents IS NULL`, então dois pedidos simultâneos não passam os dois.
+
+**Módulo de cálculo (`src/ledger.rs`).** Puro: não conhece HTTP nem SQL. Os repositórios entregam os fatos de um usuário (`LedgerFacts`: Saldo inicial e `CashFlow`s por dia e tipo) e o use case pergunta com um "hoje": `Ledger::new(facts).current_balance(today)`. O `TransactionRepository::cash_flows` soma por dia e tipo; qual dia conta é decisão do ledger. Os próximos tickets (Transações fixas, Faturas, Saldo projetado, Orçamentos, relatórios) ampliam `LedgerFacts` e acrescentam perguntas ao `Ledger`, sem mudar quem já o usa. Os testes ficam em `tests/balance.rs`, pela API, movendo o "hoje" com `set_today`.
+
 ## Rodar os testes
 
 ```bash

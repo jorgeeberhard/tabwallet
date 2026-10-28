@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useCurrentUser } from "@/components/user-menu"
 
-/** Placeholder of the authenticated home until balance and transactions arrive. */
+/** Greeting of the authenticated home, above the balance. */
 export function Welcome() {
   const { data: user } = useCurrentUser()
 
@@ -25,7 +25,7 @@ export function Welcome() {
         <Skeleton className="h-6 w-64" />
       )}
       <p className="max-w-prose text-muted-foreground">
-        Em breve aqui: saldo, transações e faturas de cartão.
+        Em breve aqui: faturas de cartão, saldo dos próximos meses e orçamentos.
       </p>
     </div>
   )
