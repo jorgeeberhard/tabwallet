@@ -25,6 +25,30 @@ curl http://127.0.0.1:8080/health
 
 A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}`.
 
+### Variáveis de ambiente
+
+| Variável | Obrigatória | Descrição |
+| --- | --- | --- |
+| `DATABASE_URL` | sim | Conexão com o PostgreSQL. |
+| `JWT_SECRET` | sim | Segredo que assina os tokens de sessão (HS256), com pelo menos 32 caracteres. Gere um por ambiente (`openssl rand -base64 48`) e nunca versione. |
+| `COOKIE_SECURE` | não | O cookie de sessão é `Secure` (só HTTPS) a menos que seja `false`. Só use `false` no desenvolvimento local, sem HTTPS. |
+| `BIND_ADDR` | não | Endereço de escuta (padrão `0.0.0.0:8080`). |
+
+## Autenticação (UC01 e UC02)
+
+| Rota | Efeito |
+| --- | --- |
+| `POST /auth/signup` `{email, password}` | Cria a conta (senha com 8 a 128 caracteres, e-mail único sem diferenciar maiúsculas) e já inicia a sessão. `201`. |
+| `POST /auth/login` `{email, password}` | Inicia a sessão. Erro igual para e-mail desconhecido e senha errada. |
+| `POST /auth/logout` | Expira o cookie. `204`, mesmo sem sessão. |
+| `GET /auth/me` | Rota protegida: devolve o usuário da sessão. |
+
+A senha é guardada com Argon2id. A sessão é um JWT (7 dias) no cookie `tabwallet_session`: `HttpOnly`, `SameSite=Lax`, `Path=/` e `Secure` conforme `COOKIE_SECURE`. O front-end acessa a API pela mesma origem (rewrite do Next), o que evita CORS e CSRF entre sites.
+
+Erros têm sempre a forma `{"error": {"code", "message", "fields"?}}`; o front-end usa o `code` estável (`email_taken`, `invalid_credentials`, `unauthenticated`, `validation_failed`, `invalid_request`).
+
+**Rotas protegidas.** Registre a rota em `protected` em `src/app.rs`: o middleware `require_auth` devolve `401` sem sessão válida e o handler recebe o usuário como argumento `AuthUser`. Todo repositório recebe o `UserId` (`auth_user.id`) e filtra por ele, para que dados de um usuário nunca apareçam para outro.
+
 ## Rodar os testes
 
 ```bash
