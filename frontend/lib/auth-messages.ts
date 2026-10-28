@@ -7,6 +7,10 @@ const MESSAGES: Record<string, string> = {
   invalid_email: "Digite um e-mail válido, como nome@dominio.com.",
   password_length: "Use uma senha de 8 a 128 caracteres.",
   required: "Preencha este campo.",
+  name_length: "Use um nome com até 100 caracteres.",
+  invalid_current_password: "A senha atual não confere. Confira e tente de novo.",
+  invalid_reset_token:
+    "Este link de redefinição é inválido, expirou ou já foi usado. Peça um novo link.",
 }
 
 /** Message for an API error code, or `undefined` when it has no specific text. */
