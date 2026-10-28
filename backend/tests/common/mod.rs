@@ -102,6 +102,11 @@ impl Session {
         .await
     }
 
+    pub async fn delete(&self, path: &str) -> Response {
+        self.send(self.client.delete(format!("{}{}", self.address, path)))
+            .await
+    }
+
     pub async fn post_empty(&self, path: &str) -> Response {
         self.send(self.client.post(format!("{}{}", self.address, path)))
             .await
