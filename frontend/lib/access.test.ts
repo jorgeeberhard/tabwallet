@@ -19,6 +19,17 @@ describe("decideAccess", () => {
     expect(decideAccess("/login", "unknown")).toBeNull()
   })
 
+  it("opens the password-recovery pages to visitors", () => {
+    expect(decideAccess("/forgot-password", "none")).toBeNull()
+    expect(decideAccess("/reset-password", "none")).toBeNull()
+    expect(decideAccess("/reset-password", "invalid")).toBeNull()
+  })
+
+  it("lets anyone holding a reset link use it, even when signed in", () => {
+    expect(decideAccess("/reset-password", "valid")).toBeNull()
+    expect(decideAccess("/forgot-password", "valid")).toEqual({ redirectTo: "/" })
+  })
+
   it("lets a signed-in user into private pages", () => {
     expect(decideAccess("/", "valid")).toBeNull()
   })

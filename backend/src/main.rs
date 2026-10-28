@@ -5,6 +5,7 @@ use tabwallet_backend::{
     auth::Auth,
     clock::SystemClock,
     db,
+    email::EmailSettings,
 };
 use tokio::net::TcpListener;
 
@@ -23,6 +24,8 @@ async fn main() {
 
     let auth = Auth::from_env().unwrap_or_else(|error| panic!("{error}"));
 
+    let email = EmailSettings::from_env().unwrap_or_else(|error| panic!("{error}"));
+
     let pool = db::connect(&database_url)
         .await
         .expect("failed to connect to the database");
@@ -36,6 +39,8 @@ async fn main() {
         pool,
         clock: Arc::new(SystemClock),
         auth,
+        email: email.sender,
+        app_url: email.app_url,
     };
     axum::serve(listener, build_router(state))
         .await

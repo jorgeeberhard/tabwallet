@@ -16,6 +16,12 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 - `lib/api.ts` chama a API (`signUp`, `logIn`, `logOut`, `getCurrentUser`) e converte erros para `ApiError` com o `code` estável da API; `lib/auth-messages.ts` traduz cada código para o texto em português.
 - Telas: `app/(auth)/login` e `app/(auth)/signup` (formulários com `react-hook-form` + `zod`, `lib/auth-schemas.ts`); `app/(app)` é a área logada, com o menu da conta e a ação "Sair".
 
+## Perfil e recuperação de senha
+
+- `app/(app)/profile`: tela de perfil (`components/profile/profile-forms.tsx`) com três formulários independentes (nome, e-mail, senha). Trocar e-mail ou senha pede a senha atual. Acessível pelo menu da conta e pela página inicial.
+- `app/(auth)/forgot-password`: pede o link de redefinição. A resposta é sempre a mesma ("se existir uma conta..."), porque a API não revela quais e-mails existem. O login tem o link "Esqueci a senha".
+- `app/(auth)/reset-password?token=...`: página aberta pelo link do e-mail; define a nova senha e leva ao login (não inicia sessão). Fica acessível mesmo para quem já está logado (`lib/access.ts`). Em desenvolvimento sem provedor de e-mail, o link aparece no log da API.
+
 ## Pré-requisitos
 
 - Node.js 22 e npm.

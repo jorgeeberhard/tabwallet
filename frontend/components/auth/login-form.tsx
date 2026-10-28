@@ -64,7 +64,15 @@ export function LoginForm() {
           <FieldError errors={[errors.email]} />
         </Field>
         <Field data-invalid={!!errors.password}>
-          <FieldLabel htmlFor="password">Senha</FieldLabel>
+          <div className="flex items-center justify-between gap-2">
+            <FieldLabel htmlFor="password">Senha</FieldLabel>
+            <Link
+              href="/forgot-password"
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Esqueci a senha
+            </Link>
+          </div>
           <Input
             id="password"
             type="password"

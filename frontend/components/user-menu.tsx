@@ -1,7 +1,8 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { LogOutIcon, UserRoundIcon } from "lucide-react"
+import { LogOutIcon, SettingsIcon, UserRoundIcon } from "lucide-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
@@ -48,11 +49,17 @@ export function UserMenu() {
         {user && (
           <>
             <DropdownMenuLabel className="font-normal text-muted-foreground">
-              {user.email}
+              {user.name || user.email}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
           </>
         )}
+        <DropdownMenuItem asChild>
+          <Link href="/profile">
+            <SettingsIcon strokeWidth={1.75} />
+            Perfil
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem disabled={logout.isPending} onSelect={() => logout.mutate()}>
           <LogOutIcon strokeWidth={1.75} />
           Sair

@@ -23,7 +23,7 @@ export const NETWORK_ERROR_CODE = "network_error"
 
 export async function api<T = void>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
+  options: { method?: "GET" | "POST" | "PATCH"; body?: unknown } = {},
 ): Promise<T> {
   const { method = "GET", body } = options
 
@@ -47,22 +47,25 @@ export async function api<T = void>(
       payload?.error?.fields ?? {},
     )
   }
-  if (response.status === 204) return undefined as T
+  // 204 and 202 answers carry no body.
+  if (response.status === 204 || response.status === 202) return undefined as T
   return (await response.json()) as T
 }
 
 export interface User {
   id: string
   email: string
+  /** Empty when the person never set one. */
+  name: string
   createdAt: string
 }
 
 interface UserPayload {
-  user: { id: string; email: string; created_at: string }
+  user: { id: string; email: string; name: string; created_at: string }
 }
 
 function toUser({ user }: UserPayload): User {
-  return { id: user.id, email: user.email, createdAt: user.created_at }
+  return { id: user.id, email: user.email, name: user.name, createdAt: user.created_at }
 }
 
 export async function signUp(email: string, password: string): Promise<User> {
@@ -83,4 +86,36 @@ export async function logOut(): Promise<void> {
 
 export async function getCurrentUser(): Promise<User> {
   return toUser(await api<UserPayload>("/auth/me"))
+}
+
+/** What the profile form may change. Only the fields present are sent. */
+export interface ProfileChanges {
+  name?: string
+  email?: string
+  newPassword?: string
+  /** Required by the API to change the e-mail or the password. */
+  currentPassword?: string
+}
+
+export async function updateProfile(changes: ProfileChanges): Promise<User> {
+  return toUser(
+    await api<UserPayload>("/profile", {
+      method: "PATCH",
+      body: {
+        name: changes.name,
+        email: changes.email,
+        new_password: changes.newPassword,
+        current_password: changes.currentPassword,
+      },
+    }),
+  )
+}
+
+/** Asks for a reset link. The API answers the same for any address. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await api("/auth/password-reset/request", { method: "POST", body: { email } })
+}
+
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  await api("/auth/password-reset/confirm", { method: "POST", body: { token, password } })
 }

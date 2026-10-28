@@ -7,6 +7,7 @@
 
 mod middleware;
 pub mod password;
+pub mod reset_token;
 mod token;
 
 pub use middleware::{AuthUser, require_auth};

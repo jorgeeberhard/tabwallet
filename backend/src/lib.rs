@@ -12,6 +12,7 @@ pub mod app;
 pub mod auth;
 pub mod clock;
 pub mod db;
+pub mod email;
 pub mod error;
 pub mod handlers;
 pub mod ids;
