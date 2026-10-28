@@ -46,6 +46,14 @@ pub fn build_router(state: AppState) -> Router {
             "/categories/{id}/reactivate",
             post(handlers::categories::reactivate),
         )
+        .route(
+            "/transactions",
+            get(handlers::transactions::list).post(handlers::transactions::create),
+        )
+        .route(
+            "/transactions/{id}",
+            patch(handlers::transactions::update).delete(handlers::transactions::delete),
+        )
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

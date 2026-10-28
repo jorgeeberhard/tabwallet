@@ -18,7 +18,7 @@ use validator::ValidationErrors;
 
 use crate::{
     ids::CategoryId,
-    use_cases::{AuthError, CategoryError},
+    use_cases::{AuthError, CategoryError, CategoryProblem, TransactionError},
 };
 
 #[derive(Debug)]
@@ -44,6 +44,8 @@ pub enum ApiError {
     CategoryInactiveExists(CategoryId),
     /// "Juros e encargos" still has Charges, so it cannot be deactivated.
     CategoryHasCharges,
+    /// No such transaction for this user.
+    TransactionNotFound,
     /// Something unexpected; the cause is logged, never sent to the client.
     Internal(String),
 }
@@ -94,6 +96,26 @@ impl From<CategoryError> for ApiError {
             CategoryError::InactiveNameExists(id) => Self::CategoryInactiveExists(id),
             CategoryError::HasCharges => Self::CategoryHasCharges,
             CategoryError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<TransactionError> for ApiError {
+    fn from(error: TransactionError) -> Self {
+        match error {
+            TransactionError::NotFound => Self::TransactionNotFound,
+            TransactionError::InvalidCategory(problem) => {
+                let rule = match problem {
+                    CategoryProblem::NotFound => "category_not_found",
+                    CategoryProblem::TypeMismatch => "category_type_mismatch",
+                    CategoryProblem::Inactive => "category_inactive",
+                };
+                Self::Validation(BTreeMap::from([(
+                    "category_id".to_string(),
+                    rule.to_string(),
+                )]))
+            }
+            TransactionError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -173,6 +195,12 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "category_has_charges",
                 "This category still has charges and cannot be deactivated.",
+                None,
+            ),
+            Self::TransactionNotFound => (
+                StatusCode::NOT_FOUND,
+                "transaction_not_found",
+                "There is no such transaction.",
                 None,
             ),
             Self::Internal(cause) => {

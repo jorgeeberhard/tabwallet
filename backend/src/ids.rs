@@ -9,6 +9,11 @@ use uuid::Uuid;
 #[sqlx(transparent)]
 pub struct UserId(pub Uuid);
 
+/// The id of a Transaction (an income or expense outside the credit card).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct TransactionId(pub Uuid);
+
 /// The id of a category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(transparent)]

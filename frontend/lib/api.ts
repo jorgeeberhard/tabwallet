@@ -25,7 +25,7 @@ export const NETWORK_ERROR_CODE = "network_error"
 
 export async function api<T = void>(
   path: string,
-  options: { method?: "GET" | "POST" | "PATCH"; body?: unknown } = {},
+  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
 ): Promise<T> {
   const { method = "GET", body } = options
 

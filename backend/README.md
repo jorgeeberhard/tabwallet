@@ -82,6 +82,21 @@ O nome é aparado, tem de 1 a 60 caracteres e é único por tipo e por usuário 
 
 Todo usuário nasce com as categorias padrão (função SQL `seed_default_categories`, chamada na transação do cadastro; a migration `0003` também a aplica aos usuários que já existiam). "Juros e encargos" é marcada pela coluna `is_charges`, não pelo nome. A regra "não desativar enquanto houver Encargos" tem um ponto único, `CategoryRepository::has_charges`, que hoje devolve `false` porque ainda não há Encargos; o ticket que criar os Encargos preenche essa consulta.
 
+## Transações (UC04, UC06, UC07 e UC08)
+
+Receitas e Despesas fora do cartão. Todas as rotas exigem sessão e só enxergam as Transações do próprio usuário (a de outro usuário responde `404 transaction_not_found`). Uma Transação é `{id, type, amount_cents, date, description, category: {id, name, type, active}, is_projection, created_at}`: o valor é sempre um inteiro de centavos maior que zero (o `type`, `income` ou `expense`, dá o sinal), `date` é só o dia (`AAAA-MM-DD`, sem horário) e `is_projection` é verdadeiro quando a data é depois de "hoje" (America/Sao_Paulo, pelo relógio injetável). A Projeção é calculada a cada leitura e nunca gravada.
+
+| Rota | Efeito |
+| --- | --- |
+| `POST /transactions` `{type, amount_cents, date, description, category_id}` | Cria. `201 {transaction}`. |
+| `GET /transactions?from=&to=&category_id=&type=&limit=&offset=` | Lista do mais novo para o mais antigo (data, depois criação, depois id: ordem total). `from` e `to` são dias inclusivos; `limit` vai de 1 a 200 (padrão 50). Devolve `{items, total, limit, offset}`; `total` conta tudo que casa com os filtros. |
+| `PATCH /transactions/{id}` `{amount_cents?, date?, description?, category_id?}` | Edita só o que vier no corpo. O tipo não muda. `200 {transaction}`. |
+| `DELETE /transactions/{id}` | Exclui. `204`. |
+
+Regras (erros `422 validation_failed`, com `error.fields`): `amount_cents` entre 1 e 100.000.000.000 (`amount_range`); `description` aparada, de 1 a 200 caracteres (`description_length`); a Categoria (`category_id`) precisa ser do usuário (`category_not_found`), do mesmo tipo da Transação (`category_type_mismatch`) e ativa (`category_inactive`). Ao editar, só uma Categoria *diferente* da atual é revalidada: uma Transação cuja Categoria foi desativada continua editável. Na listagem, `from` depois de `to` dá `fields.to = period_order`, e `limit`/`offset` fora da faixa dão `limit_range`/`offset_range`. Data que não é um dia (`2026-02-30`, com horário) ou valor não inteiro dão `400 invalid_request`.
+
+**Pronto para os próximos tickets.** Cada entrada da listagem tem `kind` (hoje só `"transaction"`), e o use case devolve um enum `StatementItem`: Compras no cartão e Pagamentos de fatura entram como novas variantes, cada uma com a sua tabela e o seu formato, sem forçar a tabela `transactions` a carregar campos de cartão. O filtro por cartão entra em `TransactionFilter`/`ListParams`. A tabela `transactions` referencia `(category_id, type)`, então o banco também recusa uma Categoria do outro tipo.
+
 ## Rodar os testes
 
 ```bash
