@@ -1,6 +1,11 @@
 import { api } from "@/lib/api"
 import type { CategoryType } from "@/lib/categories-api"
 import { centsToReais } from "@/lib/amount"
+import {
+  type CardPurchase,
+  type CardPurchasePayload,
+  toCardPurchase,
+} from "@/lib/credit-cards-api"
 import { type Occurrence, type OccurrencePayload, toOccurrence } from "@/lib/recurring-api"
 
 export type TransactionType = CategoryType
@@ -49,12 +54,13 @@ function toTransaction(payload: TransactionPayload): Transaction {
 
 /**
  * One entry of the statement. `kind` says what the rest of the object is: a
- * Transaction, or an Occurrence of a Gasto fixo or Receita fixa (computed by
- * the API on read). Card purchases and invoice payments will join as other
- * `kind`s with their own shapes.
+ * Transaction, a card purchase (with its card and invoice) or an Occurrence
+ * of a Gasto fixo or Receita fixa (computed by the API on read). Invoice
+ * payments will join as another `kind` with its own shape.
  */
 export type StatementItem =
   | ({ kind: "transaction" } & Transaction)
+  | ({ kind: "card_purchase" } & CardPurchase)
   | ({ kind: "occurrence" } & Occurrence)
 
 /** The key that identifies a statement item in a list. */
@@ -76,6 +82,8 @@ export interface TransactionFilters {
   to?: string
   categoryId?: string
   type?: TransactionType
+  /** Only purchases made with this credit card. */
+  creditCardId?: string
   limit?: number
   offset?: number
 }
@@ -96,12 +104,14 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
   if (filters.to) query.set("to", filters.to)
   if (filters.categoryId) query.set("category_id", filters.categoryId)
   if (filters.type) query.set("type", filters.type)
+  if (filters.creditCardId) query.set("credit_card_id", filters.creditCardId)
   query.set("limit", String(filters.limit ?? PAGE_SIZE))
   if (filters.offset) query.set("offset", String(filters.offset))
 
   const payload = await api<{
     items: (
       | ({ kind: "transaction" } & TransactionPayload)
+      | ({ kind: "card_purchase" } & CardPurchasePayload)
       | ({ kind: "occurrence" } & OccurrencePayload)
     )[]
     total: number
@@ -111,9 +121,11 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
   return {
     items: payload.items.map(
       (item): StatementItem =>
-        item.kind === "occurrence"
-          ? { kind: "occurrence", ...toOccurrence(item) }
-          : { kind: "transaction", ...toTransaction(item) },
+        item.kind === "card_purchase"
+          ? { kind: "card_purchase", ...toCardPurchase(item) }
+          : item.kind === "occurrence"
+            ? { kind: "occurrence", ...toOccurrence(item) }
+            : { kind: "transaction", ...toTransaction(item) },
     ),
     total: payload.total,
     limit: payload.limit,

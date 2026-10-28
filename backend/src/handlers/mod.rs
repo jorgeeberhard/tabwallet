@@ -1,7 +1,9 @@
 pub mod auth;
 pub mod balance;
 pub mod balance_series;
+pub mod card_purchases;
 pub mod categories;
+pub mod credit_cards;
 mod extract;
 pub mod health;
 pub mod password_reset;

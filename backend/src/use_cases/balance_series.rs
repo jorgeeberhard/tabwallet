@@ -86,6 +86,9 @@ impl FactsLoader {
             opening_balance_cents,
             cash_flows,
             recurring,
+            // Card purchases reach the balance only through invoice payments
+            // (a later ticket), so they are not loaded for these series yet.
+            ..LedgerFacts::default()
         }))
     }
 }

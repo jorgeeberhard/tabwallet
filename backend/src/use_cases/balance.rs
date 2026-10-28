@@ -82,6 +82,7 @@ impl GetBalanceUseCase {
             opening_balance_cents,
             cash_flows,
             recurring,
+            ..LedgerFacts::default()
         });
         Ok(BalanceReport {
             current_balance_cents: ledger.current_balance(today),
