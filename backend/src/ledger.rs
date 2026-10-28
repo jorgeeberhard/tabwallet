@@ -5,14 +5,36 @@
 //! question with a "today" taken from the injectable clock. Nothing it
 //! computes is stored (ADR-0002); it is derived again on every read.
 //!
-//! Today it answers one question, [`Ledger::current_balance`]. Later tickets
-//! add facts (recurring Transactions, card invoices, budgets) and questions
-//! (projected balance, invoice state, reports) to this same module, so the
-//! rules that depend on dates stay in one place.
+//! It answers [`Ledger::current_balance`] and, for the statement,
+//! [`Ledger::occurrences`]. Later tickets add facts (card invoices, budgets)
+//! and questions (projected balance, invoice state, reports) to this same
+//! module, so the rules that depend on dates stay in one place. Recurring
+//! Transactions and their Occurrences live in [`recurring`].
 
 pub mod cards;
+mod recurring;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
+
+pub use recurring::{
+    AmountFrom, Occurrence, OccurrenceChange, OccurrenceException, RecurringDefinition,
+    date_in_month, first_of_month, last_day_of_month, next_month, previous_month,
+};
+
+use crate::ids::RecurringTransactionId;
+
+/// How many months after the current one the ledger looks ahead when asked
+/// for Projections without an end date (the Projected Balance window).
+pub const PROJECTION_HORIZON_MONTHS: u32 = 12;
+
+/// The last day the ledger projects recurring Occurrences to: the end of the
+/// month [`PROJECTION_HORIZON_MONTHS`] after the month of `today`.
+pub fn projection_horizon(today: NaiveDate) -> NaiveDate {
+    let months = today.year() * 12 + today.month0() as i32 + PROJECTION_HORIZON_MONTHS as i32;
+    let first = NaiveDate::from_ymd_opt(months.div_euclid(12), months.rem_euclid(12) as u32 + 1, 1)
+        .expect("a month inside the supported date range");
+    last_day_of_month(first)
+}
 
 use crate::ids::CreditCardId;
 use cards::{CardFacts, Invoice, InvoiceCycle, Month};
@@ -48,6 +70,17 @@ pub struct LedgerFacts {
     /// purchases. Card purchases never enter `cash_flows`: they reach the
     /// balance only through invoice payments (a later ticket).
     pub cards: Vec<CardFacts>,
+    /// The user's recurring Transactions. Their Occurrences are derived from
+    /// these and never stored.
+    pub recurring: Vec<RecurringDefinition>,
+}
+
+/// The amount with the sign of its direction: positive in, negative out.
+fn signed(kind: FlowKind, amount_cents: i64) -> i64 {
+    match kind {
+        FlowKind::Income => amount_cents,
+        FlowKind::Expense => -amount_cents,
+    }
 }
 
 /// Answers balance questions about one user's [`LedgerFacts`].
@@ -62,21 +95,48 @@ impl Ledger {
     }
 
     /// The Current Balance on `today`, in cents: the Opening Balance plus
-    /// incomes minus expenses dated `today` or earlier. Flows dated after
-    /// `today` are Projections and stay out until their day arrives. The
-    /// result may be negative.
+    /// incomes minus expenses dated `today` or earlier, counting the
+    /// Occurrences of recurring Transactions that have already fallen. Flows
+    /// dated after `today` are Projections and stay out until their day
+    /// arrives. The result may be negative.
     pub fn current_balance(&self, today: NaiveDate) -> i64 {
         let flows: i64 = self
             .facts
             .cash_flows
             .iter()
             .filter(|flow| flow.date <= today)
-            .map(|flow| match flow.kind {
-                FlowKind::Income => flow.amount_cents,
-                FlowKind::Expense => -flow.amount_cents,
-            })
+            .map(|flow| signed(flow.kind, flow.amount_cents))
             .sum();
-        self.facts.opening_balance_cents.unwrap_or(0) + flows
+        let occurrences: i64 = self
+            .occurrences(NaiveDate::MIN, today)
+            .iter()
+            .map(|occurrence| signed(occurrence.kind, occurrence.amount_cents))
+            .sum();
+        self.facts.opening_balance_cents.unwrap_or(0) + flows + occurrences
+    }
+
+    /// The Occurrences of every recurring Transaction that fall on a day from
+    /// `from` to `to`, both inclusive, oldest first. Whether one is a
+    /// Projection (after today) is for the caller to say.
+    pub fn occurrences(&self, from: NaiveDate, to: NaiveDate) -> Vec<Occurrence> {
+        let mut found: Vec<Occurrence> = self
+            .facts
+            .recurring
+            .iter()
+            .flat_map(|definition| definition.occurrences_between(from, to))
+            .collect();
+        found.sort_by_key(|occurrence| (occurrence.date, occurrence.recurring_id));
+        found
+    }
+
+    /// One Occurrence, or `None` if the recurring Transaction has none in that
+    /// month (not started, ended or deleted by the user).
+    pub fn occurrence(&self, id: RecurringTransactionId, month: NaiveDate) -> Option<Occurrence> {
+        self.facts
+            .recurring
+            .iter()
+            .find(|definition| definition.id == id)?
+            .occurrence_in(month)
     }
 
     fn card(&self, card_id: CreditCardId) -> Option<&CardFacts> {

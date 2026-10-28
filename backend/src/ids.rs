@@ -28,3 +28,10 @@ pub struct CardPurchaseId(pub Uuid);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct CategoryId(pub Uuid);
+
+/// The id of a recurring Transaction (a Gasto fixo or Receita fixa).
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type,
+)]
+#[sqlx(transparent)]
+pub struct RecurringTransactionId(pub Uuid);

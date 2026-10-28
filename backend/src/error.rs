@@ -20,7 +20,7 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, CardProblem, CardPurchaseError, CategoryError, CategoryProblem,
-        CreditCardError, TransactionError,
+        CreditCardError, RecurringError, TransactionError,
     },
 };
 
@@ -64,6 +64,12 @@ pub enum ApiError {
     CardPurchaseNotFound,
     /// The card purchase is in a paid invoice and cannot be edited or deleted.
     InvoicePaid,
+    /// No such recurring Transaction for this user.
+    RecurringTransactionNotFound,
+    /// The recurring Transaction has no Occurrence in that month.
+    OccurrenceNotFound,
+    /// The recurring Transaction was already ended and cannot change.
+    RecurringTransactionEnded,
     /// Something unexpected; the cause is logged, never sent to the client.
     Internal(String),
 }
@@ -184,6 +190,23 @@ impl From<CardPurchaseError> for ApiError {
             CardPurchaseError::InvoicePaid => Self::InvoicePaid,
             CardPurchaseError::DateInPaidInvoice => field("date", "invoice_paid"),
             CardPurchaseError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<RecurringError> for ApiError {
+    fn from(error: RecurringError) -> Self {
+        match error {
+            RecurringError::NotFound => Self::RecurringTransactionNotFound,
+            RecurringError::OccurrenceNotFound => Self::OccurrenceNotFound,
+            RecurringError::Ended => Self::RecurringTransactionEnded,
+            RecurringError::InvalidCategory(problem) => {
+                TransactionError::InvalidCategory(problem).into()
+            }
+            RecurringError::Invalid { field, rule } => {
+                Self::Validation(BTreeMap::from([(field.to_string(), rule.to_string())]))
+            }
+            RecurringError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -311,6 +334,24 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "invoice_paid",
                 "The purchase is in a paid invoice and cannot be changed.",
+                None,
+            ),
+            Self::RecurringTransactionNotFound => (
+                StatusCode::NOT_FOUND,
+                "recurring_transaction_not_found",
+                "There is no such recurring transaction.",
+                None,
+            ),
+            Self::OccurrenceNotFound => (
+                StatusCode::NOT_FOUND,
+                "occurrence_not_found",
+                "The recurring transaction has no occurrence in that month.",
+                None,
+            ),
+            Self::RecurringTransactionEnded => (
+                StatusCode::CONFLICT,
+                "recurring_transaction_ended",
+                "The recurring transaction has ended and cannot be changed.",
                 None,
             ),
             Self::Internal(cause) => {

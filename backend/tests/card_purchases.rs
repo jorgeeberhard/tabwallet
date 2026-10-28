@@ -632,3 +632,47 @@ async fn the_statement_mixes_transactions_and_purchases_and_filters_by_card() {
     assert_eq!(paged["total"], json!(3));
     assert_eq!(paged["items"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn the_card_filter_leaves_out_occurrences_and_the_statement_mixes_all_kinds() {
+    let app = TestApp::spawn().await; // today is 2026-01-15
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    purchase(&ana, &nubank, 12_000, "2026-01-12").await;
+    let housing = category_id(&ana, "Moradia", "expense").await;
+    let rent = ana
+        .post_json(
+            "/recurring-transactions",
+            &json!({
+                "type": "expense", "amount_cents": 90_000, "day_of_month": 5,
+                "description": "aluguel", "category_id": housing,
+            }),
+        )
+        .await;
+    assert_eq!(rent.status(), 201);
+
+    let everything: Value = ana
+        .get("/transactions?to=2026-02-28")
+        .await
+        .json()
+        .await
+        .unwrap();
+    let kinds: Vec<&str> = everything["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"occurrence") && kinds.contains(&"card_purchase"));
+
+    let only_card: Value = ana
+        .get(&format!(
+            "/transactions?to=2026-02-28&credit_card_id={nubank}"
+        ))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(only_card["total"], json!(1));
+    assert_eq!(only_card["items"][0]["kind"], json!("card_purchase"));
+}

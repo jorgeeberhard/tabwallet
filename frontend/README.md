@@ -37,6 +37,12 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 - O extrato (`/transacoes`) mostra as compras no cartão (`card-purchase-row.tsx`) com o cartão e a fatura (`Fatura de fevereiro de 2026 · aberta`), ganhou o filtro "Cartão" e o botão "Nova compra no cartão". O diálogo (`card-purchase-dialog.tsx`) só oferece cartões ativos e Categorias de despesa ativas; o aviso depois de salvar diz em que fatura a compra entrou. A fatura é decidida pela API (regra do fechamento): o front-end não a calcula.
 - Chamadas em `lib/credit-cards-api.ts`; textos de erro em `lib/credit-card-messages.ts`. Atalho "Cartões" na página inicial.
 
+## Gastos e receitas fixos
+
+`app/(app)/fixos` mostra a tela "Gastos e receitas fixos" (`components/recurring/`), com atalho na página inicial: lista os lançamentos fixos em andamento (dia do mês, Categoria, próxima data e valor) e os encerrados, e permite cadastrar (tipo, valor, dia do mês de 1 a 31, mês de início, descrição, Categoria), editar e encerrar (com confirmação). Editar o valor vale a partir do mês atual, o que o diálogo avisa; o tipo e o dia não mudam. `lib/recurring-api.ts` fala com a API e `lib/recurring-messages.ts` traduz os erros.
+
+No extrato (`/transacoes`), as Ocorrências aparecem como itens `kind: "occurrence"` (`OccurrenceRow`), com o selo "Gasto fixo" ou "Receita fixa" e o selo "Projeção" quando a data é futura. Cada uma tem as ações "Editar valor só deste mês" (`OccurrenceAmountDialog`) e "Excluir só este mês" (confirmação), que não afetam os outros meses. Todas as ações invalidam o extrato e o Saldo atual, que a API recalcula (nada é gravado antes do usuário alterar algo).
+
 ## Saldo atual e Saldo inicial
 
 A página inicial (`app/(app)/page.tsx`) mostra o Saldo atual logo abaixo da saudação (`components/balance/balance-section.tsx`, com o `BalanceCard` do Design System em `components/balance-card.tsx`; a versão atual não traz Receitas e Despesas do mês, que ainda não são calculadas). Saldo negativo aparece com "−" e na cor de despesa. Enquanto o Saldo inicial não foi informado, o cartão oferece "Informar saldo inicial" (`opening-balance-dialog.tsx`: `MoneyInput` com `signed`, que aceita zero e "-200,00", e o aviso de que só vale uma vez); depois de informado o botão some e o valor aparece como "Saldo inicial informado". `lib/balance-api.ts` converte centavos em reais na borda. Lançar, editar ou excluir uma Transação invalida `BALANCE_KEY`, então o saldo se atualiza sozinho. O saldo vem pronto da API (que decide o que já é "hoje"); o front-end não recalcula nada.

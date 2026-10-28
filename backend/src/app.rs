@@ -82,6 +82,23 @@ pub fn build_router(state: AppState) -> Router {
             "/card-purchases/{id}",
             patch(handlers::card_purchases::update).delete(handlers::card_purchases::delete),
         )
+        .route(
+            "/recurring-transactions",
+            get(handlers::recurring::list).post(handlers::recurring::create),
+        )
+        .route(
+            "/recurring-transactions/{id}",
+            patch(handlers::recurring::update),
+        )
+        .route(
+            "/recurring-transactions/{id}/end",
+            post(handlers::recurring::end),
+        )
+        .route(
+            "/recurring-transactions/{id}/occurrences/{month}",
+            patch(handlers::recurring::edit_occurrence)
+                .delete(handlers::recurring::delete_occurrence),
+        )
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

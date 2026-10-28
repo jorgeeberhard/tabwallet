@@ -6,6 +6,7 @@ import {
   type CardPurchasePayload,
   toCardPurchase,
 } from "@/lib/credit-cards-api"
+import { type Occurrence, type OccurrencePayload, toOccurrence } from "@/lib/recurring-api"
 
 export type TransactionType = CategoryType
 
@@ -52,13 +53,20 @@ function toTransaction(payload: TransactionPayload): Transaction {
 }
 
 /**
- * One entry of the statement: a Transaction outside the card or a card
- * purchase (with its card and invoice). Invoice payments will join as another
- * `kind` with its own shape.
+ * One entry of the statement. `kind` says what the rest of the object is: a
+ * Transaction, a card purchase (with its card and invoice) or an Occurrence
+ * of a Gasto fixo or Receita fixa (computed by the API on read). Invoice
+ * payments will join as another `kind` with its own shape.
  */
 export type StatementItem =
   | ({ kind: "transaction" } & Transaction)
   | ({ kind: "card_purchase" } & CardPurchase)
+  | ({ kind: "occurrence" } & Occurrence)
+
+/** The key that identifies a statement item in a list. */
+export function statementItemKey(item: StatementItem): string {
+  return item.kind === "occurrence" ? `${item.recurringId}:${item.month}` : item.id
+}
 
 export interface Statement {
   items: StatementItem[]
@@ -104,6 +112,7 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
     items: (
       | ({ kind: "transaction" } & TransactionPayload)
       | ({ kind: "card_purchase" } & CardPurchasePayload)
+      | ({ kind: "occurrence" } & OccurrencePayload)
     )[]
     total: number
     limit: number
@@ -114,7 +123,9 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
       (item): StatementItem =>
         item.kind === "card_purchase"
           ? { kind: "card_purchase", ...toCardPurchase(item) }
-          : { kind: "transaction", ...toTransaction(item) },
+          : item.kind === "occurrence"
+            ? { kind: "occurrence", ...toOccurrence(item) }
+            : { kind: "transaction", ...toTransaction(item) },
     ),
     total: payload.total,
     limit: payload.limit,

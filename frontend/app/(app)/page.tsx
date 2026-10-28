@@ -1,4 +1,4 @@
-import { CreditCardIcon, ReceiptTextIcon, TagIcon } from "lucide-react"
+import { CreditCardIcon, ReceiptTextIcon, RepeatIcon, TagIcon } from "lucide-react"
 import Link from "next/link"
 
 import { BalanceSection } from "@/components/balance/balance-section"
@@ -25,6 +25,10 @@ export default function Home() {
         <Link href="/cartoes" className={SHORTCUT_CLASS}>
           <CreditCardIcon strokeWidth={1.75} className="size-4" />
           Cartões
+        </Link>
+        <Link href="/fixos" className={SHORTCUT_CLASS}>
+          <RepeatIcon strokeWidth={1.75} className="size-4" />
+          Gastos e receitas fixos
         </Link>
         <Link href="/categorias" className={SHORTCUT_CLASS}>
           <TagIcon strokeWidth={1.75} className="size-4" />

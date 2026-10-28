@@ -13,6 +13,7 @@ use validator::Validate;
 use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
+    recurring::OccurrenceResponse,
 };
 use crate::{
     app::AppState,
@@ -22,6 +23,7 @@ use crate::{
     repositories::card_purchases::CardPurchaseRepository,
     repositories::categories::CategoryRepository,
     repositories::credit_cards::CreditCardRepository,
+    repositories::recurring::RecurringRepository,
     repositories::statement::StatementRepository,
     repositories::transactions::{
         NewTransaction, Transaction, TransactionChanges, TransactionFilter, TransactionRepository,
@@ -156,6 +158,8 @@ pub async fn create(
 pub enum StatementItemResponse {
     Transaction(TransactionResponse),
     CardPurchase(CardPurchaseResponse),
+    /// An Occurrence of a Gasto fixo or Receita fixa, computed on read.
+    Occurrence(OccurrenceResponse),
 }
 
 #[derive(Serialize)]
@@ -231,8 +235,9 @@ pub async fn list(
         TransactionRepository::new(state.pool.clone()),
         CardPurchaseRepository::new(state.pool.clone()),
         CreditCardRepository::new(state.pool.clone()),
+        RecurringRepository::new(state.pool.clone()),
     )
-    .execute(auth_user.id, filter, limit, offset, today)
+    .execute(auth_user.id, today, filter, limit, offset)
     .await?;
     Ok(Json(StatementResponse {
         items: items
@@ -243,6 +248,9 @@ pub async fn list(
                 }
                 StatementItem::CardPurchase(view) => {
                     StatementItemResponse::CardPurchase(CardPurchaseResponse::new(view, today))
+                }
+                StatementItem::Occurrence(occurrence) => {
+                    StatementItemResponse::Occurrence(OccurrenceResponse::new(occurrence, today))
                 }
             })
             .collect(),
