@@ -16,6 +16,7 @@ import {
 } from "@/components/credit-cards/card-purchase-dialog"
 import { CardPurchaseRow } from "@/components/credit-cards/card-purchase-row"
 import { DeleteCardPurchaseDialog } from "@/components/credit-cards/delete-card-purchase-dialog"
+import { InvoicePaymentRow } from "@/components/credit-cards/invoice-payment-row"
 import {
   TransactionDialog,
   type TransactionDialogMode,
@@ -201,9 +202,11 @@ export function TransactionsScreen() {
         <div className="flex flex-col gap-1">
           <h1 className="font-display text-3xl font-bold tracking-tight">Transações</h1>
           <p className="max-w-prose text-muted-foreground">
-            Receitas, despesas, ocorrências dos seus gastos e receitas fixos e compras no cartão
-            de crédito. As compras no cartão mostram a fatura em que entram e só mexem no saldo
-            quando a fatura é paga. Lançamentos com data futura aparecem como projeção.
+            Receitas, despesas, ocorrências dos seus gastos e receitas fixos, compras no cartão
+            de crédito e pagamentos de fatura. As compras no cartão mostram a fatura em que
+            entram e só mexem no saldo quando a fatura é paga; o pagamento de fatura (antecipado
+            ou o do vencimento) tira o valor do saldo, mas não é uma despesa. Lançamentos com
+            data futura aparecem como projeção.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -373,6 +376,13 @@ export function TransactionsScreen() {
                         purchase={item}
                         onEdit={(purchase) => setCardDialog({ kind: "edit", purchase })}
                         onDelete={setCardPurchaseToDelete}
+                      />
+                    ) : item.kind === "invoice_payment" ? (
+                      <InvoicePaymentRow
+                        key={statementItemKey(item)}
+                        payment={item}
+                        cardName={item.creditCard.name}
+                        referenceMonth={item.invoice.referenceMonth}
                       />
                     ) : item.kind === "occurrence" ? (
                       <OccurrenceRow

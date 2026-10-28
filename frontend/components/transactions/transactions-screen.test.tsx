@@ -161,6 +161,51 @@ describe("TransactionsScreen", () => {
     expect(within(january).getByText("Mercado")).toBeInTheDocument()
   })
 
+  it("shows invoice payments marked as such, with the card, and not as expenses", async () => {
+    const cycle = {
+      closing_month: "2026-01",
+      closing_date: "2026-01-20",
+      due_date: "2026-01-27",
+      reference_month: "2026-01",
+      state: "open",
+    }
+    rows = [
+      {
+        kind: "invoice_payment",
+        id: null,
+        origin: "automatic",
+        amount_cents: 20000,
+        date: "2026-01-27",
+        is_projection: true,
+        credit_card: { id: "k1", name: "Nubank", active: true },
+        invoice: cycle,
+        created_at: null,
+      },
+      {
+        kind: "invoice_payment",
+        id: "p1",
+        origin: "early",
+        amount_cents: 10000,
+        date: "2026-01-15",
+        is_projection: false,
+        credit_card: { id: "k1", name: "Nubank", active: true },
+        invoice: cycle,
+        created_at: "2026-01-15T12:00:00Z",
+      },
+    ]
+    renderScreen()
+
+    const january = await screen.findByRole("list", { name: "Transações de janeiro de 2026" })
+    expect(within(january).getByText("Pagamento antecipado da fatura de janeiro de 2026")).toBeInTheDocument()
+    expect(within(january).getByText("Pagamento automático da fatura de janeiro de 2026")).toBeInTheDocument()
+    expect(within(january).getAllByText("Pagamento de fatura")).toHaveLength(2)
+    expect(within(january).getAllByText("Nubank")).toHaveLength(2)
+    expect(within(january).getByText("Projeção")).toBeInTheDocument()
+    const amount = within(january).getByText("− R$ 100,00")
+    expect(amount).toHaveClass("text-foreground")
+    expect(amount).not.toHaveClass("text-expense")
+  })
+
   it("sends the type filter to the API and offers to clear filters when nothing matches", async () => {
     renderScreen()
     await screen.findByText("Nenhuma transação ainda")

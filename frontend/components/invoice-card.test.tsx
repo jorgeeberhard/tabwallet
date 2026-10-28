@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import userEvent from "@testing-library/user-event"
+import { describe, expect, it, vi } from "vitest"
 
 import { InvoiceCard } from "@/components/invoice-card"
 import type { Invoice } from "@/lib/credit-cards-api"
@@ -13,6 +14,8 @@ const base: Invoice = {
   state: "open",
   totalCents: 123456,
   total: 1234.56,
+  paidCents: 0,
+  paid: 0,
   remainingCents: 123456,
   remaining: 1234.56,
 }
@@ -50,10 +53,57 @@ describe("InvoiceCard", () => {
     rerender(
       <InvoiceCard
         cardName="Nubank"
-        invoice={{ ...base, remainingCents: 50000, remaining: 500 }}
+        invoice={{ ...base, paidCents: 73456, paid: 734.56, remainingCents: 50000, remaining: 500 }}
       />,
     )
     expect(screen.getByText(/Restante/)).toBeInTheDocument()
     expect(screen.getByText("R$ 500,00")).toBeInTheDocument()
+    expect(screen.getByText(/Pago:/)).toBeInTheDocument()
+    expect(screen.getByText("R$ 734,56")).toBeInTheDocument()
+  })
+
+  it("offers to pay early while the invoice is open or closed and has something to pay", async () => {
+    const onPayEarly = vi.fn()
+    const { rerender } = render(
+      <InvoiceCard cardName="Nubank" invoice={base} onPayEarly={onPayEarly} />,
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Pagar antecipado" }))
+    expect(onPayEarly).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...base, state: "closed" }}
+        onPayEarly={onPayEarly}
+      />,
+    )
+    expect(screen.getByRole("button", { name: "Pagar antecipado" })).toBeInTheDocument()
+
+    rerender(
+      <InvoiceCard cardName="Nubank" invoice={{ ...base, state: "paid" }} onPayEarly={onPayEarly} />,
+    )
+    expect(screen.queryByRole("button", { name: "Pagar antecipado" })).not.toBeInTheDocument()
+
+    rerender(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...base, paidCents: 123456, paid: 1234.56, remainingCents: 0, remaining: 0 }}
+        onPayEarly={onPayEarly}
+      />,
+    )
+    expect(screen.queryByRole("button", { name: "Pagar antecipado" })).not.toBeInTheDocument()
+    expect(screen.getByText(/Paga antecipadamente/)).toBeInTheDocument()
+  })
+
+  it("shows what was paid on a paid invoice", () => {
+    render(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...base, state: "paid", paidCents: 123456, paid: 1234.56, remainingCents: 0, remaining: 0 }}
+      />,
+    )
+
+    expect(screen.getByText(/Paga:/)).toBeInTheDocument()
+    expect(screen.queryByText(/Restante/)).not.toBeInTheDocument()
   })
 })
