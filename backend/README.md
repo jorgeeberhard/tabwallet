@@ -98,10 +98,13 @@ backend/scripts/check.sh            # fmt --check, clippy e todos os testes
 backend/scripts/check.sh health     # mesmo, mas só os testes com "health" no nome
 ```
 
-Os argumentos extras vão para o `cargo test`. O script monta o socket do Docker
-do host (para o testcontainers subir o PostgreSQL) e guarda o registro e o
-`target` do cargo em volumes nomeados (`tabwallet-cargo-registry` e
-`tabwallet-cargo-target`), então as execuções seguintes são rápidas.
+Os argumentos extras vão para o `cargo test`. A cada execução o script sobe um
+único PostgreSQL descartável (dados em memória) e o remove ao terminar, mesmo
+com Ctrl-C; os testes o recebem por `TEST_DATABASE_URL`, sem testcontainers, que
+deixava um contêiner por binário de teste para trás. O registro e o `target` do
+cargo ficam em volumes nomeados (`tabwallet-cargo-registry` e
+`tabwallet-cargo-target`), então as execuções seguintes são rápidas. Execuções
+simultâneas dividem o mesmo `target`, então uma espera a outra compilar.
 
 ## CI
 
