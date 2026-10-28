@@ -1,4 +1,4 @@
-import { ReceiptTextIcon, RepeatIcon, TagIcon } from "lucide-react"
+import { ChartLineIcon, ReceiptTextIcon, RepeatIcon, TagIcon } from "lucide-react"
 import Link from "next/link"
 
 import { BalanceSection } from "@/components/balance/balance-section"
@@ -18,6 +18,10 @@ export default function Home() {
       </div>
       <BalanceSection />
       <nav aria-label="Atalhos" className="flex flex-wrap gap-2">
+        <Link href="/saldo" className={SHORTCUT_CLASS}>
+          <ChartLineIcon strokeWidth={1.75} className="size-4" />
+          Evolução do saldo
+        </Link>
         <Link href="/transacoes" className={SHORTCUT_CLASS}>
           <ReceiptTextIcon strokeWidth={1.75} className="size-4" />
           Transações
