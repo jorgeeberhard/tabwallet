@@ -17,6 +17,7 @@ use reqwest::{
     header::{COOKIE, SET_COOKIE},
 };
 use serde_json::{Value, json};
+use sqlx::PgPool;
 use tabwallet_backend::{
     app::{AppState, build_router},
     auth::Auth,
@@ -148,7 +149,16 @@ impl TestApp {
     /// Starts the API on a free port against a new database. "Today" starts
     /// at 2026-01-15; use `set_today` to move it.
     pub async fn spawn() -> Self {
-        let pool = postgres::fresh_database().await;
+        Self::spawn_on(postgres::fresh_database().await).await
+    }
+
+    /// A new empty database with no migrations applied; see `spawn_on`.
+    pub async fn empty_database() -> PgPool {
+        postgres::empty_database().await
+    }
+
+    /// Starts the API on a database the test prepared itself.
+    pub async fn spawn_on(pool: PgPool) -> Self {
         let clock = TestClock(Arc::new(Mutex::new(
             NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
         )));

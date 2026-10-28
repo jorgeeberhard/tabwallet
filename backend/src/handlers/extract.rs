@@ -2,10 +2,18 @@ use axum::{
     Json,
     extract::{FromRequest, Request},
 };
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, de::DeserializeOwned};
 use validator::Validate;
 
 use crate::error::ApiError;
+
+/// For `#[serde(deserialize_with = "trimmed")]`: surrounding spaces are a
+/// copy-and-paste accident, not part of an e-mail or a name.
+pub(super) fn trimmed<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    String::deserialize(deserializer).map(|value| value.trim().to_string())
+}
 
 /// A JSON body that is parsed and then checked with the `validator` crate.
 /// Failures become the API's stable error responses (400 or 422).

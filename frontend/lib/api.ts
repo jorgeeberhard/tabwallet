@@ -12,6 +12,8 @@ export class ApiError extends Error {
     readonly code: string,
     /** For validation errors: field name to rule code. */
     readonly fields: Record<string, string> = {},
+    /** For "category_inactive_exists": the deactivated category with that name. */
+    readonly categoryId?: string,
   ) {
     super(code)
     this.name = "ApiError"
@@ -23,7 +25,7 @@ export const NETWORK_ERROR_CODE = "network_error"
 
 export async function api<T = void>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
+  options: { method?: "GET" | "POST" | "PATCH"; body?: unknown } = {},
 ): Promise<T> {
   const { method = "GET", body } = options
 
@@ -45,6 +47,7 @@ export async function api<T = void>(
       response.status,
       payload?.error?.code ?? "unknown_error",
       payload?.error?.fields ?? {},
+      payload?.error?.category_id,
     )
   }
   if (response.status === 204) return undefined as T

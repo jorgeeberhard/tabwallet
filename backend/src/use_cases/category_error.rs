@@ -1,4 +1,7 @@
-use crate::ids::CategoryId;
+use crate::{
+    ids::{CategoryId, UserId},
+    repositories::categories::{CategoryRepository, CategoryType},
+};
 
 /// Why a category use case failed. Unaware of HTTP: the handler layer decides
 /// the status code.
@@ -24,5 +27,20 @@ pub enum CategoryError {
 impl CategoryError {
     pub fn internal(cause: impl std::fmt::Display) -> Self {
         Self::Internal(cause.to_string())
+    }
+}
+
+/// The error for a name that the database refused as already used: tells an
+/// active holder (`NameTaken`) from a deactivated one (`InactiveNameExists`).
+pub(super) async fn name_conflict(
+    categories: &CategoryRepository,
+    user_id: UserId,
+    kind: CategoryType,
+    name: &str,
+) -> CategoryError {
+    match categories.find_by_name(user_id, kind, name).await {
+        Ok(Some(holder)) if !holder.active => CategoryError::InactiveNameExists(holder.id),
+        Ok(_) => CategoryError::NameTaken,
+        Err(error) => CategoryError::internal(error),
     }
 }

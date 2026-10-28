@@ -26,6 +26,15 @@ static NEXT_DATABASE: AtomicUsize = AtomicUsize::new(0);
 
 /// Returns a pool connected to a new, empty, fully migrated database.
 pub async fn fresh_database() -> PgPool {
+    let pool = empty_database().await;
+    db::migrate(&pool).await.unwrap();
+    pool
+}
+
+/// Returns a pool connected to a new database with no migrations applied, for
+/// tests that need data from before a migration (the test then applies the
+/// migration files by hand).
+pub async fn empty_database() -> PgPool {
     let admin_url = ADMIN_URL
         .get_or_init(|| std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| start_container()))
         .clone();
@@ -42,11 +51,9 @@ pub async fn fresh_database() -> PgPool {
         .await
         .unwrap();
 
-    let pool = db::connect(&with_database(&admin_url, &name))
+    db::connect(&with_database(&admin_url, &name))
         .await
-        .unwrap();
-    db::migrate(&pool).await.unwrap();
-    pool
+        .unwrap()
 }
 
 /// Starts the container on its own thread and runtime: a container started

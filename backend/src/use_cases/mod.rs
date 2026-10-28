@@ -1,15 +1,21 @@
 mod auth_error;
 mod category_error;
 mod check_health;
+mod create_category;
 mod get_current_user;
 mod list_categories;
 mod log_in;
+mod rename_category;
+mod set_category_active;
 mod sign_up;
 
 pub use auth_error::{AuthError, Session};
 pub use category_error::CategoryError;
 pub use check_health::{CheckHealthUseCase, HealthReport};
+pub use create_category::CreateCategoryUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
 pub use list_categories::ListCategoriesUseCase;
 pub use log_in::LogInUseCase;
+pub use rename_category::RenameCategoryUseCase;
+pub use set_category_active::{DeactivateCategoryUseCase, ReactivateCategoryUseCase};
 pub use sign_up::SignUpUseCase;
