@@ -26,6 +26,10 @@ pub enum ApiError {
     Validation(BTreeMap<String, String>),
     EmailTaken,
     InvalidCredentials,
+    /// The current password sent to confirm a sensitive change is wrong.
+    InvalidCurrentPassword,
+    /// The password-reset link is unknown, expired or already used.
+    InvalidResetToken,
     /// No valid session.
     Unauthenticated,
     /// Something unexpected; the cause is logged, never sent to the client.
@@ -58,6 +62,12 @@ impl From<AuthError> for ApiError {
         match error {
             AuthError::EmailTaken => Self::EmailTaken,
             AuthError::InvalidCredentials => Self::InvalidCredentials,
+            AuthError::InvalidCurrentPassword => Self::InvalidCurrentPassword,
+            AuthError::CurrentPasswordRequired => Self::Validation(BTreeMap::from([(
+                "current_password".to_string(),
+                "required".to_string(),
+            )])),
+            AuthError::InvalidResetToken => Self::InvalidResetToken,
             AuthError::Unauthenticated => Self::Unauthenticated,
             AuthError::Internal(cause) => Self::Internal(cause),
         }
@@ -89,6 +99,20 @@ impl IntoResponse for ApiError {
                 StatusCode::UNAUTHORIZED,
                 "invalid_credentials",
                 "Wrong e-mail or password.",
+                None,
+            ),
+            // 403, not 401: the session is fine, and the front-end treats 401
+            // as "signed out".
+            Self::InvalidCurrentPassword => (
+                StatusCode::FORBIDDEN,
+                "invalid_current_password",
+                "The current password is wrong.",
+                None,
+            ),
+            Self::InvalidResetToken => (
+                StatusCode::BAD_REQUEST,
+                "invalid_reset_token",
+                "The password reset link is invalid, expired or already used.",
                 None,
             ),
             Self::Unauthenticated => (

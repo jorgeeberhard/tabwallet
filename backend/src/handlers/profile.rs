@@ -2,7 +2,10 @@ use axum::{Json, extract::State};
 use serde::Deserialize;
 use validator::Validate;
 
-use super::{auth::UserEnvelope, extract::ValidatedJson};
+use super::{
+    auth::{MAX_PASSWORD_LEN, MIN_PASSWORD_LEN, UserEnvelope},
+    extract::ValidatedJson,
+};
 use crate::{
     app::AppState,
     auth::AuthUser,
@@ -13,12 +16,19 @@ use crate::{
 
 pub const MAX_NAME_LEN: u64 = 100;
 
-/// Every field is optional: only what is present changes.
+/// Every field is optional: only what is present changes. Changing `email` or
+/// `new_password` also needs `current_password`.
 #[derive(Deserialize, Validate)]
 pub struct UpdateProfileRequest {
     #[serde(default, deserialize_with = "trimmed")]
     #[validate(length(max = MAX_NAME_LEN, code = "name_length"))]
     name: Option<String>,
+    #[serde(default, deserialize_with = "trimmed")]
+    #[validate(email(code = "invalid_email"))]
+    email: Option<String>,
+    #[validate(length(min = MIN_PASSWORD_LEN, max = MAX_PASSWORD_LEN, code = "password_length"))]
+    new_password: Option<String>,
+    current_password: Option<String>,
 }
 
 /// Surrounding spaces are a copy-and-paste accident, not part of the value.
@@ -32,8 +42,14 @@ pub async fn update(
     auth_user: AuthUser,
     ValidatedJson(request): ValidatedJson<UpdateProfileRequest>,
 ) -> Result<Json<UserEnvelope>, ApiError> {
+    let changes = ProfileChanges {
+        name: request.name,
+        email: request.email,
+        new_password: request.new_password,
+        current_password: request.current_password,
+    };
     let user = UpdateProfileUseCase::new(UserRepository::new(state.pool.clone()))
-        .execute(auth_user.id, ProfileChanges { name: request.name })
+        .execute(auth_user.id, changes)
         .await?;
     Ok(Json(UserEnvelope { user: user.into() }))
 }

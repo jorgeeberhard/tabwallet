@@ -14,6 +14,12 @@ pub enum AuthError {
     EmailTaken,
     #[error("wrong e-mail or password")]
     InvalidCredentials,
+    #[error("the current password is wrong")]
+    InvalidCurrentPassword,
+    #[error("the current password is required for this change")]
+    CurrentPasswordRequired,
+    #[error("the password reset link is invalid, expired or already used")]
+    InvalidResetToken,
     #[error("there is no valid session")]
     Unauthenticated,
     #[error("unexpected failure: {0}")]
