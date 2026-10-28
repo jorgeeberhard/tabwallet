@@ -103,6 +103,48 @@ impl InstallmentPurchaseView {
     }
 }
 
+/// One Installment as an item of the invoice it is in, with its purchase.
+#[derive(Clone, Debug)]
+pub struct InvoiceInstallment {
+    pub purchase: InstallmentPurchase,
+    pub installment: InstallmentView,
+    /// Some Installment of the purchase (not only this one) is in a paid
+    /// invoice.
+    pub purchase_has_paid_installments: bool,
+}
+
+/// The Installments in the invoice of `card_id` closing in `closing_month`,
+/// by purchase date, newest first, then by number.
+pub(super) async fn invoice_installments(
+    repository: &InstallmentPurchaseRepository,
+    ledger: &Ledger,
+    user_id: UserId,
+    card_id: crate::ids::CreditCardId,
+    closing_month: crate::ledger::cards::Month,
+    today: NaiveDate,
+) -> Result<Vec<InvoiceInstallment>, InstallmentPurchaseError> {
+    let purchases = repository
+        .list_for_card(user_id, card_id)
+        .await
+        .map_err(InstallmentPurchaseError::internal)?;
+    let views = views_of(repository, ledger, user_id, purchases, today).await?;
+    Ok(views
+        .into_iter()
+        .flat_map(|view| {
+            let has_paid = view.has_paid_installments();
+            let purchase = view.purchase;
+            view.installments
+                .into_iter()
+                .filter(move |installment| installment.invoice.closing_month == closing_month)
+                .map(move |installment| InvoiceInstallment {
+                    purchase: purchase.clone(),
+                    installment,
+                    purchase_has_paid_installments: has_paid,
+                })
+        })
+        .collect())
+}
+
 /// The views of these purchases (same order); one whose card is unknown to
 /// the ledger is left out.
 pub(super) async fn views_of(

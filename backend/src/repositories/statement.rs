@@ -2,13 +2,14 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::transactions::{TransactionFilter, TransactionType};
-use crate::ids::{CardPurchaseId, TransactionId, UserId};
+use crate::ids::{CardPurchaseId, InstallmentPurchaseId, TransactionId, UserId};
 
 /// Which table a statement entry lives in, with its id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatementKey {
     Transaction(TransactionId),
     CardPurchase(CardPurchaseId),
+    InstallmentPurchase(InstallmentPurchaseId),
 }
 
 #[derive(sqlx::FromRow)]
@@ -41,6 +42,15 @@ macro_rules! entries {
          UNION ALL
          SELECT 'card_purchase' AS kind, p.id, p.date, p.created_at
          FROM card_purchases p
+         WHERE p.user_id = $1
+           AND ($2::date IS NULL OR p.date >= $2)
+           AND ($3::date IS NULL OR p.date <= $3)
+           AND ($4::uuid IS NULL OR p.category_id = $4)
+           AND ($5::text IS NULL OR p.type = $5)
+           AND ($6::uuid IS NULL OR p.credit_card_id = $6)
+         UNION ALL
+         SELECT 'installment_purchase' AS kind, p.id, p.date, p.created_at
+         FROM installment_purchases p
          WHERE p.user_id = $1
            AND ($2::date IS NULL OR p.date >= $2)
            AND ($3::date IS NULL OR p.date <= $3)
@@ -83,6 +93,9 @@ impl StatementRepository {
             .into_iter()
             .map(|row| match row.kind.as_str() {
                 "card_purchase" => StatementKey::CardPurchase(CardPurchaseId(row.id)),
+                "installment_purchase" => {
+                    StatementKey::InstallmentPurchase(InstallmentPurchaseId(row.id))
+                }
                 _ => StatementKey::Transaction(TransactionId(row.id)),
             })
             .collect())

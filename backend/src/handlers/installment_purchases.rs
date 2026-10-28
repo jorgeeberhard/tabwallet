@@ -30,7 +30,8 @@ use crate::{
     },
     use_cases::{
         CancelInstallmentPurchaseUseCase, CancelOutcome, CreateInstallmentPurchaseUseCase,
-        InstallmentPurchaseView, InstallmentView, UpdateInstallmentPurchaseUseCase,
+        InstallmentPurchaseView, InstallmentView, InvoiceInstallment,
+        UpdateInstallmentPurchaseUseCase,
     },
 };
 
@@ -120,6 +121,61 @@ impl InstallmentPurchaseResponse {
             installments: view.installments.into_iter().map(Into::into).collect(),
             is_projection: purchase.date > today,
             created_at: purchase.created_at,
+        }
+    }
+}
+
+/// One Installment as an item of an invoice: its own amount and invoice with
+/// the data of the purchase it belongs to, for the "3/10" lines.
+#[derive(Serialize)]
+pub struct InvoiceInstallmentResponse {
+    id: InstallmentId,
+    installment_purchase_id: InstallmentPurchaseId,
+    /// 1 for the first Installment, up to `installment_count`.
+    number: i32,
+    installment_count: i32,
+    /// Cents, always greater than zero: this Installment's share.
+    amount_cents: i64,
+    /// Cents: the whole purchase.
+    total_cents: i64,
+    /// The day of the purchase, `YYYY-MM-DD`.
+    date: NaiveDate,
+    description: String,
+    category: TransactionCategory,
+    credit_card: PurchaseCard,
+    invoice: InvoiceCycleResponse,
+    reference_month: String,
+    /// Some Installment of the purchase is in a paid invoice, so the purchase
+    /// can only have its Category changed or be cancelled.
+    purchase_has_paid_installments: bool,
+}
+
+impl From<InvoiceInstallment> for InvoiceInstallmentResponse {
+    fn from(item: InvoiceInstallment) -> Self {
+        let purchase = item.purchase;
+        Self {
+            id: item.installment.installment.id,
+            installment_purchase_id: purchase.id,
+            number: item.installment.installment.number,
+            installment_count: purchase.installment_count,
+            amount_cents: item.installment.installment.amount_cents,
+            total_cents: purchase.total_cents,
+            date: purchase.date,
+            description: purchase.description,
+            category: TransactionCategory::new(
+                purchase.category_id,
+                purchase.category_name,
+                "expense",
+                purchase.category_active,
+            ),
+            credit_card: PurchaseCard::new(
+                purchase.credit_card_id,
+                purchase.credit_card_name,
+                purchase.credit_card_active,
+            ),
+            reference_month: item.installment.invoice.reference_month().to_string(),
+            invoice: item.installment.invoice.into(),
+            purchase_has_paid_installments: item.purchase_has_paid_installments,
         }
     }
 }

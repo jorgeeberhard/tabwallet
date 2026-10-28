@@ -13,6 +13,7 @@ use validator::Validate;
 use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
+    installment_purchases::InstallmentPurchaseResponse,
     recurring::OccurrenceResponse,
 };
 use crate::{
@@ -23,6 +24,7 @@ use crate::{
     repositories::card_purchases::CardPurchaseRepository,
     repositories::categories::CategoryRepository,
     repositories::credit_cards::CreditCardRepository,
+    repositories::installment_purchases::InstallmentPurchaseRepository,
     repositories::recurring::RecurringRepository,
     repositories::statement::StatementRepository,
     repositories::transactions::{
@@ -158,6 +160,8 @@ pub async fn create(
 pub enum StatementItemResponse {
     Transaction(TransactionResponse),
     CardPurchase(CardPurchaseResponse),
+    /// A purchase split in Installments, with all its Installments.
+    InstallmentPurchase(InstallmentPurchaseResponse),
     /// An Occurrence of a Gasto fixo or Receita fixa, computed on read.
     Occurrence(OccurrenceResponse),
 }
@@ -234,6 +238,7 @@ pub async fn list(
         StatementRepository::new(state.pool.clone()),
         TransactionRepository::new(state.pool.clone()),
         CardPurchaseRepository::new(state.pool.clone()),
+        InstallmentPurchaseRepository::new(state.pool.clone()),
         CreditCardRepository::new(state.pool.clone()),
         RecurringRepository::new(state.pool.clone()),
     )
@@ -248,6 +253,11 @@ pub async fn list(
                 }
                 StatementItem::CardPurchase(view) => {
                     StatementItemResponse::CardPurchase(CardPurchaseResponse::new(view, today))
+                }
+                StatementItem::InstallmentPurchase(view) => {
+                    StatementItemResponse::InstallmentPurchase(InstallmentPurchaseResponse::new(
+                        view, today,
+                    ))
                 }
                 StatementItem::Occurrence(occurrence) => {
                     StatementItemResponse::Occurrence(OccurrenceResponse::new(occurrence, today))

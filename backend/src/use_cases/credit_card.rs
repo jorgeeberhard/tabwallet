@@ -9,10 +9,14 @@ use crate::{
     repositories::{
         card_purchases::{CardPurchase, CardPurchaseRepository},
         credit_cards::{CreditCard, CreditCardRepository, WriteCardError},
+        installment_purchases::InstallmentPurchaseRepository,
     },
 };
 
-use super::card_purchase::CardPurchaseView;
+use super::{
+    card_purchase::CardPurchaseView,
+    installment_purchase::{InvoiceInstallment, invoice_installments},
+};
 
 /// Why a credit-card use case failed. Unaware of HTTP: the handler layer
 /// decides the status code.
@@ -344,17 +348,29 @@ pub struct InvoiceDetail {
     pub invoice: Invoice,
     /// Newest first.
     pub purchases: Vec<CardPurchaseView>,
+    /// The Installments in the invoice, newest purchase first.
+    pub installments: Vec<InvoiceInstallment>,
 }
 
-/// The invoice of a card closing in one month, with its purchases.
+/// The invoice of a card closing in one month, with its purchases and
+/// Installments.
 pub struct GetInvoiceUseCase {
     cards: CreditCardRepository,
     purchases: CardPurchaseRepository,
+    installment_purchases: InstallmentPurchaseRepository,
 }
 
 impl GetInvoiceUseCase {
-    pub fn new(cards: CreditCardRepository, purchases: CardPurchaseRepository) -> Self {
-        Self { cards, purchases }
+    pub fn new(
+        cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
+        installment_purchases: InstallmentPurchaseRepository,
+    ) -> Self {
+        Self {
+            cards,
+            purchases,
+            installment_purchases,
+        }
     }
 
     pub async fn execute(
@@ -380,7 +396,21 @@ impl GetInvoiceUseCase {
             .filter_map(|purchase| view_of(&ledger, purchase, today))
             .filter(|view| view.invoice.closing_month == closing_month)
             .collect();
-        Ok(InvoiceDetail { invoice, purchases })
+        let installments = invoice_installments(
+            &self.installment_purchases,
+            &ledger,
+            user_id,
+            card_id,
+            closing_month,
+            today,
+        )
+        .await
+        .map_err(CreditCardError::internal)?;
+        Ok(InvoiceDetail {
+            invoice,
+            purchases,
+            installments,
+        })
     }
 }
 

@@ -11,6 +11,7 @@ use validator::Validate;
 use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
+    installment_purchases::InvoiceInstallmentResponse,
 };
 use crate::{
     app::AppState,
@@ -18,7 +19,10 @@ use crate::{
     error::ApiError,
     ids::CreditCardId,
     ledger::cards::{Invoice, InvoiceCycle, InvoiceState, Month},
-    repositories::{card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository},
+    repositories::{
+        card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
+        installment_purchases::InstallmentPurchaseRepository,
+    },
     use_cases::{
         CreateCreditCardUseCase, CreditCardChanges, CreditCardView, DeactivateCreditCardUseCase,
         GetInvoiceUseCase, ListCreditCardsUseCase, ListInvoicesUseCase,
@@ -271,6 +275,9 @@ pub struct InvoiceDetailResponse {
     invoice: InvoiceResponse,
     /// Newest first.
     purchases: Vec<CardPurchaseResponse>,
+    /// The Installments of installment purchases in this invoice (the "3/10"
+    /// lines), newest purchase first.
+    installments: Vec<InvoiceInstallmentResponse>,
 }
 
 /// `GET /credit-cards/{id}/invoices/{closing_month}` (protected): one invoice
@@ -286,6 +293,7 @@ pub async fn invoice(
     let detail = GetInvoiceUseCase::new(
         CreditCardRepository::new(state.pool.clone()),
         CardPurchaseRepository::new(state.pool.clone()),
+        InstallmentPurchaseRepository::new(state.pool.clone()),
     )
     .execute(auth_user.id, card_id, month, today)
     .await?;
@@ -296,5 +304,6 @@ pub async fn invoice(
             .into_iter()
             .map(|view| CardPurchaseResponse::new(view, today))
             .collect(),
+        installments: detail.installments.into_iter().map(Into::into).collect(),
     }))
 }

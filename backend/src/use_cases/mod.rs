@@ -41,7 +41,7 @@ pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
 pub use installment_purchase::{
     CancelInstallmentPurchaseUseCase, CancelOutcome, CreateInstallmentPurchaseUseCase,
-    InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView,
+    InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView, InvoiceInstallment,
     UpdateInstallmentPurchaseUseCase,
 };
 pub use list_categories::ListCategoriesUseCase;

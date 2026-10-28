@@ -373,3 +373,177 @@ async fn the_installment_purchase_requires_a_session() {
         .await;
     assert_eq!(response.status(), 401);
 }
+
+// --- the invoice view and the statement ---------------------------------
+
+#[tokio::test]
+async fn an_invoice_detail_lists_its_installments_with_their_numbers() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+
+    let response = ana
+        .get(&format!("/credit-cards/{nubank}/invoices/2026-02"))
+        .await;
+
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["invoice"]["total_cents"], json!(3_333));
+    let installments = body["installments"].as_array().unwrap();
+    assert_eq!(installments.len(), 1);
+    assert_eq!(installments[0]["number"], json!(2));
+    assert_eq!(installments[0]["installment_count"], json!(3));
+    assert_eq!(installments[0]["amount_cents"], json!(3_333));
+    assert_eq!(installments[0]["description"], json!("geladeira"));
+    assert_eq!(installments[0]["reference_month"], json!("2026-02"));
+    assert_eq!(
+        installments[0]["invoice"]["closing_month"],
+        json!("2026-02")
+    );
+    // The first invoice has the first Installment, with the leftover cent.
+    let january: Value = ana
+        .get(&format!("/credit-cards/{nubank}/invoices/2026-01"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(january["installments"][0]["amount_cents"], json!(3_334));
+    assert_eq!(january["installments"][0]["number"], json!(1));
+}
+
+#[tokio::test]
+async fn an_invoice_shares_its_total_between_purchases_and_installments() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+    let category = category_id(&ana, "Outros", "expense").await;
+    let single = ana
+        .post_json(
+            "/card-purchases",
+            &json!({
+                "credit_card_id": nubank,
+                "amount_cents": 1_000,
+                "date": "2026-03-05",
+                "description": "compra",
+                "category_id": category,
+            }),
+        )
+        .await;
+    assert_eq!(single.status(), 201);
+
+    let march: Value = ana
+        .get(&format!("/credit-cards/{nubank}/invoices/2026-03"))
+        .await
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(march["invoice"]["total_cents"], json!(4_333));
+    assert_eq!(march["purchases"].as_array().unwrap().len(), 1);
+    assert_eq!(march["installments"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn the_statement_shows_the_installment_purchase_with_its_installments() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+
+    let body: Value = ana.get("/transactions").await.json().await.unwrap();
+
+    assert_eq!(body["total"], json!(1));
+    let item = &body["items"][0];
+    assert_eq!(item["kind"], json!("installment_purchase"));
+    assert_eq!(item["total_cents"], json!(10_000));
+    assert_eq!(item["installment_count"], json!(3));
+    assert_eq!(item["date"], json!("2026-01-05"));
+    assert_eq!(item["credit_card"]["name"], json!("Nubank"));
+    assert_eq!(amounts(item), vec![3_334, 3_333, 3_333]);
+    assert_eq!(invoice_months(item), vec!["2026-01", "2026-02", "2026-03"]);
+}
+
+#[tokio::test]
+async fn the_statement_filters_installment_purchases_by_card_period_category_and_type() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    let itau = card(&ana, "Itaú", 10, 17).await;
+    let others = category_id(&ana, "Outros", "expense").await;
+    let food = category_id(&ana, "Alimentação", "expense").await;
+    installment_purchase_in(&ana, &nubank, &others, 10_000, 3, "2026-01-05").await;
+    installment_purchase_in(&ana, &itau, &food, 6_000, 2, "2026-01-20").await;
+
+    let matching = |query: String| {
+        let ana = &ana;
+        async move {
+            let body: Value = ana
+                .get(&format!("/transactions?{query}"))
+                .await
+                .json()
+                .await
+                .unwrap();
+            body["total"].as_i64().unwrap()
+        }
+    };
+
+    assert_eq!(matching(String::new()).await, 2);
+    assert_eq!(matching(format!("credit_card_id={nubank}")).await, 1);
+    assert_eq!(matching(format!("category_id={food}")).await, 1);
+    assert_eq!(matching("from=2026-01-10".to_string()).await, 1);
+    assert_eq!(matching("to=2026-01-10".to_string()).await, 1);
+    assert_eq!(matching("type=expense".to_string()).await, 2);
+    assert_eq!(matching("type=income".to_string()).await, 0);
+}
+
+#[tokio::test]
+async fn a_card_with_installments_to_pay_cannot_be_deactivated_until_the_last_is_paid() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+
+    app.set_today(2026, 2, 17); // January and February are paid, March is not
+    let refused = ana
+        .post_empty(&format!("/credit-cards/{nubank}/deactivate"))
+        .await;
+    assert_eq!(refused.status(), 409);
+    let body: Value = refused.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"],
+        json!("credit_card_has_remaining_invoice")
+    );
+
+    app.set_today(2026, 3, 17);
+    let allowed = ana
+        .post_empty(&format!("/credit-cards/{nubank}/deactivate"))
+        .await;
+    assert_eq!(allowed.status(), 200);
+}
+
+#[tokio::test]
+async fn a_user_cannot_see_or_change_another_users_installment_purchases() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let bia = signed_up(&app, "bia@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    let bought = installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+    let id = bought["id"].as_str().unwrap();
+
+    let statement: Value = bia.get("/transactions").await.json().await.unwrap();
+    assert_eq!(statement["total"], json!(0));
+    let edit = bia
+        .patch_json(
+            &format!("/installment-purchases/{id}"),
+            &json!({ "description": "minha" }),
+        )
+        .await;
+    assert_eq!(edit.status(), 404);
+    let delete = bia.delete(&format!("/installment-purchases/{id}")).await;
+    assert_eq!(delete.status(), 404);
+    // And it is still there for its owner.
+    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    assert_eq!(statement["total"], json!(1));
+}
