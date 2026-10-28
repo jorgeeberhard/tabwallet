@@ -16,7 +16,10 @@ use axum::{
 use serde_json::json;
 use validator::ValidationErrors;
 
-use crate::use_cases::AuthError;
+use crate::{
+    ids::CategoryId,
+    use_cases::{AuthError, CategoryError},
+};
 
 #[derive(Debug)]
 pub enum ApiError {
@@ -28,6 +31,15 @@ pub enum ApiError {
     InvalidCredentials,
     /// No valid session.
     Unauthenticated,
+    /// No such category for this user.
+    CategoryNotFound,
+    /// An active category of the same type already has this name.
+    CategoryNameTaken,
+    /// A deactivated category has this name; carries its id so the client can
+    /// offer to reactivate it.
+    CategoryInactiveExists(CategoryId),
+    /// "Juros e encargos" still has Charges, so it cannot be deactivated.
+    CategoryHasCharges,
     /// Something unexpected; the cause is logged, never sent to the client.
     Internal(String),
 }
@@ -64,8 +76,23 @@ impl From<AuthError> for ApiError {
     }
 }
 
+impl From<CategoryError> for ApiError {
+    fn from(error: CategoryError) -> Self {
+        match error {
+            CategoryError::NotFound => Self::CategoryNotFound,
+            CategoryError::NameTaken => Self::CategoryNameTaken,
+            CategoryError::InactiveNameExists(id) => Self::CategoryInactiveExists(id),
+            CategoryError::HasCharges => Self::CategoryHasCharges,
+            CategoryError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        // Extra top-level members of the `error` object, for the few errors
+        // whose client needs more than the code.
+        let mut extra = None;
         let (status, code, message, fields) = match self {
             Self::InvalidRequest => (
                 StatusCode::BAD_REQUEST,
@@ -97,6 +124,33 @@ impl IntoResponse for ApiError {
                 "Sign in to continue.",
                 None,
             ),
+            Self::CategoryNotFound => (
+                StatusCode::NOT_FOUND,
+                "category_not_found",
+                "There is no such category.",
+                None,
+            ),
+            Self::CategoryNameTaken => (
+                StatusCode::CONFLICT,
+                "category_name_taken",
+                "A category of this type already has this name.",
+                None,
+            ),
+            Self::CategoryInactiveExists(id) => {
+                extra = Some(("category_id", json!(id)));
+                (
+                    StatusCode::CONFLICT,
+                    "category_inactive_exists",
+                    "A deactivated category of this type has this name; reactivate it instead.",
+                    None,
+                )
+            }
+            Self::CategoryHasCharges => (
+                StatusCode::CONFLICT,
+                "category_has_charges",
+                "This category still has charges and cannot be deactivated.",
+                None,
+            ),
             Self::Internal(cause) => {
                 tracing::error!("internal error: {cause}");
                 (
@@ -110,6 +164,9 @@ impl IntoResponse for ApiError {
         let mut error = json!({ "code": code, "message": message });
         if let Some(fields) = fields {
             error["fields"] = json!(fields);
+        }
+        if let Some((key, value)) = extra {
+            error[key] = value;
         }
         (status, Json(json!({ "error": error }))).into_response()
     }

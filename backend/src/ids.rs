@@ -8,3 +8,8 @@ use uuid::Uuid;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct UserId(pub Uuid);
+
+/// The id of a category.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct CategoryId(pub Uuid);

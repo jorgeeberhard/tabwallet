@@ -27,6 +27,7 @@ pub fn build_router(state: AppState) -> Router {
     // an `AuthUser`, whose `id` every query must be scoped to.
     let protected = Router::new()
         .route("/auth/me", get(handlers::auth::me))
+        .route("/categories", get(handlers::categories::list))
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

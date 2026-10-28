@@ -69,6 +69,15 @@ impl Session {
         .await
     }
 
+    pub async fn patch_json(&self, path: &str, body: &Value) -> Response {
+        self.send(
+            self.client
+                .patch(format!("{}{}", self.address, path))
+                .json(body),
+        )
+        .await
+    }
+
     pub async fn post_empty(&self, path: &str) -> Response {
         self.send(self.client.post(format!("{}{}", self.address, path)))
             .await
