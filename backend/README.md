@@ -46,6 +46,22 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
 
+## Rodar as verificações sem as ferramentas de build C++ (Windows)
+
+Em máquinas sem as ferramentas de build C++ do Visual Studio (o `cargo` nativo
+falha ao linkar), use o script que executa tudo dentro de um contêiner Rust
+Linux, no Git Bash, com o Docker em execução:
+
+```bash
+backend/scripts/check.sh            # fmt --check, clippy e todos os testes
+backend/scripts/check.sh health     # mesmo, mas só os testes com "health" no nome
+```
+
+Os argumentos extras vão para o `cargo test`. O script monta o socket do Docker
+do host (para o testcontainers subir o PostgreSQL) e guarda o registro e o
+`target` do cargo em volumes nomeados (`tabwallet-cargo-registry` e
+`tabwallet-cargo-target`), então as execuções seguintes são rápidas.
+
 ## CI
 
 O workflow `.github/workflows/ci.yml` roda a cada PR e a cada push na `main`.
