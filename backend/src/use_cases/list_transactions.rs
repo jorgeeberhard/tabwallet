@@ -1,18 +1,25 @@
-use std::cmp::Reverse;
+use std::{cmp::Reverse, collections::HashMap};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::{
-    ids::{CategoryId, RecurringTransactionId, UserId},
+    ids::{CardPurchaseId, CategoryId, RecurringTransactionId, TransactionId, UserId},
     ledger::{Ledger, LedgerFacts, Occurrence, projection_horizon},
     repositories::{
+        card_purchases::CardPurchaseRepository,
+        credit_cards::CreditCardRepository,
         recurring::{RecurringRepository, RecurringTransaction},
+        statement::{StatementKey, StatementRepository},
         transactions::{Transaction, TransactionFilter, TransactionRepository, TransactionType},
     },
 };
 
-use super::TransactionError;
+use super::{
+    TransactionError,
+    card_purchase::CardPurchaseView,
+    credit_card::{card_ledger, view_of},
+};
 
 /// One Occurrence of a recurring Transaction (a Gasto fixo or Receita fixa) in
 /// the statement, with the data of the recurring Transaction it came from. It
@@ -55,24 +62,32 @@ impl StatementOccurrence {
     }
 }
 
-/// One entry of the statement. Credit-card purchases and invoice payments join
-/// as new variants, each with its own data, instead of being squeezed into
-/// `Transaction`.
+/// One entry of the statement: a Transaction outside the credit card, a card
+/// purchase (with its card and invoice) or an Occurrence of a recurring
+/// Transaction. Invoice payments join as a new variant, with its own data,
+/// instead of being squeezed into `Transaction`.
 #[derive(Clone, Debug)]
 pub enum StatementItem {
     Transaction(Transaction),
+    CardPurchase(CardPurchaseView),
     Occurrence(StatementOccurrence),
 }
 
 impl StatementItem {
     /// The order of the statement, newest first: date, then creation, then id
     /// (for an Occurrence, the id of its recurring Transaction). It is the
-    /// order the database uses for Transactions, so both can be merged.
+    /// order the database uses for Transactions and card purchases, so all can
+    /// be merged.
     fn sort_key(&self) -> (NaiveDate, DateTime<Utc>, Uuid) {
         match self {
             Self::Transaction(transaction) => {
                 (transaction.date, transaction.created_at, transaction.id.0)
             }
+            Self::CardPurchase(view) => (
+                view.purchase.date,
+                view.purchase.created_at,
+                view.purchase.id.0,
+            ),
             Self::Occurrence(occurrence) => (
                 occurrence.date,
                 occurrence.created_at,
@@ -88,22 +103,37 @@ pub struct Statement {
     pub total: i64,
 }
 
-/// UC08: lists the user's Transactions and the Occurrences of their recurring
-/// Transactions, newest first, optionally narrowed by period, Category and
-/// type.
+/// UC08: lists the user's Transactions, card purchases and the Occurrences of
+/// their recurring Transactions, newest first, optionally narrowed by period,
+/// Category, type and credit card.
 ///
-/// Occurrences are computed here from the ledger, never read from the
-/// database. Without an end date the statement reaches the projection horizon
-/// (the end of the month 12 months from now); a later `to` is cut there.
+/// Transactions and card purchases are ordered and paged by the database
+/// (`StatementRepository`). Occurrences are computed here from the ledger,
+/// never read from the database, and merged in. Without an end date the
+/// statement reaches the projection horizon (the end of the month 12 months
+/// from now); a later `to` is cut there. A credit card filter leaves the
+/// Occurrences out: they never belong to a card.
 pub struct ListTransactionsUseCase {
+    statement: StatementRepository,
     transactions: TransactionRepository,
+    purchases: CardPurchaseRepository,
+    cards: CreditCardRepository,
     recurring: RecurringRepository,
 }
 
 impl ListTransactionsUseCase {
-    pub fn new(transactions: TransactionRepository, recurring: RecurringRepository) -> Self {
+    pub fn new(
+        statement: StatementRepository,
+        transactions: TransactionRepository,
+        purchases: CardPurchaseRepository,
+        cards: CreditCardRepository,
+        recurring: RecurringRepository,
+    ) -> Self {
         Self {
+            statement,
             transactions,
+            purchases,
+            cards,
             recurring,
         }
     }
@@ -116,24 +146,20 @@ impl ListTransactionsUseCase {
         limit: i64,
         offset: i64,
     ) -> Result<Statement, TransactionError> {
-        let occurrences = self.occurrences(user_id, today, filter).await?;
+        let occurrences = if filter.credit_card_id.is_some() {
+            Vec::new()
+        } else {
+            self.occurrences(user_id, today, filter).await?
+        };
         let total = self
-            .transactions
+            .statement
             .count(user_id, filter)
             .await
             .map_err(TransactionError::internal)?;
 
         if occurrences.is_empty() {
-            let transactions = self
-                .transactions
-                .list(user_id, filter, limit, offset)
-                .await
-                .map_err(TransactionError::internal)?;
             return Ok(Statement {
-                items: transactions
-                    .into_iter()
-                    .map(StatementItem::Transaction)
-                    .collect(),
+                items: self.stored(user_id, today, filter, limit, offset).await?,
                 total,
             });
         }
@@ -142,16 +168,8 @@ impl ListTransactionsUseCase {
         // merged, so the first `offset + limit` of each list are enough.
         let occurrence_count = occurrences.len() as i64;
         let head = (offset + limit).max(0);
-        let transactions = self
-            .transactions
-            .list(user_id, filter, head, 0)
-            .await
-            .map_err(TransactionError::internal)?;
-        let mut items: Vec<StatementItem> = transactions
-            .into_iter()
-            .map(StatementItem::Transaction)
-            .chain(occurrences.into_iter().map(StatementItem::Occurrence))
-            .collect();
+        let mut items = self.stored(user_id, today, filter, head, 0).await?;
+        items.extend(occurrences.into_iter().map(StatementItem::Occurrence));
         items.sort_by_key(|item| Reverse(item.sort_key()));
         Ok(Statement {
             total: total + occurrence_count,
@@ -161,6 +179,75 @@ impl ListTransactionsUseCase {
                 .take(limit as usize)
                 .collect(),
         })
+    }
+
+    /// One page of what is stored (Transactions and card purchases), in the
+    /// order of the statement.
+    async fn stored(
+        &self,
+        user_id: UserId,
+        today: NaiveDate,
+        filter: TransactionFilter,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<StatementItem>, TransactionError> {
+        let keys = self
+            .statement
+            .page(user_id, filter, limit, offset)
+            .await
+            .map_err(TransactionError::internal)?;
+
+        let transaction_ids: Vec<TransactionId> = keys
+            .iter()
+            .filter_map(|key| match key {
+                StatementKey::Transaction(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        let purchase_ids: Vec<CardPurchaseId> = keys
+            .iter()
+            .filter_map(|key| match key {
+                StatementKey::CardPurchase(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+
+        let mut transactions: HashMap<TransactionId, Transaction> = self
+            .transactions
+            .find_many(user_id, &transaction_ids)
+            .await
+            .map_err(TransactionError::internal)?
+            .into_iter()
+            .map(|transaction| (transaction.id, transaction))
+            .collect();
+        let mut purchases: HashMap<CardPurchaseId, CardPurchaseView> = HashMap::new();
+        if !purchase_ids.is_empty() {
+            let (_, ledger) = card_ledger(&self.cards, &self.purchases, user_id)
+                .await
+                .map_err(TransactionError::internal)?;
+            for purchase in self
+                .purchases
+                .find_many(user_id, &purchase_ids)
+                .await
+                .map_err(TransactionError::internal)?
+            {
+                if let Some(view) = view_of(&ledger, purchase, today) {
+                    purchases.insert(view.purchase.id, view);
+                }
+            }
+        }
+
+        Ok(keys
+            .into_iter()
+            .filter_map(|key| match key {
+                StatementKey::Transaction(id) => {
+                    transactions.remove(&id).map(StatementItem::Transaction)
+                }
+                StatementKey::CardPurchase(id) => {
+                    purchases.remove(&id).map(StatementItem::CardPurchase)
+                }
+            })
+            .collect())
     }
 
     /// The Occurrences inside the filter's period (up to the projection

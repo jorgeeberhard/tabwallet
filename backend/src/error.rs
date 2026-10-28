@@ -19,7 +19,8 @@ use validator::ValidationErrors;
 use crate::{
     ids::CategoryId,
     use_cases::{
-        AuthError, BalanceError, CategoryError, CategoryProblem, RecurringError, TransactionError,
+        AuthError, BalanceError, CardProblem, CardPurchaseError, CategoryError, CategoryProblem,
+        CreditCardError, RecurringError, TransactionError,
     },
 };
 
@@ -50,6 +51,19 @@ pub enum ApiError {
     TransactionNotFound,
     /// The Opening Balance was already informed; it is informed once.
     OpeningBalanceAlreadySet,
+    /// No such credit card for this user.
+    CreditCardNotFound,
+    /// The card has no such invoice.
+    InvoiceNotFound,
+    /// Another card of the user has this name.
+    CreditCardNameTaken,
+    /// An invoice of the card still has an amount to pay, so the card cannot
+    /// be deactivated.
+    CreditCardHasRemainingInvoice,
+    /// No such card purchase for this user.
+    CardPurchaseNotFound,
+    /// The card purchase is in a paid invoice and cannot be edited or deleted.
+    InvoicePaid,
     /// No such recurring Transaction for this user.
     RecurringTransactionNotFound,
     /// The recurring Transaction has no Occurrence in that month.
@@ -135,6 +149,47 @@ impl From<BalanceError> for ApiError {
         match error {
             BalanceError::OpeningBalanceAlreadySet => Self::OpeningBalanceAlreadySet,
             BalanceError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<CreditCardError> for ApiError {
+    fn from(error: CreditCardError) -> Self {
+        match error {
+            CreditCardError::NotFound => Self::CreditCardNotFound,
+            CreditCardError::InvoiceNotFound => Self::InvoiceNotFound,
+            CreditCardError::NameTaken => Self::CreditCardNameTaken,
+            CreditCardError::HasRemainingInvoice => Self::CreditCardHasRemainingInvoice,
+            CreditCardError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<CardPurchaseError> for ApiError {
+    fn from(error: CardPurchaseError) -> Self {
+        let field = |name: &str, rule: &str| {
+            Self::Validation(BTreeMap::from([(name.to_string(), rule.to_string())]))
+        };
+        match error {
+            CardPurchaseError::NotFound => Self::CardPurchaseNotFound,
+            CardPurchaseError::InvalidCategory(problem) => field(
+                "category_id",
+                match problem {
+                    CategoryProblem::NotFound => "category_not_found",
+                    CategoryProblem::TypeMismatch => "category_type_mismatch",
+                    CategoryProblem::Inactive => "category_inactive",
+                },
+            ),
+            CardPurchaseError::InvalidCard(problem) => field(
+                "credit_card_id",
+                match problem {
+                    CardProblem::NotFound => "credit_card_not_found",
+                    CardProblem::Inactive => "credit_card_inactive",
+                },
+            ),
+            CardPurchaseError::InvoicePaid => Self::InvoicePaid,
+            CardPurchaseError::DateInPaidInvoice => field("date", "invoice_paid"),
+            CardPurchaseError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -243,6 +298,42 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "opening_balance_already_set",
                 "The opening balance was already informed and cannot be changed.",
+                None,
+            ),
+            Self::CreditCardNotFound => (
+                StatusCode::NOT_FOUND,
+                "credit_card_not_found",
+                "There is no such credit card.",
+                None,
+            ),
+            Self::InvoiceNotFound => (
+                StatusCode::NOT_FOUND,
+                "invoice_not_found",
+                "The credit card has no such invoice.",
+                None,
+            ),
+            Self::CreditCardNameTaken => (
+                StatusCode::CONFLICT,
+                "credit_card_name_taken",
+                "A credit card with this name already exists.",
+                None,
+            ),
+            Self::CreditCardHasRemainingInvoice => (
+                StatusCode::CONFLICT,
+                "credit_card_has_remaining_invoice",
+                "An invoice of this credit card still has an amount to pay.",
+                None,
+            ),
+            Self::CardPurchaseNotFound => (
+                StatusCode::NOT_FOUND,
+                "card_purchase_not_found",
+                "There is no such card purchase.",
+                None,
+            ),
+            Self::InvoicePaid => (
+                StatusCode::CONFLICT,
+                "invoice_paid",
+                "The purchase is in a paid invoice and cannot be changed.",
                 None,
             ),
             Self::RecurringTransactionNotFound => (

@@ -14,6 +14,16 @@ pub struct UserId(pub Uuid);
 #[sqlx(transparent)]
 pub struct TransactionId(pub Uuid);
 
+/// The id of a credit card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct CreditCardId(pub Uuid);
+
+/// The id of a card purchase (an expense linked to a credit card).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct CardPurchaseId(pub Uuid);
+
 /// The id of a category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(transparent)]

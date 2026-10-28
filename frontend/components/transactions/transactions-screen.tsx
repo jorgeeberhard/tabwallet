@@ -6,10 +6,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
-import { InboxIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
+import { CreditCardIcon, InboxIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
+import {
+  CardPurchaseDialog,
+  type CardPurchaseDialogMode,
+} from "@/components/credit-cards/card-purchase-dialog"
+import { CardPurchaseRow } from "@/components/credit-cards/card-purchase-row"
+import { DeleteCardPurchaseDialog } from "@/components/credit-cards/delete-card-purchase-dialog"
 import {
   TransactionDialog,
   type TransactionDialogMode,
@@ -44,6 +50,11 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { BALANCE_KEY } from "@/lib/balance-api"
 import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
+import {
+  type CardPurchase,
+  CREDIT_CARDS_KEY,
+  listCreditCards,
+} from "@/lib/credit-cards-api"
 import { formatDate, formatMonth } from "@/lib/format"
 import { type Occurrence, skipOccurrence } from "@/lib/recurring-api"
 import { recurringFailure } from "@/lib/recurring-messages"
@@ -70,6 +81,7 @@ const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
 ]
 
 const ALL_CATEGORIES = "all"
+const ALL_CARDS = "all"
 
 /** Groups consecutive items by the month of their date (the list is newest first). */
 function groupByMonth(items: StatementItem[]) {
@@ -90,8 +102,11 @@ export function TransactionsScreen() {
   const [categoryId, setCategoryId] = useState(ALL_CATEGORIES)
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
+  const [creditCardId, setCreditCardId] = useState(ALL_CARDS)
   const [dialog, setDialog] = useState<TransactionDialogMode | null>(null)
+  const [cardDialog, setCardDialog] = useState<CardPurchaseDialogMode | null>(null)
   const [toDelete, setToDelete] = useState<Transaction | null>(null)
+  const [cardPurchaseToDelete, setCardPurchaseToDelete] = useState<CardPurchase | null>(null)
   const [occurrenceToEdit, setOccurrenceToEdit] = useState<Occurrence | null>(null)
   const [occurrenceToSkip, setOccurrenceToSkip] = useState<Occurrence | null>(null)
 
@@ -102,10 +117,17 @@ export function TransactionsScreen() {
     from: from || undefined,
     // A backwards period would be refused by the API: wait for the person to fix it.
     to: to || undefined,
+    creditCardId: creditCardId === ALL_CARDS ? undefined : creditCardId,
   }
-  const hasFilters = type !== "all" || categoryId !== ALL_CATEGORIES || !!from || !!to
+  const hasFilters =
+    type !== "all" ||
+    categoryId !== ALL_CATEGORIES ||
+    creditCardId !== ALL_CARDS ||
+    !!from ||
+    !!to
 
   const categories = useQuery({ queryKey: CATEGORIES_KEY, queryFn: listCategories })
+  const cards = useQuery({ queryKey: CREDIT_CARDS_KEY, queryFn: listCreditCards })
   const statement = useInfiniteQuery({
     queryKey: statementKey(filters),
     queryFn: ({ pageParam }) => listTransactions({ ...filters, offset: pageParam }),
@@ -147,6 +169,7 @@ export function TransactionsScreen() {
   function clearFilters() {
     setType("all")
     setCategoryId(ALL_CATEGORIES)
+    setCreditCardId(ALL_CARDS)
     setFrom("")
     setTo("")
   }
@@ -156,6 +179,13 @@ export function TransactionsScreen() {
     // The chosen category may be of the other type.
     const chosen = categories.data?.find((category) => category.id === categoryId)
     if (chosen && next !== "all" && chosen.type !== next) setCategoryId(ALL_CATEGORIES)
+    // Card purchases are expenses: no card matches an income filter.
+    if (next === "income") setCreditCardId(ALL_CARDS)
+  }
+
+  function changeCard(next: string) {
+    setCreditCardId(next)
+    if (next !== ALL_CARDS && type === "income") setType("all")
   }
 
   const categoryOptions = (categories.data ?? []).filter(
@@ -171,20 +201,27 @@ export function TransactionsScreen() {
         <div className="flex flex-col gap-1">
           <h1 className="font-display text-3xl font-bold tracking-tight">Transações</h1>
           <p className="max-w-prose text-muted-foreground">
-            Receitas e despesas que não passaram pelo cartão de crédito, inclusive as ocorrências
-            dos seus gastos e receitas fixos. Lançamentos com data futura aparecem como projeção.
+            Receitas, despesas, ocorrências dos seus gastos e receitas fixos e compras no cartão
+            de crédito. As compras no cartão mostram a fatura em que entram e só mexem no saldo
+            quando a fatura é paga. Lançamentos com data futura aparecem como projeção.
           </p>
         </div>
-        <Button onClick={() => setDialog({ kind: "create", type: newDialogType })}>
-          <PlusIcon strokeWidth={1.75} />
-          Nova transação
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setCardDialog({ kind: "create" })}>
+            <CreditCardIcon strokeWidth={1.75} />
+            Nova compra no cartão
+          </Button>
+          <Button onClick={() => setDialog({ kind: "create", type: newDialogType })}>
+            <PlusIcon strokeWidth={1.75} />
+            Nova transação
+          </Button>
+        </div>
       </div>
 
       <form
         aria-label="Filtros"
         onSubmit={(event) => event.preventDefault()}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[auto_1fr_10rem_10rem_auto] lg:items-end"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[auto_1fr_1fr_10rem_10rem_auto] lg:items-end"
       >
         <ToggleGroup
           type="single"
@@ -217,6 +254,24 @@ export function TransactionsScreen() {
                 <SelectItem key={category.id} value={category.id}>
                   {category.name}
                   {!category.active && " (desativada)"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field>
+          <FieldLabel htmlFor="filter-card">Cartão</FieldLabel>
+          <Select value={creditCardId} onValueChange={changeCard}>
+            <SelectTrigger id="filter-card" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CARDS}>Todos os cartões</SelectItem>
+              {(cards.data ?? []).map((card) => (
+                <SelectItem key={card.id} value={card.id}>
+                  {card.name}
+                  {!card.active && " (desativado)"}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -312,7 +367,14 @@ export function TransactionsScreen() {
               <Card className="gap-0 py-0">
                 <ul aria-label={`Transações de ${group.month}`} className="divide-y">
                   {group.items.map((item) =>
-                    item.kind === "occurrence" ? (
+                    item.kind === "card_purchase" ? (
+                      <CardPurchaseRow
+                        key={statementItemKey(item)}
+                        purchase={item}
+                        onEdit={(purchase) => setCardDialog({ kind: "edit", purchase })}
+                        onDelete={setCardPurchaseToDelete}
+                      />
+                    ) : item.kind === "occurrence" ? (
                       <OccurrenceRow
                         key={statementItemKey(item)}
                         occurrence={item}
@@ -358,6 +420,18 @@ export function TransactionsScreen() {
           onClose={() => setDialog(null)}
         />
       )}
+
+      {cardDialog && (
+        <CardPurchaseDialog
+          key={cardDialog.kind === "edit" ? cardDialog.purchase.id : "create"}
+          mode={cardDialog}
+          onClose={() => setCardDialog(null)}
+        />
+      )}
+      <DeleteCardPurchaseDialog
+        purchase={cardPurchaseToDelete}
+        onClose={() => setCardPurchaseToDelete(null)}
+      />
 
       {occurrenceToEdit && (
         <OccurrenceAmountDialog
