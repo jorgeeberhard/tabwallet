@@ -34,3 +34,10 @@ where
         Ok(Self(value))
     }
 }
+
+/// Like [`trimmed`], for an optional field of an edit request.
+pub(super) fn trimmed_opt<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(|value| value.map(|v| v.trim().to_string()))
+}

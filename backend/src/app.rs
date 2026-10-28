@@ -50,6 +50,10 @@ pub fn build_router(state: AppState) -> Router {
             "/transactions",
             get(handlers::transactions::list).post(handlers::transactions::create),
         )
+        .route(
+            "/transactions/{id}",
+            patch(handlers::transactions::update).delete(handlers::transactions::delete),
+        )
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 
     Router::new()

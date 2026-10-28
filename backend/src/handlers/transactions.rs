@@ -1,9 +1,14 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 
-use super::extract::{ValidatedJson, trimmed};
+use super::extract::{ValidatedJson, trimmed, trimmed_opt};
 use crate::{
     app::AppState,
     auth::AuthUser,
@@ -11,9 +16,12 @@ use crate::{
     ids::{CategoryId, TransactionId},
     repositories::categories::CategoryRepository,
     repositories::transactions::{
-        NewTransaction, Transaction, TransactionRepository, TransactionType,
+        NewTransaction, Transaction, TransactionChanges, TransactionRepository, TransactionType,
     },
-    use_cases::{CreateTransactionUseCase, ListTransactionsUseCase, Statement, StatementItem},
+    use_cases::{
+        CreateTransactionUseCase, DeleteTransactionUseCase, ListTransactionsUseCase, Statement,
+        StatementItem, UpdateTransactionUseCase,
+    },
 };
 
 /// The largest amount accepted, in cents (R$ 1 billion): far above any
@@ -160,4 +168,64 @@ pub async fn list(
         limit,
         offset,
     }))
+}
+
+/// Every field is optional: only what is present changes. The type cannot be
+/// changed, so a `type` in the body is ignored.
+#[derive(Deserialize, Validate)]
+pub struct UpdateRequest {
+    #[validate(range(min = 1, max = MAX_AMOUNT_CENTS, code = "amount_range"))]
+    amount_cents: Option<i64>,
+    date: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "trimmed_opt")]
+    #[validate(length(min = 1, max = MAX_DESCRIPTION_LEN, code = "description_length"))]
+    description: Option<String>,
+    category_id: Option<CategoryId>,
+}
+
+/// A malformed id is a transaction that does not exist.
+fn parse_id(raw: &str) -> Result<TransactionId, ApiError> {
+    Uuid::parse_str(raw)
+        .map(TransactionId)
+        .map_err(|_| ApiError::TransactionNotFound)
+}
+
+/// `PATCH /transactions/{id}` (protected): edits amount, date, description
+/// and category.
+pub async fn update(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<String>,
+    ValidatedJson(request): ValidatedJson<UpdateRequest>,
+) -> Result<Json<TransactionEnvelope>, ApiError> {
+    let transaction = UpdateTransactionUseCase::new(
+        TransactionRepository::new(state.pool.clone()),
+        CategoryRepository::new(state.pool.clone()),
+    )
+    .execute(
+        auth_user.id,
+        parse_id(&id)?,
+        TransactionChanges {
+            amount_cents: request.amount_cents,
+            date: request.date,
+            description: request.description,
+            category_id: request.category_id,
+        },
+    )
+    .await?;
+    Ok(Json(TransactionEnvelope {
+        transaction: TransactionResponse::new(transaction, state.clock.today()),
+    }))
+}
+
+/// `DELETE /transactions/{id}` (protected).
+pub async fn delete(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    DeleteTransactionUseCase::new(TransactionRepository::new(state.pool.clone()))
+        .execute(auth_user.id, parse_id(&id)?)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -3,6 +3,7 @@ mod category_error;
 mod check_health;
 mod create_category;
 mod create_transaction;
+mod delete_transaction;
 mod get_current_user;
 mod list_categories;
 mod list_transactions;
@@ -14,12 +15,14 @@ mod set_category_active;
 mod sign_up;
 mod transaction_error;
 mod update_profile;
+mod update_transaction;
 
 pub use auth_error::{AuthError, Session};
 pub use category_error::CategoryError;
 pub use check_health::{CheckHealthUseCase, HealthReport};
 pub use create_category::CreateCategoryUseCase;
 pub use create_transaction::CreateTransactionUseCase;
+pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
 pub use list_categories::ListCategoriesUseCase;
 pub use list_transactions::{ListTransactionsUseCase, Statement, StatementItem};
@@ -31,3 +34,4 @@ pub use set_category_active::{DeactivateCategoryUseCase, ReactivateCategoryUseCa
 pub use sign_up::SignUpUseCase;
 pub use transaction_error::{CategoryProblem, TransactionError};
 pub use update_profile::{ProfileChanges, UpdateProfileUseCase};
+pub use update_transaction::UpdateTransactionUseCase;
