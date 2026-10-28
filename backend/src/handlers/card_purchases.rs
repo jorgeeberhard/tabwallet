@@ -37,6 +37,12 @@ pub struct PurchaseCard {
     active: bool,
 }
 
+impl PurchaseCard {
+    pub fn new(id: CreditCardId, name: String, active: bool) -> Self {
+        Self { id, name, active }
+    }
+}
+
 /// The public view of a card purchase.
 #[derive(Serialize)]
 pub struct CardPurchaseResponse {

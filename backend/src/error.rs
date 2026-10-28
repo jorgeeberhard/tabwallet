@@ -20,7 +20,7 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, CardProblem, CardPurchaseError, CategoryError, CategoryProblem,
-        CreditCardError, RecurringError, TransactionError,
+        CreditCardError, InstallmentPurchaseError, RecurringError, TransactionError,
     },
 };
 
@@ -64,6 +64,11 @@ pub enum ApiError {
     CardPurchaseNotFound,
     /// The card purchase is in a paid invoice and cannot be edited or deleted.
     InvoicePaid,
+    /// No such installment purchase for this user.
+    InstallmentPurchaseNotFound,
+    /// Some Installment of the purchase is in a paid invoice, so only its
+    /// Category can change.
+    InstallmentsPaid,
     /// No such recurring Transaction for this user.
     RecurringTransactionNotFound,
     /// The recurring Transaction has no Occurrence in that month.
@@ -190,6 +195,39 @@ impl From<CardPurchaseError> for ApiError {
             CardPurchaseError::InvoicePaid => Self::InvoicePaid,
             CardPurchaseError::DateInPaidInvoice => field("date", "invoice_paid"),
             CardPurchaseError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<InstallmentPurchaseError> for ApiError {
+    fn from(error: InstallmentPurchaseError) -> Self {
+        let field = |name: &str, rule: &str| {
+            Self::Validation(BTreeMap::from([(name.to_string(), rule.to_string())]))
+        };
+        match error {
+            InstallmentPurchaseError::NotFound => Self::InstallmentPurchaseNotFound,
+            InstallmentPurchaseError::InvalidCategory(problem) => field(
+                "category_id",
+                match problem {
+                    CategoryProblem::NotFound => "category_not_found",
+                    CategoryProblem::TypeMismatch => "category_type_mismatch",
+                    CategoryProblem::Inactive => "category_inactive",
+                },
+            ),
+            InstallmentPurchaseError::InvalidCard(problem) => field(
+                "credit_card_id",
+                match problem {
+                    CardProblem::NotFound => "credit_card_not_found",
+                    CardProblem::Inactive => "credit_card_inactive",
+                },
+            ),
+            InstallmentPurchaseError::Invalid { field: name, rule } => field(name, rule),
+            InstallmentPurchaseError::DateInPaidInvoice => field("date", "invoice_paid"),
+            InstallmentPurchaseError::InstallmentsPaid => Self::InstallmentsPaid,
+            // Every Installment is in a paid invoice: same answer as a single
+            // purchase in a paid invoice.
+            InstallmentPurchaseError::AllPaid => Self::InvoicePaid,
+            InstallmentPurchaseError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -334,6 +372,18 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "invoice_paid",
                 "The purchase is in a paid invoice and cannot be changed.",
+                None,
+            ),
+            Self::InstallmentPurchaseNotFound => (
+                StatusCode::NOT_FOUND,
+                "installment_purchase_not_found",
+                "There is no such installment purchase.",
+                None,
+            ),
+            Self::InstallmentsPaid => (
+                StatusCode::CONFLICT,
+                "installments_paid",
+                "Some installments are already in a paid invoice; only the category can change.",
                 None,
             ),
             Self::RecurringTransactionNotFound => (

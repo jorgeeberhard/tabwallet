@@ -5,7 +5,7 @@ use sqlx::PgPool;
 
 use crate::{
     ids::{CreditCardId, UserId},
-    ledger::cards::{CardSchedule, Month, ScheduleVersion},
+    ledger::cards::{CardSchedule, InstallmentCharge, Month, ScheduleVersion},
 };
 
 /// A credit card. Its closing and due days are not here: they have a history
@@ -62,6 +62,13 @@ impl ScheduleRow {
             due_day: self.due_day as u32,
         }
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct ChargeRow {
+    credit_card_id: CreditCardId,
+    invoice_month: NaiveDate,
+    amount_cents: i64,
 }
 
 pub struct CreditCardRepository {
@@ -197,6 +204,37 @@ impl CreditCardRepository {
             .into_iter()
             .filter_map(|(id, versions)| CardSchedule::new(versions).map(|s| (id, s)))
             .collect())
+    }
+
+    /// The user's Installments as facts for the ledger, per card: each one's
+    /// amount and the invoice (closing month) it is in. They are read here,
+    /// with the card's other facts, so that every question about a card's
+    /// invoices sees them; the installment purchases themselves are the
+    /// business of `InstallmentPurchaseRepository`.
+    pub async fn installment_charges(
+        &self,
+        user_id: UserId,
+    ) -> Result<HashMap<CreditCardId, Vec<InstallmentCharge>>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, ChargeRow>(
+            "SELECT p.credit_card_id, i.invoice_month, i.amount_cents
+             FROM installments i
+             JOIN installment_purchases p ON p.id = i.installment_purchase_id
+             WHERE i.user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut grouped: HashMap<CreditCardId, Vec<InstallmentCharge>> = HashMap::new();
+        for row in rows {
+            grouped
+                .entry(row.credit_card_id)
+                .or_default()
+                .push(InstallmentCharge {
+                    invoice_month: Month::of(row.invoice_month),
+                    amount_cents: row.amount_cents,
+                });
+        }
+        Ok(grouped)
     }
 
     /// Starts new closing and due days at the invoice closing in `from`,

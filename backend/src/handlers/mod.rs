@@ -5,6 +5,7 @@ pub mod categories;
 pub mod credit_cards;
 mod extract;
 pub mod health;
+pub mod installment_purchases;
 pub mod password_reset;
 pub mod profile;
 pub mod recurring;

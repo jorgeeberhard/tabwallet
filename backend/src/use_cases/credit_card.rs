@@ -87,6 +87,10 @@ pub(super) async fn card_ledger(
         .spending(user_id)
         .await
         .map_err(CreditCardError::internal)?;
+    let mut installments = cards
+        .installment_charges(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
     let facts = list
         .iter()
         .filter_map(|card| {
@@ -94,6 +98,7 @@ pub(super) async fn card_ledger(
                 id: card.id,
                 schedule: schedules.remove(&card.id)?,
                 spending: spending.remove(&card.id).unwrap_or_default(),
+                installments: installments.remove(&card.id).unwrap_or_default(),
             })
         })
         .collect();
