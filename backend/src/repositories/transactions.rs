@@ -2,7 +2,10 @@ use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::PgPool;
 
 use super::categories::CategoryType;
-use crate::ids::{CategoryId, TransactionId, UserId};
+use crate::{
+    ids::{CategoryId, TransactionId, UserId},
+    ledger::{CashFlow, FlowKind},
+};
 
 /// A Transaction is an income or an expense, like its Category.
 pub type TransactionType = CategoryType;
@@ -218,4 +221,38 @@ impl TransactionRepository {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    /// The user's transactions as facts for the ledger: the amounts added up
+    /// per day and type. Which of them count (a day up to today, or later) is
+    /// the ledger's business, so every date is returned.
+    pub async fn cash_flows(&self, user_id: UserId) -> Result<Vec<CashFlow>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, CashFlowRow>(
+            "SELECT date, type, sum(amount_cents)::bigint AS amount_cents
+             FROM transactions
+             WHERE user_id = $1
+             GROUP BY date, type",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| CashFlow {
+                date: row.date,
+                kind: match row.kind {
+                    TransactionType::Income => FlowKind::Income,
+                    TransactionType::Expense => FlowKind::Expense,
+                },
+                amount_cents: row.amount_cents,
+            })
+            .collect())
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct CashFlowRow {
+    date: NaiveDate,
+    #[sqlx(rename = "type", try_from = "String")]
+    kind: TransactionType,
+    amount_cents: i64,
 }

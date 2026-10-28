@@ -46,6 +46,8 @@ pub fn build_router(state: AppState) -> Router {
             "/categories/{id}/reactivate",
             post(handlers::categories::reactivate),
         )
+        .route("/balance", get(handlers::balance::get))
+        .route("/balance/opening", post(handlers::balance::set_opening))
         .route(
             "/transactions",
             get(handlers::transactions::list).post(handlers::transactions::create),

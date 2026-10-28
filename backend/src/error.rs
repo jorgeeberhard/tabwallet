@@ -18,7 +18,7 @@ use validator::ValidationErrors;
 
 use crate::{
     ids::CategoryId,
-    use_cases::{AuthError, CategoryError, CategoryProblem, TransactionError},
+    use_cases::{AuthError, BalanceError, CategoryError, CategoryProblem, TransactionError},
 };
 
 #[derive(Debug)]
@@ -46,6 +46,8 @@ pub enum ApiError {
     CategoryHasCharges,
     /// No such transaction for this user.
     TransactionNotFound,
+    /// The Opening Balance was already informed; it is informed once.
+    OpeningBalanceAlreadySet,
     /// Something unexpected; the cause is logged, never sent to the client.
     Internal(String),
 }
@@ -116,6 +118,15 @@ impl From<TransactionError> for ApiError {
                 )]))
             }
             TransactionError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<BalanceError> for ApiError {
+    fn from(error: BalanceError) -> Self {
+        match error {
+            BalanceError::OpeningBalanceAlreadySet => Self::OpeningBalanceAlreadySet,
+            BalanceError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -201,6 +212,12 @@ impl IntoResponse for ApiError {
                 StatusCode::NOT_FOUND,
                 "transaction_not_found",
                 "There is no such transaction.",
+                None,
+            ),
+            Self::OpeningBalanceAlreadySet => (
+                StatusCode::CONFLICT,
+                "opening_balance_already_set",
+                "The opening balance was already informed and cannot be changed.",
                 None,
             ),
             Self::Internal(cause) => {

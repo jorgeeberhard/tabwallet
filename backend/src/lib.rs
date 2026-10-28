@@ -16,5 +16,6 @@ pub mod email;
 pub mod error;
 pub mod handlers;
 pub mod ids;
+pub mod ledger;
 pub mod repositories;
 pub mod use_cases;
