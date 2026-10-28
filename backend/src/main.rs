@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use tabwallet_backend::{
     app::{AppState, build_router},
+    auth::Auth,
     clock::SystemClock,
     db,
 };
@@ -20,6 +21,8 @@ async fn main() {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
 
+    let auth = Auth::from_env().unwrap_or_else(|error| panic!("{error}"));
+
     let pool = db::connect(&database_url)
         .await
         .expect("failed to connect to the database");
@@ -32,6 +35,7 @@ async fn main() {
     let state = AppState {
         pool,
         clock: Arc::new(SystemClock),
+        auth,
     };
     axum::serve(listener, build_router(state))
         .await
