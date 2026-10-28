@@ -26,6 +26,10 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 
 `app/(app)/categorias` mostra a tela de categorias (`components/categories/`), com atalho na página inicial: alterna Despesas e Receitas, lista as ativas e as desativadas, e permite criar, renomear, desativar e reativar. Se o nome digitado é o de uma categoria desativada, o diálogo oferece "Reativar categoria". As chamadas ficam em `lib/categories-api.ts` e os textos de erro em `lib/category-messages.ts`.
 
+## Transações
+
+`app/(app)/transacoes` mostra o extrato (`components/transactions/`), com atalho na página inicial: lista agrupada por mês, mais novas primeiro, com filtros de tipo, Categoria e período, "Carregar mais" (páginas de 50) e estado vazio. Cada linha (`TransactionRow`) marca as Projeções (data depois de hoje) com um selo "Projeção"; uma Categoria desativada continua aparecendo na Transação antiga. O diálogo de lançamento/edição tem alternância Despesa/Receita, `MoneyInput`, data, descrição e Categoria (só as ativas do tipo escolhido; ao editar, a atual continua na lista). Excluir pede confirmação. A API fala em centavos: `lib/amount.ts` converte o que a pessoa digita ("1.180,40") para centavos sem usar ponto flutuante, e `lib/transactions-api.ts` converte para reais na borda, para o `Money`. "Hoje" no formulário é o dia de America/Sao_Paulo (`lib/today.ts`), o mesmo da API.
+
 ## Pré-requisitos
 
 - Node.js 22 e npm.
