@@ -14,6 +14,8 @@ import {
   TransactionDialog,
   type TransactionDialogMode,
 } from "@/components/transactions/transaction-dialog"
+import { OccurrenceAmountDialog } from "@/components/transactions/occurrence-amount-dialog"
+import { OccurrenceRow } from "@/components/transactions/occurrence-row"
 import { TransactionRow } from "@/components/transactions/transaction-row"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
@@ -42,13 +44,16 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { BALANCE_KEY } from "@/lib/balance-api"
 import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
-import { formatMonth } from "@/lib/format"
+import { formatDate, formatMonth } from "@/lib/format"
+import { type Occurrence, skipOccurrence } from "@/lib/recurring-api"
+import { recurringFailure } from "@/lib/recurring-messages"
 import { transactionFailure } from "@/lib/transaction-messages"
 import {
   deleteTransaction,
   listTransactions,
   PAGE_SIZE,
   type StatementItem,
+  statementItemKey,
   statementKey,
   type Transaction,
   TRANSACTIONS_KEY,
@@ -87,6 +92,8 @@ export function TransactionsScreen() {
   const [to, setTo] = useState("")
   const [dialog, setDialog] = useState<TransactionDialogMode | null>(null)
   const [toDelete, setToDelete] = useState<Transaction | null>(null)
+  const [occurrenceToEdit, setOccurrenceToEdit] = useState<Occurrence | null>(null)
+  const [occurrenceToSkip, setOccurrenceToSkip] = useState<Occurrence | null>(null)
 
   const periodIsBackwards = !!from && !!to && from > to
   const filters: TransactionFilters = {
@@ -122,6 +129,21 @@ export function TransactionsScreen() {
     },
   })
 
+  const skip = useMutation({
+    mutationFn: (occurrence: Occurrence) =>
+      skipOccurrence(occurrence.recurringId, occurrence.month),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: TRANSACTIONS_KEY })
+      void queryClient.invalidateQueries({ queryKey: BALANCE_KEY })
+      toast.success("Ocorrência excluída só deste mês.")
+      setOccurrenceToSkip(null)
+    },
+    onError: (error) => {
+      toast.error(recurringFailure(error, "excluir a ocorrência"))
+      setOccurrenceToSkip(null)
+    },
+  })
+
   function clearFilters() {
     setType("all")
     setCategoryId(ALL_CATEGORIES)
@@ -149,8 +171,8 @@ export function TransactionsScreen() {
         <div className="flex flex-col gap-1">
           <h1 className="font-display text-3xl font-bold tracking-tight">Transações</h1>
           <p className="max-w-prose text-muted-foreground">
-            Receitas e despesas que não passaram pelo cartão de crédito. Lançamentos com data
-            futura aparecem como projeção.
+            Receitas e despesas que não passaram pelo cartão de crédito, inclusive as ocorrências
+            dos seus gastos e receitas fixos. Lançamentos com data futura aparecem como projeção.
           </p>
         </div>
         <Button onClick={() => setDialog({ kind: "create", type: newDialogType })}>
@@ -289,14 +311,23 @@ export function TransactionsScreen() {
               </h2>
               <Card className="gap-0 py-0">
                 <ul aria-label={`Transações de ${group.month}`} className="divide-y">
-                  {group.items.map((item) => (
-                    <TransactionRow
-                      key={item.id}
-                      transaction={item}
-                      onEdit={(transaction) => setDialog({ kind: "edit", transaction })}
-                      onDelete={setToDelete}
-                    />
-                  ))}
+                  {group.items.map((item) =>
+                    item.kind === "occurrence" ? (
+                      <OccurrenceRow
+                        key={statementItemKey(item)}
+                        occurrence={item}
+                        onEditAmount={setOccurrenceToEdit}
+                        onSkip={setOccurrenceToSkip}
+                      />
+                    ) : (
+                      <TransactionRow
+                        key={statementItemKey(item)}
+                        transaction={item}
+                        onEdit={(transaction) => setDialog({ kind: "edit", transaction })}
+                        onDelete={setToDelete}
+                      />
+                    ),
+                  )}
                 </ul>
               </Card>
             </div>
@@ -327,6 +358,41 @@ export function TransactionsScreen() {
           onClose={() => setDialog(null)}
         />
       )}
+
+      {occurrenceToEdit && (
+        <OccurrenceAmountDialog
+          key={statementItemKey({ kind: "occurrence", ...occurrenceToEdit })}
+          occurrence={occurrenceToEdit}
+          onClose={() => setOccurrenceToEdit(null)}
+        />
+      )}
+
+      <AlertDialog
+        open={occurrenceToSkip !== null}
+        onOpenChange={(open) => !open && setOccurrenceToSkip(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir só este mês?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {occurrenceToSkip
+                ? `"${occurrenceToSkip.description}" de ${formatDate(occurrenceToSkip.date)} será removido da sua lista. Os outros meses continuam. Essa ação não pode ser desfeita.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={skip.isPending}>Cancelar</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={skip.isPending}
+              onClick={() => occurrenceToSkip && skip.mutate(occurrenceToSkip)}
+            >
+              {skip.isPending && <Spinner />}
+              Excluir só este mês
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={toDelete !== null} onOpenChange={(open) => !open && setToDelete(null)}>
         <AlertDialogContent>
