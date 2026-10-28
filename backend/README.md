@@ -95,7 +95,7 @@ Receitas e Despesas fora do cartão. Todas as rotas exigem sessão e só enxerga
 
 Regras (erros `422 validation_failed`, com `error.fields`): `amount_cents` entre 1 e 100.000.000.000 (`amount_range`); `description` aparada, de 1 a 200 caracteres (`description_length`); a Categoria (`category_id`) precisa ser do usuário (`category_not_found`), do mesmo tipo da Transação (`category_type_mismatch`) e ativa (`category_inactive`). Ao editar, só uma Categoria *diferente* da atual é revalidada: uma Transação cuja Categoria foi desativada continua editável. Na listagem, `from` depois de `to` dá `fields.to = period_order`, e `limit`/`offset` fora da faixa dão `limit_range`/`offset_range`. Data que não é um dia (`2026-02-30`, com horário) ou valor não inteiro dão `400 invalid_request`.
 
-**Pronto para os próximos tickets.** Cada entrada da listagem tem `kind` (hoje só `"transaction"`), e o use case devolve um enum `StatementItem`: Compras no cartão e Pagamentos de fatura entram como novas variantes, cada uma com a sua tabela e o seu formato, sem forçar a tabela `transactions` a carregar campos de cartão. O filtro por cartão entra em `TransactionFilter`/`ListParams`. A tabela `transactions` referencia `(category_id, type)`, então o banco também recusa uma Categoria do outro tipo.
+**Pronto para os próximos tickets.** Cada entrada da listagem tem `kind` (`"transaction"` ou `"card_purchase"`), e o use case devolve um enum `StatementItem`: Pagamentos de fatura entram como nova variante, com a sua tabela e o seu formato, sem forçar a tabela `transactions` a carregar campos de cartão. O filtro por cartão (`credit_card_id`) já está em `TransactionFilter`/`ListParams` (ver "Cartões de crédito" abaixo). A tabela `transactions` referencia `(category_id, type)`, então o banco também recusa uma Categoria do outro tipo.
 
 ## Saldo atual e Saldo inicial (UC10, parcial, e UC22)
 
@@ -109,6 +109,38 @@ Rotas protegidas; cada usuário só enxerga o próprio saldo. Valores em centavo
 **Regra.** Saldo atual = Saldo inicial (0 se não informado) + Receitas - Despesas com data até hoje (America/Sao_Paulo, pelo relógio injetável). Projeções (data depois de hoje) ficam de fora até o dia chegar, sem nenhum job: a cada leitura o saldo é calculado de novo (ADR-0002). O saldo pode ficar negativo e nada bloqueia um lançamento por isso. O Saldo inicial fica na coluna `users.opening_balance_cents` (`NULL` = não informado); gravá-lo é um único `UPDATE ... WHERE opening_balance_cents IS NULL`, então dois pedidos simultâneos não passam os dois.
 
 **Módulo de cálculo (`src/ledger.rs`).** Puro: não conhece HTTP nem SQL. Os repositórios entregam os fatos de um usuário (`LedgerFacts`: Saldo inicial e `CashFlow`s por dia e tipo) e o use case pergunta com um "hoje": `Ledger::new(facts).current_balance(today)`. O `TransactionRepository::cash_flows` soma por dia e tipo; qual dia conta é decisão do ledger. Os próximos tickets (Transações fixas, Faturas, Saldo projetado, Orçamentos, relatórios) ampliam `LedgerFacts` e acrescentam perguntas ao `Ledger`, sem mudar quem já o usa. Os testes ficam em `tests/balance.rs`, pela API, movendo o "hoje" com `set_today`.
+
+## Cartões de crédito, compras e Faturas (UC15, UC16 e a parte de cartão de UC06, UC07 e UC08)
+
+Rotas protegidas; cada usuário só enxerga os próprios cartões e compras (o de outro usuário responde `404`, ou `422` com `credit_card_not_found` ao lançar uma compra). Valores em centavos inteiros.
+
+| Rota | Efeito |
+| --- | --- |
+| `POST /credit-cards` `{name, closing_day, due_day}` | Cadastra o cartão (nome de 1 a 60 caracteres, único por usuário sem diferenciar maiúsculas: `409 credit_card_name_taken`; dias de 1 a 31: `fields.* = day_range`). `201 {credit_card}`. |
+| `GET /credit-cards` | `{credit_cards}`, ativos primeiro. Cada um é `{id, name, closing_day, due_day, active, created_at}`; os dias são os que o cartão tem daqui para frente. |
+| `PATCH /credit-cards/{id}` `{name?, closing_day?, due_day?}` | Renomeia e/ou muda os dias. Os dias novos valem só para Faturas ainda abertas. |
+| `POST /credit-cards/{id}/deactivate` | Desativa (marcação, nunca exclusão). `409 credit_card_has_remaining_invoice` se alguma Fatura tem valor restante. Repetir não muda nada. |
+| `POST /credit-cards/{id}/reactivate` | Reativa. |
+| `GET /credit-cards/{id}/invoices` | `{invoices}`, da mais antiga para a mais nova: as que têm compras e a primeira aberta (mesmo vazia). |
+| `GET /credit-cards/{id}/invoices/{closing_month}` | `{invoice, purchases}` de uma Fatura (`AAAA-MM`, o mês em que ela fecha); `404 invoice_not_found` se não existe. |
+| `POST /card-purchases` `{credit_card_id, amount_cents, date, description, category_id}` | Lança uma Compra no cartão. `201 {card_purchase}`. |
+| `PATCH /card-purchases/{id}` `{amount_cents?, date?, description?, category_id?}` | Edita; uma nova data realoca a compra. O cartão não muda. |
+| `DELETE /card-purchases/{id}` | Exclui. `204`. |
+| `GET /transactions?credit_card_id=` | O extrato ganha itens `kind: "card_purchase"` e o filtro por cartão (que deixa só as compras dele; `type=income` exclui as compras). |
+
+Uma Fatura é `{credit_card_id, closing_month, closing_date, due_date, reference_month, state, total_cents, remaining_cents}`, com `state` igual a `open`, `closed` ou `paid`. Uma compra é `{id, amount_cents, date, description, category, credit_card: {id, name, active}, invoice: {closing_month, closing_date, due_date, reference_month, state}, reference_month, is_projection, created_at}`. `reference_month` (`AAAA-MM`) é o Mês de referência: o mês do vencimento da Fatura.
+
+**Regras.**
+
+- Compra: valor entre 1 e 100.000.000.000, descrição de 1 a 200 caracteres, Categoria ativa de Despesa (`category_*`), cartão do usuário e ativo (`fields.credit_card_id = credit_card_not_found | credit_card_inactive`).
+- Fechamento: a compra feita até o Dia de fechamento (inclusive) entra na Fatura que fecha no mês; depois dele, na do mês seguinte. Em mês mais curto vale o último dia (fechamento 31 em fevereiro fecha dia 28).
+- Vencimento: o primeiro dia depois do fechamento que cai no Dia de vencimento (vencimento depois do fechamento: no mesmo mês; senão, no mês seguinte).
+- Estado derivado das datas, nunca gravado: `open` até o fechamento (inclusive), `closed` depois dele até o vencimento, `paid` a partir do vencimento. O `remaining_cents` é o total enquanto a Fatura não está paga e zero depois. Até o ticket de Pagamento de fatura, é o vencimento que quita; os pagamentos entram então no `Ledger::invoices`.
+- Compra de Fatura `paid` não pode ser editada nem excluída (`409 invoice_paid`), e uma data que a colocaria numa Fatura paga é recusada (`422`, `fields.date = invoice_paid`), tanto ao lançar quanto ao editar.
+- A Compra no cartão não entra no Saldo atual (`GET /balance` não muda).
+- Os dias do cartão têm histórico (`credit_card_schedules`): uma mudança começa na primeira Fatura ainda aberta, ou na seguinte se o novo Dia de fechamento já tiver passado para ela (assim nenhuma compra muda de Fatura). Faturas fechadas e pagas mantêm as datas que tinham.
+
+**Módulo de cálculo.** `src/ledger/cards.rs` (puro, como o resto do `ledger`): `LedgerFacts.cards` leva, por cartão, o histórico de dias (`CardSchedule`) e os gastos por dia (`CardSpend`). `Ledger::invoices(card, hoje)`, `Ledger::invoice(card, mês, hoje)`, `Ledger::invoice_for_purchase(card, data, hoje)` e `Ledger::has_remaining_invoice(card, hoje)` respondem sobre as Faturas; o Mês de referência é `InvoiceCycle::reference_month`. A Compra no cartão fica de fora de `cash_flows`, então `current_balance` continua ignorando-a. O extrato (`StatementRepository`) ordena e pagina por `UNION ALL` das tabelas `transactions` e `card_purchases`; uma nova variante de `StatementItem` entra com mais um ramo da consulta.
 
 ## Rodar os testes
 
