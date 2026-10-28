@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod balance;
+pub mod balance_series;
 pub mod categories;
 mod extract;
 pub mod health;

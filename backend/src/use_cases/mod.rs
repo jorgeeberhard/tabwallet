@@ -1,5 +1,6 @@
 mod auth_error;
 mod balance;
+mod balance_series;
 mod category_error;
 mod check_health;
 mod create_category;
@@ -21,6 +22,10 @@ mod update_transaction;
 
 pub use auth_error::{AuthError, Session};
 pub use balance::{BalanceError, BalanceReport, GetBalanceUseCase, SetOpeningBalanceUseCase};
+pub use balance_series::{
+    BalanceHistory, BalanceSeriesError, GetBalanceHistoryUseCase, GetProjectedBalanceUseCase,
+    HistoryQuery, ProjectedBalance,
+};
 pub use category_error::CategoryError;
 pub use check_health::{CheckHealthUseCase, HealthReport};
 pub use create_category::CreateCategoryUseCase;
