@@ -1,5 +1,6 @@
 use axum::{
     Json,
+    body::Bytes,
     extract::{Path, State},
     http::StatusCode,
 };
@@ -313,9 +314,14 @@ pub async fn end(
     State(state): State<AppState>,
     auth_user: AuthUser,
     Path(id): Path<String>,
-    request: Option<Json<EndRequest>>,
+    body: Bytes,
 ) -> Result<Json<RecurringEnvelope>, ApiError> {
-    let EndRequest { last_month } = request.map(|Json(body)| body).unwrap_or_default();
+    // An empty body means "end now"; anything else must be a valid request.
+    let EndRequest { last_month } = if body.is_empty() {
+        EndRequest::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|_| ApiError::InvalidRequest)?
+    };
     let view = EndRecurringTransactionUseCase::new(RecurringRepository::new(state.pool.clone()))
         .execute(
             auth_user.id,

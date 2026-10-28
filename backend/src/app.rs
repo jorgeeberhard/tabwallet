@@ -61,6 +61,14 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::recurring::list).post(handlers::recurring::create),
         )
         .route(
+            "/recurring-transactions/{id}",
+            patch(handlers::recurring::update),
+        )
+        .route(
+            "/recurring-transactions/{id}/end",
+            post(handlers::recurring::end),
+        )
+        .route(
             "/recurring-transactions/{id}/occurrences/{month}",
             patch(handlers::recurring::edit_occurrence)
                 .delete(handlers::recurring::delete_occurrence),
