@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use super::extract::ValidatedJson;
+use super::extract::{ValidatedJson, trimmed};
 use crate::{
     app::AppState,
     auth::AuthUser,
@@ -34,11 +34,6 @@ pub struct LogInRequest {
     email: String,
     #[validate(length(min = 1, code = "required"))]
     password: String,
-}
-
-/// Surrounding spaces are a copy-and-paste accident, not part of an e-mail.
-fn trimmed<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
-    String::deserialize(deserializer).map(|value| value.trim().to_string())
 }
 
 /// The public view of a user.

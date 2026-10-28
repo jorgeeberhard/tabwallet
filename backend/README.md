@@ -66,6 +66,22 @@ O link é `APP_URL/reset-password?token=...`, vale 60 minutos e só funciona uma
 
 **Rotas protegidas.** Registre a rota em `protected` em `src/app.rs`: o middleware `require_auth` devolve `401` sem sessão válida e o handler recebe o usuário como argumento `AuthUser`. Todo repositório recebe o `UserId` (`auth_user.id`) e filtra por ele, para que dados de um usuário nunca apareçam para outro.
 
+## Categorias (UC09)
+
+Todas as rotas exigem sessão e só enxergam as categorias do próprio usuário (uma categoria de outro usuário responde como inexistente, `404`). Uma categoria é `{id, name, type, active, is_charges, created_at}`, com `type` igual a `income` ou `expense`.
+
+| Rota | Efeito |
+| --- | --- |
+| `GET /categories?type=&active=` | Lista as categorias (ativas e desativadas); os dois filtros são opcionais. Um formulário de lançamento usa `?type=expense&active=true`. |
+| `POST /categories` `{name, type}` | Cria uma categoria ativa. `201`. |
+| `PATCH /categories/{id}` `{name}` | Renomeia. |
+| `POST /categories/{id}/deactivate` | Desativa (nunca exclui); repetir não muda nada. |
+| `POST /categories/{id}/reactivate` | Reativa. |
+
+O nome é aparado, tem de 1 a 60 caracteres e é único por tipo e por usuário sem diferenciar maiúsculas, entre ativas e desativadas. Erros de regra (`409`): `category_name_taken` (já existe uma ativa) e `category_inactive_exists` (já existe uma desativada; a resposta traz `error.category_id`, para o front-end oferecer a reativação). Também `category_has_charges` e `category_not_found` (`404`).
+
+Todo usuário nasce com as categorias padrão (função SQL `seed_default_categories`, chamada na transação do cadastro; a migration `0003` também a aplica aos usuários que já existiam). "Juros e encargos" é marcada pela coluna `is_charges`, não pelo nome. A regra "não desativar enquanto houver Encargos" tem um ponto único, `CategoryRepository::has_charges`, que hoje devolve `false` porque ainda não há Encargos; o ticket que criar os Encargos preenche essa consulta.
+
 ## Rodar os testes
 
 ```bash

@@ -12,6 +12,8 @@ export class ApiError extends Error {
     readonly code: string,
     /** For validation errors: field name to rule code. */
     readonly fields: Record<string, string> = {},
+    /** For "category_inactive_exists": the deactivated category with that name. */
+    readonly categoryId?: string,
   ) {
     super(code)
     this.name = "ApiError"
@@ -45,6 +47,7 @@ export async function api<T = void>(
       response.status,
       payload?.error?.code ?? "unknown_error",
       payload?.error?.fields ?? {},
+      payload?.error?.category_id,
     )
   }
   // 204 and 202 answers carry no body.
