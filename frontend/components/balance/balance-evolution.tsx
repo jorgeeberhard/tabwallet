@@ -36,7 +36,7 @@ import {
   projectionEnd,
 } from "@/lib/balance-series"
 import { formatDate, formatMonth } from "@/lib/format"
-import { todayInSaoPaulo } from "@/lib/today"
+import { useToday } from "@/lib/use-today"
 
 /** Where each granularity starts: a month of days, a year of months back; a quarter of days, a year of months ahead. */
 const DEFAULT_PERIODS: Record<Granularity, { history: string; projection: string }> = {
@@ -67,17 +67,21 @@ export function BalanceEvolution() {
 
   // The API decides what "today" is; this one only picks the period to ask
   // for, and the projection answer carries the real `today` back.
-  const requestToday = todayInSaoPaulo()
-  const from = historyStart(requestToday, granularity, historyPeriod?.amount ?? 1)
-  const to = projectionEnd(requestToday, granularity, projectionPeriod?.amount ?? 1)
+  const requestToday = useToday()
+  const from =
+    requestToday && historyStart(requestToday, granularity, historyPeriod?.amount ?? 1)
+  const to =
+    requestToday && projectionEnd(requestToday, granularity, projectionPeriod?.amount ?? 1)
 
   const history = useQuery({
     queryKey: [...BALANCE_SERIES_KEY, "history", granularity, from],
-    queryFn: () => getBalanceHistory({ granularity, from }),
+    queryFn: () => getBalanceHistory({ granularity, from: from as string }),
+    enabled: from !== null,
   })
   const projection = useQuery({
     queryKey: [...BALANCE_SERIES_KEY, "projection", granularity, to],
-    queryFn: () => getProjectedBalance({ granularity, to }),
+    queryFn: () => getProjectedBalance({ granularity, to: to as string }),
+    enabled: to !== null,
   })
 
   function changeGranularity(next: Granularity) {
