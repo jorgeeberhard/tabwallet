@@ -8,7 +8,8 @@ use crate::{
     auth::AuthUser,
     error::ApiError,
     repositories::{
-        opening_balance::OpeningBalanceRepository, transactions::TransactionRepository,
+        opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
+        transactions::TransactionRepository,
     },
     use_cases::{BalanceReport, GetBalanceUseCase, SetOpeningBalanceUseCase},
 };
@@ -39,6 +40,7 @@ async fn current(state: &AppState, auth_user: &AuthUser) -> Result<BalanceRespon
     let report = GetBalanceUseCase::new(
         TransactionRepository::new(state.pool.clone()),
         OpeningBalanceRepository::new(state.pool.clone()),
+        RecurringRepository::new(state.pool.clone()),
     )
     .execute(auth_user.id, state.clock.today())
     .await?;

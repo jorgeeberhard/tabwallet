@@ -4,7 +4,8 @@ use crate::{
     ids::UserId,
     ledger::{Ledger, LedgerFacts},
     repositories::{
-        opening_balance::OpeningBalanceRepository, transactions::TransactionRepository,
+        opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
+        transactions::TransactionRepository,
     },
 };
 
@@ -38,16 +39,19 @@ pub struct BalanceReport {
 pub struct GetBalanceUseCase {
     transactions: TransactionRepository,
     opening_balance: OpeningBalanceRepository,
+    recurring: RecurringRepository,
 }
 
 impl GetBalanceUseCase {
     pub fn new(
         transactions: TransactionRepository,
         opening_balance: OpeningBalanceRepository,
+        recurring: RecurringRepository,
     ) -> Self {
         Self {
             transactions,
             opening_balance,
+            recurring,
         }
     }
 
@@ -66,9 +70,18 @@ impl GetBalanceUseCase {
             .cash_flows(user_id)
             .await
             .map_err(BalanceError::internal)?;
+        let recurring = self
+            .recurring
+            .list(user_id)
+            .await
+            .map_err(BalanceError::internal)?
+            .into_iter()
+            .map(|recurring| recurring.definition)
+            .collect();
         let ledger = Ledger::new(LedgerFacts {
             opening_balance_cents,
             cash_flows,
+            recurring,
         });
         Ok(BalanceReport {
             current_balance_cents: ledger.current_balance(today),

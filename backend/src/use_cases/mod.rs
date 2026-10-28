@@ -9,6 +9,7 @@ mod get_current_user;
 mod list_categories;
 mod list_transactions;
 mod log_in;
+mod recurring;
 mod rename_category;
 mod request_password_reset;
 mod reset_password;
@@ -27,8 +28,15 @@ pub use create_transaction::CreateTransactionUseCase;
 pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
 pub use list_categories::ListCategoriesUseCase;
-pub use list_transactions::{ListTransactionsUseCase, Statement, StatementItem};
+pub use list_transactions::{
+    ListTransactionsUseCase, Statement, StatementItem, StatementOccurrence,
+};
 pub use log_in::LogInUseCase;
+pub use recurring::{
+    CreateRecurringTransactionUseCase, EditOccurrenceUseCase, EndRecurringTransactionUseCase,
+    ListRecurringTransactionsUseCase, NewRecurring, OccurrenceView, RecurringChanges,
+    RecurringError, RecurringView, SkipOccurrenceUseCase, UpdateRecurringTransactionUseCase,
+};
 pub use rename_category::RenameCategoryUseCase;
 pub use request_password_reset::RequestPasswordResetUseCase;
 pub use reset_password::ResetPasswordUseCase;

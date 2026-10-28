@@ -10,13 +10,17 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use super::extract::{ValidatedJson, trimmed, trimmed_opt};
+use super::{
+    extract::{ValidatedJson, trimmed, trimmed_opt},
+    recurring::OccurrenceResponse,
+};
 use crate::{
     app::AppState,
     auth::AuthUser,
     error::ApiError,
     ids::{CategoryId, TransactionId},
     repositories::categories::CategoryRepository,
+    repositories::recurring::RecurringRepository,
     repositories::transactions::{
         NewTransaction, Transaction, TransactionChanges, TransactionFilter, TransactionRepository,
         TransactionType,
@@ -137,6 +141,8 @@ pub async fn create(
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StatementItemResponse {
     Transaction(TransactionResponse),
+    /// An Occurrence of a Gasto fixo or Receita fixa, computed on read.
+    Occurrence(OccurrenceResponse),
 }
 
 #[derive(Serialize)]
@@ -201,17 +207,22 @@ pub async fn list(
 ) -> Result<Json<StatementResponse>, ApiError> {
     let Query(params) = params.map_err(|_| ApiError::InvalidRequest)?;
     let (filter, limit, offset) = params.parse()?;
-    let Statement { items, total } =
-        ListTransactionsUseCase::new(TransactionRepository::new(state.pool.clone()))
-            .execute(auth_user.id, filter, limit, offset)
-            .await?;
     let today = state.clock.today();
+    let Statement { items, total } = ListTransactionsUseCase::new(
+        TransactionRepository::new(state.pool.clone()),
+        RecurringRepository::new(state.pool.clone()),
+    )
+    .execute(auth_user.id, today, filter, limit, offset)
+    .await?;
     Ok(Json(StatementResponse {
         items: items
             .into_iter()
             .map(|item| match item {
                 StatementItem::Transaction(transaction) => {
                     StatementItemResponse::Transaction(TransactionResponse::new(transaction, today))
+                }
+                StatementItem::Occurrence(occurrence) => {
+                    StatementItemResponse::Occurrence(OccurrenceResponse::new(occurrence, today))
                 }
             })
             .collect(),

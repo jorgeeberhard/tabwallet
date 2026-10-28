@@ -82,6 +82,45 @@ describe("TransactionsScreen", () => {
     expect(within(january).queryByText("Projeção")).not.toBeInTheDocument()
   })
 
+  it("shows Occurrences of fixed transactions and deletes only one month after confirming", async () => {
+    rows = [
+      {
+        kind: "occurrence",
+        recurring_id: "r1",
+        month: "2026-02",
+        type: "expense",
+        amount_cents: 150000,
+        date: "2026-02-05",
+        description: "Aluguel",
+        category: { id: "c1", name: "Moradia", type: "expense", active: true },
+        is_projection: true,
+        is_edited: false,
+      },
+    ]
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/categories") return json(200, { categories })
+      if (url.startsWith("/api/transactions") && init?.method === "GET") return json(200, statement(rows))
+      if (url === "/api/recurring-transactions/r1/occurrences/2026-02" && init?.method === "DELETE")
+        return json(204)
+      return json(404)
+    })
+    renderScreen()
+
+    const february = await screen.findByRole("list", { name: "Transações de fevereiro de 2026" })
+    expect(within(february).getByText("Aluguel")).toBeInTheDocument()
+    expect(within(february).getByText("Projeção")).toBeInTheDocument()
+    expect(within(february).getByText("− R$ 1.500,00")).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole("button", { name: "Excluir Aluguel só deste mês" }))
+    const dialog = await screen.findByRole("alertdialog")
+    await userEvent.click(within(dialog).getByRole("button", { name: "Excluir só este mês" }))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/recurring-transactions/r1/occurrences/2026-02",
+      expect.objectContaining({ method: "DELETE" }),
+    )
+  })
+
   it("invites the person to add the first transaction when there is none", async () => {
     renderScreen()
 

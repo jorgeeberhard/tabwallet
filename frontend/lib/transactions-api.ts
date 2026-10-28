@@ -1,6 +1,7 @@
 import { api } from "@/lib/api"
 import type { CategoryType } from "@/lib/categories-api"
 import { centsToReais } from "@/lib/amount"
+import { type Occurrence, type OccurrencePayload, toOccurrence } from "@/lib/recurring-api"
 
 export type TransactionType = CategoryType
 
@@ -47,10 +48,19 @@ function toTransaction(payload: TransactionPayload): Transaction {
 }
 
 /**
- * One entry of the statement. Only Transactions exist today; card purchases
- * and invoice payments will join as other `kind`s with their own shapes.
+ * One entry of the statement. `kind` says what the rest of the object is: a
+ * Transaction, or an Occurrence of a Gasto fixo or Receita fixa (computed by
+ * the API on read). Card purchases and invoice payments will join as other
+ * `kind`s with their own shapes.
  */
-export type StatementItem = { kind: "transaction" } & Transaction
+export type StatementItem =
+  | ({ kind: "transaction" } & Transaction)
+  | ({ kind: "occurrence" } & Occurrence)
+
+/** The key that identifies a statement item in a list. */
+export function statementItemKey(item: StatementItem): string {
+  return item.kind === "occurrence" ? `${item.recurringId}:${item.month}` : item.id
+}
 
 export interface Statement {
   items: StatementItem[]
@@ -90,13 +100,21 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
   if (filters.offset) query.set("offset", String(filters.offset))
 
   const payload = await api<{
-    items: ({ kind: "transaction" } & TransactionPayload)[]
+    items: (
+      | ({ kind: "transaction" } & TransactionPayload)
+      | ({ kind: "occurrence" } & OccurrencePayload)
+    )[]
     total: number
     limit: number
     offset: number
   }>(`/transactions?${query.toString()}`)
   return {
-    items: payload.items.map((item) => ({ kind: "transaction", ...toTransaction(item) })),
+    items: payload.items.map(
+      (item): StatementItem =>
+        item.kind === "occurrence"
+          ? { kind: "occurrence", ...toOccurrence(item) }
+          : { kind: "transaction", ...toTransaction(item) },
+    ),
     total: payload.total,
     limit: payload.limit,
     offset: payload.offset,

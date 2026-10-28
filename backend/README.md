@@ -95,7 +95,7 @@ Receitas e Despesas fora do cartão. Todas as rotas exigem sessão e só enxerga
 
 Regras (erros `422 validation_failed`, com `error.fields`): `amount_cents` entre 1 e 100.000.000.000 (`amount_range`); `description` aparada, de 1 a 200 caracteres (`description_length`); a Categoria (`category_id`) precisa ser do usuário (`category_not_found`), do mesmo tipo da Transação (`category_type_mismatch`) e ativa (`category_inactive`). Ao editar, só uma Categoria *diferente* da atual é revalidada: uma Transação cuja Categoria foi desativada continua editável. Na listagem, `from` depois de `to` dá `fields.to = period_order`, e `limit`/`offset` fora da faixa dão `limit_range`/`offset_range`. Data que não é um dia (`2026-02-30`, com horário) ou valor não inteiro dão `400 invalid_request`.
 
-**Pronto para os próximos tickets.** Cada entrada da listagem tem `kind` (hoje só `"transaction"`), e o use case devolve um enum `StatementItem`: Compras no cartão e Pagamentos de fatura entram como novas variantes, cada uma com a sua tabela e o seu formato, sem forçar a tabela `transactions` a carregar campos de cartão. O filtro por cartão entra em `TransactionFilter`/`ListParams`. A tabela `transactions` referencia `(category_id, type)`, então o banco também recusa uma Categoria do outro tipo.
+**Pronto para os próximos tickets.** Cada entrada da listagem tem `kind` (`"transaction"` ou `"occurrence"`, ver Transações fixas), e o use case devolve um enum `StatementItem`: Compras no cartão e Pagamentos de fatura entram como novas variantes, cada uma com a sua tabela e o seu formato, sem forçar a tabela `transactions` a carregar campos de cartão. O filtro por cartão entra em `TransactionFilter`/`ListParams`. A tabela `transactions` referencia `(category_id, type)`, então o banco também recusa uma Categoria do outro tipo.
 
 ## Saldo atual e Saldo inicial (UC10, parcial, e UC22)
 
@@ -109,6 +109,29 @@ Rotas protegidas; cada usuário só enxerga o próprio saldo. Valores em centavo
 **Regra.** Saldo atual = Saldo inicial (0 se não informado) + Receitas - Despesas com data até hoje (America/Sao_Paulo, pelo relógio injetável). Projeções (data depois de hoje) ficam de fora até o dia chegar, sem nenhum job: a cada leitura o saldo é calculado de novo (ADR-0002). O saldo pode ficar negativo e nada bloqueia um lançamento por isso. O Saldo inicial fica na coluna `users.opening_balance_cents` (`NULL` = não informado); gravá-lo é um único `UPDATE ... WHERE opening_balance_cents IS NULL`, então dois pedidos simultâneos não passam os dois.
 
 **Módulo de cálculo (`src/ledger.rs`).** Puro: não conhece HTTP nem SQL. Os repositórios entregam os fatos de um usuário (`LedgerFacts`: Saldo inicial e `CashFlow`s por dia e tipo) e o use case pergunta com um "hoje": `Ledger::new(facts).current_balance(today)`. O `TransactionRepository::cash_flows` soma por dia e tipo; qual dia conta é decisão do ledger. Os próximos tickets (Transações fixas, Faturas, Saldo projetado, Orçamentos, relatórios) ampliam `LedgerFacts` e acrescentam perguntas ao `Ledger`, sem mudar quem já o usa. Os testes ficam em `tests/balance.rs`, pela API, movendo o "hoje" com `set_today`.
+
+## Transações fixas e Ocorrências (UC05, UC06 e UC07)
+
+Gastos fixos e Receitas fixas. Todas as rotas exigem sessão e só enxergam o que é do próprio usuário (id de outro usuário ou malformado responde `404 recurring_transaction_not_found`). Uma Transação fixa é `{id, type, amount_cents, day_of_month, description, category: {id, name, type, active}, start_month, end_month, ended, next_date, created_at}`: `amount_cents` é o valor em vigor no mês atual (o do primeiro ou do último mês se ainda não começou ou já terminou), `start_month` e `end_month` são `AAAA-MM` e `next_date` é o dia da próxima Ocorrência depois de hoje, ou `null`.
+
+| Rota | Efeito |
+| --- | --- |
+| `POST /recurring-transactions` `{type, amount_cents, day_of_month, description, category_id, start_month?}` | Cadastra. `201 {recurring_transaction}`. `day_of_month` vai de 1 a 31; `start_month` (`AAAA-MM`) é o mês da primeira Ocorrência, por padrão o mês de hoje, e um mês anterior dá `422` (`fields.start_month = start_month_past`). |
+| `GET /recurring-transactions` | Lista as Transações fixas (encerradas também) da mais antiga para a mais nova: `{recurring_transactions}`. |
+| `PATCH /recurring-transactions/{id}` `{amount_cents?, description?, category_id?}` | Um valor novo vale **a partir do mês da alteração** (o mês de hoje, ou o de início se ainda não começou) e não mexe em meses anteriores, nem na Ocorrência que o usuário editou à mão; trocar de novo no mesmo mês substitui a alteração. Descrição e Categoria valem para todas as Ocorrências (não mudam o saldo). O tipo e o dia não mudam. Encerrada: `409 recurring_transaction_ended`. |
+| `POST /recurring-transactions/{id}/end` `{last_month?}` | Encerra: as Projeções futuras somem e as Ocorrências que já caíram ficam. Sem corpo, a última Ocorrência é a do mês de hoje se o dia dela já chegou, senão a do mês anterior. `last_month` (`AAAA-MM`) escolhe um mês final posterior; um anterior à última Ocorrência já ocorrida dá `422` (`fields.last_month = last_month_before_history`). Encerrar de novo dá `409 recurring_transaction_ended`. |
+| `PATCH /recurring-transactions/{id}/occurrences/{month}` `{amount_cents}` | Edita só o valor da Ocorrência desse mês (`AAAA-MM`). `200 {occurrence}`. |
+| `DELETE /recurring-transactions/{id}/occurrences/{month}` | Exclui só a Ocorrência desse mês. `204`. |
+
+Mês sem Ocorrência (antes do início, depois do fim, já excluída ou malformado) responde `404 occurrence_not_found`. Validações como as de `/transactions`: `amount_range`, `description_length`, `day_of_month_range` e as regras de Categoria (`category_not_found`, `category_type_mismatch`, `category_inactive`).
+
+**Ocorrência.** `{recurring_id, month, type, amount_cents, date, description, category, is_projection, is_edited}`. Cai em `day_of_month`, ou no último dia do mês quando ele é mais curto (28 ou 29 em fevereiro, 30 em abril). `is_projection` é verdadeiro se a data é depois de hoje; `is_edited`, se o usuário mudou o valor só desse mês.
+
+**Nada é gravado pelas Ocorrências (ADR-0002).** O banco guarda a definição (`recurring_transactions`), as versões de valor (`recurring_amounts`, uma por mês de alteração, a primeira no mês de início) e as exceções (`recurring_exceptions`: um mês excluído ou com valor editado). Cada leitura recalcula as Ocorrências; avançar o relógio já as faz entrar no Saldo atual, sem job.
+
+**Listagem.** `GET /transactions` passa a devolver também Ocorrências, como itens `{"kind": "occurrence", ...}` com o formato acima (a variante `StatementItem::Occurrence`). Os filtros `from`, `to`, `category_id` e `type` valem para elas, e a paginação junta Transações e Ocorrências numa ordem só (mais novas primeiro). Sem `to`, a lista vai até o fim do mês 12 meses à frente (`ledger::projection_horizon`); um `to` além disso é cortado ali. O `total` conta as Ocorrências dessa janela. Um filtro por cartão (ticket de cartões) deve excluir as Ocorrências: elas nunca passam por Fatura.
+
+**Módulo de cálculo.** `LedgerFacts` ganhou `recurring: Vec<RecurringDefinition>` (dia, mês de início e de fim, versões de valor e exceções; `src/ledger/recurring.rs`). `Ledger::current_balance` soma as Ocorrências até hoje, e `Ledger::occurrences(from, to)` e `Ledger::occurrence(id, month)` respondem à listagem e às ações sobre uma Ocorrência. Os testes ficam em `tests/recurring.rs` (pela API, avançando o relógio por vários meses) e, para a regra do último dia do mês, nos testes unitários de `ledger/recurring.rs`.
 
 ## Rodar os testes
 
