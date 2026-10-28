@@ -201,9 +201,162 @@ export async function listInvoices(cardId: string): Promise<Invoice[]> {
   return invoices.map(toInvoice)
 }
 
+/**
+ * One Installment of an installment purchase. It is its own record with its
+ * own amount and invoice.
+ */
+export interface Installment {
+  id: string
+  /** 1 for the first, up to the purchase's `installmentCount`. */
+  number: number
+  amountCents: number
+  /** In reais, for the Design System components. */
+  amount: number
+  /** The invoice the Installment is in; its state follows the clock. */
+  invoice: InvoiceCycle
+  /** `YYYY-MM`: the month of the invoice's due date. */
+  referenceMonth: string
+}
+
+interface InstallmentPayload {
+  id: string
+  number: number
+  amount_cents: number
+  invoice: InvoiceCyclePayload
+  reference_month: string
+}
+
+function toInstallment(payload: InstallmentPayload): Installment {
+  return {
+    id: payload.id,
+    number: payload.number,
+    amountCents: payload.amount_cents,
+    amount: centsToReais(payload.amount_cents),
+    invoice: toCycle(payload.invoice),
+    referenceMonth: payload.reference_month,
+  }
+}
+
+/** A card purchase split in Installments (UC18), with the Installments still on record. */
+export interface InstallmentPurchase {
+  id: string
+  /** What the person informed, already with interest if any. */
+  totalCents: number
+  total: number
+  /** How many Installments it was launched in. */
+  installmentCount: number
+  /** The day of the purchase, `YYYY-MM-DD`. */
+  date: string
+  description: string
+  category: { id: string; name: string; active: boolean }
+  creditCard: { id: string; name: string; active: boolean }
+  /** The remaining Installments were cancelled after some had been paid. */
+  cancelled: boolean
+  /** Some Installment is in a paid invoice: only the Category can change. */
+  hasPaidInstallments: boolean
+  installments: Installment[]
+  isProjection: boolean
+}
+
+export interface InstallmentPurchasePayload {
+  id: string
+  total_cents: number
+  installment_count: number
+  date: string
+  description: string
+  category: { id: string; name: string; type: "expense"; active: boolean }
+  credit_card: { id: string; name: string; active: boolean }
+  cancelled: boolean
+  has_paid_installments: boolean
+  installments: InstallmentPayload[]
+  is_projection: boolean
+}
+
+export function toInstallmentPurchase(payload: InstallmentPurchasePayload): InstallmentPurchase {
+  return {
+    id: payload.id,
+    totalCents: payload.total_cents,
+    total: centsToReais(payload.total_cents),
+    installmentCount: payload.installment_count,
+    date: payload.date,
+    description: payload.description,
+    category: {
+      id: payload.category.id,
+      name: payload.category.name,
+      active: payload.category.active,
+    },
+    creditCard: payload.credit_card,
+    cancelled: payload.cancelled,
+    hasPaidInstallments: payload.has_paid_installments,
+    installments: payload.installments.map(toInstallment),
+    isProjection: payload.is_projection,
+  }
+}
+
+/** One Installment as a line of the invoice it is in ("3/10"), with its purchase. */
+export interface InvoiceInstallment {
+  id: string
+  installmentPurchaseId: string
+  number: number
+  installmentCount: number
+  amountCents: number
+  amount: number
+  totalCents: number
+  /** The day of the purchase, `YYYY-MM-DD`. */
+  date: string
+  description: string
+  category: { id: string; name: string; active: boolean }
+  creditCard: { id: string; name: string; active: boolean }
+  invoice: InvoiceCycle
+  referenceMonth: string
+  /** Some Installment of the purchase (not only this one) is in a paid invoice. */
+  purchaseHasPaidInstallments: boolean
+}
+
+interface InvoiceInstallmentPayload {
+  id: string
+  installment_purchase_id: string
+  number: number
+  installment_count: number
+  amount_cents: number
+  total_cents: number
+  date: string
+  description: string
+  category: { id: string; name: string; type: "expense"; active: boolean }
+  credit_card: { id: string; name: string; active: boolean }
+  invoice: InvoiceCyclePayload
+  reference_month: string
+  purchase_has_paid_installments: boolean
+}
+
+function toInvoiceInstallment(payload: InvoiceInstallmentPayload): InvoiceInstallment {
+  return {
+    id: payload.id,
+    installmentPurchaseId: payload.installment_purchase_id,
+    number: payload.number,
+    installmentCount: payload.installment_count,
+    amountCents: payload.amount_cents,
+    amount: centsToReais(payload.amount_cents),
+    totalCents: payload.total_cents,
+    date: payload.date,
+    description: payload.description,
+    category: {
+      id: payload.category.id,
+      name: payload.category.name,
+      active: payload.category.active,
+    },
+    creditCard: payload.credit_card,
+    invoice: toCycle(payload.invoice),
+    referenceMonth: payload.reference_month,
+    purchaseHasPaidInstallments: payload.purchase_has_paid_installments,
+  }
+}
+
 export interface InvoiceDetail {
   invoice: Invoice
   purchases: CardPurchase[]
+  /** The Installments of installment purchases that are in this invoice. */
+  installments: InvoiceInstallment[]
 }
 
 export function invoiceKey(cardId: string, closingMonth: string) {
@@ -211,12 +364,15 @@ export function invoiceKey(cardId: string, closingMonth: string) {
 }
 
 export async function getInvoice(cardId: string, closingMonth: string): Promise<InvoiceDetail> {
-  const payload = await api<{ invoice: InvoicePayload; purchases: CardPurchasePayload[] }>(
-    `/credit-cards/${cardId}/invoices/${closingMonth}`,
-  )
+  const payload = await api<{
+    invoice: InvoicePayload
+    purchases: CardPurchasePayload[]
+    installments: InvoiceInstallmentPayload[]
+  }>(`/credit-cards/${cardId}/invoices/${closingMonth}`)
   return {
     invoice: toInvoice(payload.invoice),
     purchases: payload.purchases.map(toCardPurchase),
+    installments: payload.installments.map(toInvoiceInstallment),
   }
 }
 
@@ -266,4 +422,67 @@ export async function updateCardPurchase(
 
 export async function deleteCardPurchase(id: string): Promise<void> {
   await api(`/card-purchases/${id}`, { method: "DELETE" })
+}
+
+export interface InstallmentPurchaseInput {
+  creditCardId: string
+  /** The total, already with interest if any: the system never computes it. */
+  totalCents: number
+  installmentCount: number
+  date: string
+  description: string
+  categoryId: string
+}
+
+export async function createInstallmentPurchase(
+  input: InstallmentPurchaseInput,
+): Promise<InstallmentPurchase> {
+  const { installment_purchase } = await api<{
+    installment_purchase: InstallmentPurchasePayload
+  }>("/installment-purchases", {
+    method: "POST",
+    body: {
+      credit_card_id: input.creditCardId,
+      total_cents: input.totalCents,
+      installment_count: input.installmentCount,
+      date: input.date,
+      description: input.description,
+      category_id: input.categoryId,
+    },
+  })
+  return toInstallmentPurchase(installment_purchase)
+}
+
+/** What an edit may change: the card never changes. */
+export type InstallmentPurchaseChanges = Partial<Omit<InstallmentPurchaseInput, "creditCardId">>
+
+export async function updateInstallmentPurchase(
+  id: string,
+  changes: InstallmentPurchaseChanges,
+): Promise<InstallmentPurchase> {
+  const { installment_purchase } = await api<{
+    installment_purchase: InstallmentPurchasePayload
+  }>(`/installment-purchases/${id}`, {
+    method: "PATCH",
+    body: {
+      total_cents: changes.totalCents,
+      installment_count: changes.installmentCount,
+      date: changes.date,
+      description: changes.description,
+      category_id: changes.categoryId,
+    },
+  })
+  return toInstallmentPurchase(installment_purchase)
+}
+
+/**
+ * Deletes the purchase when no Installment is paid (`null`); otherwise cancels
+ * the remaining Installments and returns the purchase with the paid ones.
+ */
+export async function cancelInstallmentPurchase(id: string): Promise<InstallmentPurchase | null> {
+  const payload = await api<{ installment_purchase: InstallmentPurchasePayload } | undefined>(
+    `/installment-purchases/${id}`,
+    { method: "DELETE" },
+  )
+  return payload ? toInstallmentPurchase(payload.installment_purchase) : null
 }
