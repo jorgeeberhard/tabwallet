@@ -30,6 +30,10 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 
 `app/(app)/transacoes` mostra o extrato (`components/transactions/`), com atalho na página inicial: lista agrupada por mês, mais novas primeiro, com filtros de tipo, Categoria e período, "Carregar mais" (páginas de 50) e estado vazio. Cada linha (`TransactionRow`) marca as Projeções (data depois de hoje) com um selo "Projeção"; uma Categoria desativada continua aparecendo na Transação antiga. O diálogo de lançamento/edição tem alternância Despesa/Receita, `MoneyInput`, data, descrição e Categoria (só as ativas do tipo escolhido; ao editar, a atual continua na lista). Excluir pede confirmação. A API fala em centavos: `lib/amount.ts` converte o que a pessoa digita ("1.180,40") para centavos sem usar ponto flutuante, e `lib/transactions-api.ts` converte para reais na borda, para o `Money`. "Hoje" no formulário é o dia de America/Sao_Paulo (`lib/today.ts`), o mesmo da API.
 
+## Saldo atual e Saldo inicial
+
+A página inicial (`app/(app)/page.tsx`) mostra o Saldo atual logo abaixo da saudação (`components/balance/balance-section.tsx`, com o `BalanceCard` do Design System em `components/balance-card.tsx`; a versão atual não traz Receitas e Despesas do mês, que ainda não são calculadas). Saldo negativo aparece com "−" e na cor de despesa. Enquanto o Saldo inicial não foi informado, o cartão oferece "Informar saldo inicial" (`opening-balance-dialog.tsx`: `MoneyInput` com `signed`, que aceita zero e "-200,00", e o aviso de que só vale uma vez); depois de informado o botão some e o valor aparece como "Saldo inicial informado". `lib/balance-api.ts` converte centavos em reais na borda. Lançar, editar ou excluir uma Transação invalida `BALANCE_KEY`, então o saldo se atualiza sozinho. O saldo vem pronto da API (que decide o que já é "hoje"); o front-end não recalcula nada.
+
 ## Pré-requisitos
 
 - Node.js 22 e npm.

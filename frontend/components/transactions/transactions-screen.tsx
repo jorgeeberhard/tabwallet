@@ -40,6 +40,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { BALANCE_KEY } from "@/lib/balance-api"
 import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
 import { formatMonth } from "@/lib/format"
 import { transactionFailure } from "@/lib/transaction-messages"
@@ -111,6 +112,7 @@ export function TransactionsScreen() {
     mutationFn: (transaction: Transaction) => deleteTransaction(transaction.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: TRANSACTIONS_KEY })
+      void queryClient.invalidateQueries({ queryKey: BALANCE_KEY })
       toast.success("Transação excluída.")
       setToDelete(null)
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatAmountInput, parseAmountToCents } from "@/lib/amount"
+import { formatAmountInput, parseAmountToCents, parseSignedAmountToCents } from "@/lib/amount"
 
 describe("parseAmountToCents", () => {
   it.each([
@@ -21,6 +21,27 @@ describe("parseAmountToCents", () => {
     "refuses %j",
     (text) => {
       expect(parseAmountToCents(text)).toBeNull()
+    },
+  )
+})
+
+describe("parseSignedAmountToCents", () => {
+  it.each([
+    ["1.180,40", 118040],
+    ["-1.180,40", -118040],
+    ["−250", -25000],
+    [" -0,05 ", -5],
+    ["0", 0],
+    ["0,00", 0],
+    ["-0", 0],
+  ])("reads %s as %i cents", (text, cents) => {
+    expect(parseSignedAmountToCents(text)).toBe(cents)
+  })
+
+  it.each(["", "abc", "--5", "1,234", "-", "9999999999999", "-9999999999999"])(
+    "refuses %j",
+    (text) => {
+      expect(parseSignedAmountToCents(text)).toBeNull()
     },
   )
 })

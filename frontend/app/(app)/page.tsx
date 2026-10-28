@@ -1,6 +1,7 @@
 import { ReceiptTextIcon, TagIcon } from "lucide-react"
 import Link from "next/link"
 
+import { BalanceSection } from "@/components/balance/balance-section"
 import { Welcome } from "@/components/welcome"
 
 const SHORTCUT_CLASS =
@@ -15,6 +16,7 @@ export default function Home() {
         </h1>
         <Welcome />
       </div>
+      <BalanceSection />
       <nav aria-label="Atalhos" className="flex flex-wrap gap-2">
         <Link href="/transacoes" className={SHORTCUT_CLASS}>
           <ReceiptTextIcon strokeWidth={1.75} className="size-4" />
