@@ -1,7 +1,10 @@
-import { TagIcon } from "lucide-react"
+import { ReceiptTextIcon, TagIcon } from "lucide-react"
 import Link from "next/link"
 
 import { Welcome } from "@/components/welcome"
+
+const SHORTCUT_CLASS =
+  "inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-card px-4 text-sm font-semibold hover:bg-muted"
 
 export default function Home() {
   return (
@@ -13,10 +16,11 @@ export default function Home() {
         <Welcome />
       </div>
       <nav aria-label="Atalhos" className="flex flex-wrap gap-2">
-        <Link
-          href="/categorias"
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-input bg-card px-4 text-sm font-semibold hover:bg-muted"
-        >
+        <Link href="/transacoes" className={SHORTCUT_CLASS}>
+          <ReceiptTextIcon strokeWidth={1.75} className="size-4" />
+          Transações
+        </Link>
+        <Link href="/categorias" className={SHORTCUT_CLASS}>
           <TagIcon strokeWidth={1.75} className="size-4" />
           Categorias
         </Link>
