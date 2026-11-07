@@ -37,6 +37,15 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 - O extrato (`/transacoes`) mostra as compras no cartão (`card-purchase-row.tsx`) com o cartão e a fatura (`Fatura de fevereiro de 2026 · aberta`), ganhou o filtro "Cartão" e o botão "Nova compra no cartão". O diálogo (`card-purchase-dialog.tsx`) só oferece cartões ativos e Categorias de despesa ativas; o aviso depois de salvar diz em que fatura a compra entrou. A fatura é decidida pela API (regra do fechamento): o front-end não a calcula.
 - Chamadas em `lib/credit-cards-api.ts`; textos de erro em `lib/credit-card-messages.ts`. Atalho "Cartões" na página inicial.
 
+## Compras parceladas
+
+O botão "Nova compra parcelada" (extrato e tela de faturas do cartão) abre `installment-purchase-dialog.tsx`: cartão, valor total (já com juros, se houver: o sistema não calcula), número de parcelas (2 a 48), data, descrição e Categoria. Embaixo do valor, uma prévia mostra a divisão em centavos exatos ("1ª parcela de R$ 33,34 e 2 de R$ 33,33"); ela é só visual (`lib/installments.ts`), quem divide e escolhe as faturas é a API.
+
+- No extrato, a compra aparece uma vez (`installment-purchase-row.tsx`, `kind: "installment_purchase"`): total, "3x", cartão, faixa de faturas e a lista "Ver parcelas" com número, valor, fatura e estado de cada uma.
+- Na fatura, cada Parcela é uma linha "Geladeira 3/10" (`invoice-installment-row.tsx`) com o valor da própria parcela.
+- Editar: enquanto nenhuma parcela está em fatura paga, todos os campos mudam e tudo é recalculado; com parcelas pagas o diálogo avisa e só a Categoria fica ativa. Excluir (`cancel-installment-purchase-dialog.tsx`) remove a compra inteira, ou, com parcelas pagas, vira "Cancelar parcelas restantes" (as pagas ficam). Com todas as parcelas pagas a ação fica desligada.
+- Chamadas em `lib/credit-cards-api.ts` (`createInstallmentPurchase`, `updateInstallmentPurchase`, `cancelInstallmentPurchase`); erros em `lib/credit-card-messages.ts`.
+
 ## Gastos e receitas fixos
 
 `app/(app)/fixos` mostra a tela "Gastos e receitas fixos" (`components/recurring/`), com atalho na página inicial: lista os lançamentos fixos em andamento (dia do mês, Categoria, próxima data e valor) e os encerrados, e permite cadastrar (tipo, valor, dia do mês de 1 a 31, mês de início, descrição, Categoria), editar e encerrar (com confirmação). Editar o valor vale a partir do mês atual, o que o diálogo avisa; o tipo e o dia não mudam. `lib/recurring-api.ts` fala com a API e `lib/recurring-messages.ts` traduz os erros.

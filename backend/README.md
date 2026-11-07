@@ -142,6 +142,29 @@ Uma Fatura é `{credit_card_id, closing_month, closing_date, due_date, reference
 
 **Módulo de cálculo.** `src/ledger/cards.rs` (puro, como o resto do `ledger`): `LedgerFacts.cards` leva, por cartão, o histórico de dias (`CardSchedule`) e os gastos por dia (`CardSpend`). `Ledger::invoices(card, hoje)`, `Ledger::invoice(card, mês, hoje)`, `Ledger::invoice_for_purchase(card, data, hoje)` e `Ledger::has_remaining_invoice(card, hoje)` respondem sobre as Faturas; o Mês de referência é `InvoiceCycle::reference_month`. A Compra no cartão fica de fora de `cash_flows`, então `current_balance` continua ignorando-a. O extrato (`StatementRepository`) ordena e pagina por `UNION ALL` das tabelas `transactions` e `card_purchases`; uma nova variante de `StatementItem` entra com mais um ramo da consulta. As Ocorrências de Transações fixas são calculadas no use case e juntadas a essa lista em memória; com `credit_card_id` elas ficam de fora.
 
+## Compras parceladas e Parcelas (UC18 e a parte parcelada de UC06, UC07 e UC08)
+
+Uma Compra parcelada é uma Compra no cartão dividida em Parcelas. O usuário informa o **total já com juros** (o sistema nunca calcula nem grava juros) e o número de Parcelas (2 a 48). Não altera o Saldo atual.
+
+| Rota | Efeito |
+| --- | --- |
+| `POST /installment-purchases` `{credit_card_id, total_cents, installment_count, date, description, category_id}` | Lança. `201 {installment_purchase}`. `fields.installment_count = installment_count_range`; `fields.total_cents = amount_range` ou `total_below_installments` (menos de 1 centavo por Parcela); `fields.date = invoice_paid` se a primeira Parcela cairia numa Fatura paga; `category_*` e `credit_card_*` como nas compras no cartão. |
+| `PATCH /installment-purchases/{id}` `{total_cents?, installment_count?, date?, description?, category_id?}` | Sem Parcela em Fatura paga: recalcula e realoca tudo (as Parcelas de mesmo número continuam sendo o mesmo registro). Com alguma paga: só `category_id`; qualquer outro campo dá `409 installments_paid`. |
+| `DELETE /installment-purchases/{id}` | Sem Parcela paga: exclui a compra inteira, `204`. Com alguma paga: cancela só as restantes e devolve `200 {installment_purchase}` (`cancelled: true`, só as pagas em `installments`). Se todas estão pagas, `409 invoice_paid`. `404 installment_purchase_not_found` para id desconhecido ou de outro usuário. |
+| `GET /credit-cards/{id}/invoices/{closing_month}` | Ganha `installments`: as Parcelas da Fatura (`{id, installment_purchase_id, number, installment_count, amount_cents, total_cents, date, description, category, credit_card, invoice, reference_month, purchase_has_paid_installments}`), as linhas "3/10". O total da Fatura soma compras e Parcelas. |
+| `GET /transactions` | O extrato ganha itens `kind: "installment_purchase"`, **um por compra** (pela data da compra), com todas as Parcelas; respeitam os filtros de período, Categoria, tipo e cartão. |
+
+Uma compra parcelada é `{id, total_cents, installment_count, date, description, category, credit_card, cancelled, has_paid_installments, installments: [{id, number, amount_cents, invoice: {closing_month, closing_date, due_date, reference_month, state}, reference_month}], is_projection, created_at}`.
+
+**Regras.**
+
+- O total se divide em centavos exatos e o que sobra vai para a **primeira** Parcela (R$ 100,00 em 3x: 33,34 + 33,33 + 33,33).
+- Cada Parcela vai para uma Fatura consecutiva, a primeira na que receberia a compra à vista (regra do fechamento). Cada Parcela conta no Mês de referência da sua Fatura.
+- "Parcela paga" é Parcela numa Fatura `paid` (derivado do vencimento, como nas compras no cartão). Uma Fatura só com Parcelas aparece na lista de Faturas e conta para `credit_card_has_remaining_invoice`.
+- Mudar os dias do cartão realoca as Parcelas de compras sem Parcela paga, como já acontece com as compras avulsas.
+
+**Banco e módulo de cálculo.** `installment_purchases` guarda a compra (total, número de Parcelas, data, Categoria, `cancelled_at`) e `installments` guarda **uma linha por Parcela** com valor e `invoice_month` (primeiro dia do mês de fechamento da Fatura): assim a Antecipação de parcelas (ticket seguinte) pode mover uma Parcela de Fatura sem tocar nas outras. As Faturas continuam sem ser gravadas. No `ledger`, `CardFacts.installments` leva as `InstallmentCharge` (mês da Fatura e valor, lidas por `CreditCardRepository::installment_charges`), `Ledger::plan_installments` divide e aloca uma compra (`split_installments`, `PlannedInstallment`) e `Ledger::invoice_cycle` dá datas e estado de qualquer Fatura. O extrato ganha mais um ramo no `UNION ALL` de `StatementRepository`.
+
 ## Transações fixas e Ocorrências (UC05, UC06 e UC07)
 
 Gastos fixos e Receitas fixas. Todas as rotas exigem sessão e só enxergam o que é do próprio usuário (id de outro usuário ou malformado responde `404 recurring_transaction_not_found`). Uma Transação fixa é `{id, type, amount_cents, day_of_month, description, category: {id, name, type, active}, start_month, end_month, ended, next_date, created_at}`: `amount_cents` é o valor em vigor no mês atual (o do primeiro ou do último mês se ainda não começou ou já terminou), `start_month` e `end_month` são `AAAA-MM` e `next_date` é o dia da próxima Ocorrência depois de hoje, ou `null`.
