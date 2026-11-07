@@ -20,8 +20,8 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, BalanceSeriesError, BudgetError, CardProblem, CardPurchaseError,
-        CategoryError, CategoryProblem, CreditCardError, InstallmentPurchaseError,
-        InvoicePaymentError, RecurringError, TransactionError,
+        CategoryError, CategoryProblem, ChargeError, CreditCardError, InstallmentAnticipationError,
+        InstallmentPurchaseError, InvoicePaymentError, RecurringError, TransactionError,
     },
 };
 
@@ -66,11 +66,25 @@ pub enum ApiError {
     /// The invoice is paid, so its purchases cannot be edited or deleted and it
     /// takes no payment.
     InvoicePaid,
+    /// No such Charge for this user.
+    ChargeNotFound,
+    /// The invoice's due date has not come, so its payment cannot be corrected.
+    InvoicePaymentNotDue,
+    /// Early Payments covered the whole invoice: no due-date payment to correct.
+    InvoiceNothingToPay,
+    /// The invoice that received the Carried Balance is paid, which locks the
+    /// payment.
+    InvoicePaymentLocked,
     /// No such installment purchase for this user.
     InstallmentPurchaseNotFound,
     /// Some Installment of the purchase is in a paid invoice, so only its
     /// Category can change.
     InstallmentsPaid,
+    /// Some Installment of the purchase was anticipated, which cannot be
+    /// undone, so only its Category can change.
+    InstallmentsAnticipated,
+    /// Some chosen Installment is not in an invoice later than the open one.
+    InstallmentsNotAnticipable,
     /// No such recurring Transaction for this user.
     RecurringTransactionNotFound,
     /// The recurring Transaction has no Occurrence in that month.
@@ -213,7 +227,26 @@ impl From<InvoicePaymentError> for ApiError {
                 "amount_cents".to_string(),
                 "amount_exceeds_remaining".to_string(),
             )])),
+            InvoicePaymentError::NotDue => Self::InvoicePaymentNotDue,
+            InvoicePaymentError::NothingToPay => Self::InvoiceNothingToPay,
+            InvoicePaymentError::Locked => Self::InvoicePaymentLocked,
             InvoicePaymentError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<ChargeError> for ApiError {
+    fn from(error: ChargeError) -> Self {
+        match error {
+            ChargeError::CardNotFound => Self::CreditCardNotFound,
+            ChargeError::InvoiceNotFound => Self::InvoiceNotFound,
+            ChargeError::NotFound => Self::ChargeNotFound,
+            ChargeError::InvoicePaid => Self::InvoicePaid,
+            ChargeError::CategoryInactive => Self::Validation(BTreeMap::from([(
+                "category_id".to_string(),
+                "category_inactive".to_string(),
+            )])),
+            ChargeError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -275,7 +308,31 @@ impl From<InstallmentPurchaseError> for ApiError {
             // Every Installment is in a paid invoice: same answer as a single
             // purchase in a paid invoice.
             InstallmentPurchaseError::AllPaid => Self::InvoicePaid,
+            InstallmentPurchaseError::InstallmentsAnticipated => Self::InstallmentsAnticipated,
             InstallmentPurchaseError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<InstallmentAnticipationError> for ApiError {
+    fn from(error: InstallmentAnticipationError) -> Self {
+        let field = |name: &str, rule: &str| {
+            Self::Validation(BTreeMap::from([(name.to_string(), rule.to_string())]))
+        };
+        match error {
+            InstallmentAnticipationError::CardNotFound => Self::CreditCardNotFound,
+            InstallmentAnticipationError::NotConfirmed => field("confirm", "confirmation_required"),
+            InstallmentAnticipationError::NothingChosen => {
+                field("installment_ids", "installments_required")
+            }
+            InstallmentAnticipationError::InstallmentNotFound => {
+                field("installment_ids", "installment_not_found")
+            }
+            InstallmentAnticipationError::NotAnticipable => Self::InstallmentsNotAnticipable,
+            InstallmentAnticipationError::DiscountTooLarge => {
+                field("discount_cents", "discount_exceeds_total")
+            }
+            InstallmentAnticipationError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -422,6 +479,30 @@ impl IntoResponse for ApiError {
                 "The invoice is paid and cannot be changed.",
                 None,
             ),
+            Self::ChargeNotFound => (
+                StatusCode::NOT_FOUND,
+                "charge_not_found",
+                "There is no such charge.",
+                None,
+            ),
+            Self::InvoicePaymentNotDue => (
+                StatusCode::CONFLICT,
+                "invoice_payment_not_due",
+                "The invoice is not due yet, so its payment cannot be corrected.",
+                None,
+            ),
+            Self::InvoiceNothingToPay => (
+                StatusCode::CONFLICT,
+                "invoice_nothing_to_pay",
+                "Early payments covered the whole invoice: there is no due-date payment to correct.",
+                None,
+            ),
+            Self::InvoicePaymentLocked => (
+                StatusCode::CONFLICT,
+                "invoice_payment_locked",
+                "The invoice that received the carried balance is paid, so this payment can no longer be corrected.",
+                None,
+            ),
             Self::InstallmentPurchaseNotFound => (
                 StatusCode::NOT_FOUND,
                 "installment_purchase_not_found",
@@ -432,6 +513,18 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "installments_paid",
                 "Some installments are already in a paid invoice; only the category can change.",
+                None,
+            ),
+            Self::InstallmentsAnticipated => (
+                StatusCode::CONFLICT,
+                "installments_anticipated",
+                "Some installments were anticipated, which cannot be undone; only the category can change and the remaining installments can be cancelled.",
+                None,
+            ),
+            Self::InstallmentsNotAnticipable => (
+                StatusCode::CONFLICT,
+                "installments_not_anticipable",
+                "Only installments in invoices after the open one can be anticipated.",
                 None,
             ),
             Self::RecurringTransactionNotFound => (

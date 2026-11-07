@@ -14,6 +14,7 @@ use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
     installment_purchases::InstallmentPurchaseResponse,
+    invoice_charges::ChargeResponse,
     invoice_payments::StatementInvoicePaymentResponse,
     recurring::OccurrenceResponse,
 };
@@ -26,6 +27,7 @@ use crate::{
     repositories::categories::CategoryRepository,
     repositories::credit_cards::CreditCardRepository,
     repositories::installment_purchases::InstallmentPurchaseRepository,
+    repositories::invoice_charges::InvoiceChargeRepository,
     repositories::invoice_payments::InvoicePaymentRepository,
     repositories::recurring::RecurringRepository,
     repositories::statement::StatementRepository,
@@ -163,6 +165,9 @@ pub enum StatementItemResponse {
     CardPurchase(CardPurchaseResponse),
     /// A purchase split in Installments, with all its Installments.
     InstallmentPurchase(InstallmentPurchaseResponse),
+    /// A Charge (Encargo): interest, penalty or IOF recorded on an invoice. An
+    /// expense of "Juros e encargos" that leaves the balance with the invoice.
+    Charge(ChargeResponse),
     /// An Occurrence of a Gasto fixo or Receita fixa, computed on read.
     Occurrence(OccurrenceResponse),
     /// An Invoice Payment, early or automatic: it leaves the Current Balance
@@ -248,6 +253,7 @@ pub async fn list(
         CreditCardRepository::new(state.pool.clone()),
         RecurringRepository::new(state.pool.clone()),
         InvoicePaymentRepository::new(state.pool.clone()),
+        InvoiceChargeRepository::new(state.pool.clone()),
     )
     .execute(auth_user.id, today, filter, limit, offset)
     .await?;
@@ -265,6 +271,9 @@ pub async fn list(
                     StatementItemResponse::InstallmentPurchase(InstallmentPurchaseResponse::new(
                         view, today,
                     ))
+                }
+                StatementItem::Charge(view) => {
+                    StatementItemResponse::Charge(ChargeResponse::new(view, today))
                 }
                 StatementItem::Occurrence(occurrence) => {
                     StatementItemResponse::Occurrence(OccurrenceResponse::new(occurrence, today))

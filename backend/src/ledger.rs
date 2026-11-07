@@ -13,7 +13,11 @@
 //! history and the Projected Balance (series of points over time) in [`series`].
 //! Monthly Budgets, the spending of a Category in a Reference Month and the
 //! Budget Alert live in [`budget`].
+//! Bringing future Installments to the open invoice with a Discount
+//! (Installment Anticipation) is planned by [`Ledger::plan_anticipation`], in
+//! [`anticipation`].
 
+pub mod anticipation;
 pub mod budget;
 pub mod cards;
 mod recurring;
@@ -255,6 +259,34 @@ impl Ledger {
     ) -> Option<Vec<PlannedInstallment>> {
         self.card(card_id)?
             .plan_installments(date, total_cents, count, today)
+    }
+
+    /// The invoice of the card that is open on `today` (the one receiving
+    /// purchases), whether or not anything is in it yet. `None` for an
+    /// unknown card.
+    pub fn open_invoice_cycle(
+        &self,
+        card_id: CreditCardId,
+        today: NaiveDate,
+    ) -> Option<InvoiceCycle> {
+        let card = self.card(card_id)?;
+        Some(card.cycle_of(card.schedule.first_open_month(today), today))
+    }
+
+    /// Plans an Installment Anticipation: bringing `chosen` Installments of
+    /// the card into its open invoice, with a Discount of `discount_cents`
+    /// (zero for none) split in proportion between them. Nothing is stored;
+    /// see [`anticipation`] for the rules.
+    pub fn plan_anticipation(
+        &self,
+        card_id: CreditCardId,
+        chosen: &[anticipation::InstallmentToAnticipate],
+        discount_cents: i64,
+        today: NaiveDate,
+    ) -> Result<anticipation::AnticipationPlan, anticipation::AnticipationError> {
+        self.card(card_id)
+            .ok_or(anticipation::AnticipationError::UnknownCard)?
+            .plan_anticipation(chosen, discount_cents, today)
     }
 
     /// Whether any invoice of the card still has something to pay on `today`.

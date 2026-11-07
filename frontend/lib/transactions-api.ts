@@ -4,6 +4,9 @@ import { centsToReais } from "@/lib/amount"
 import {
   type CardPurchase,
   type CardPurchasePayload,
+  type Charge,
+  type ChargePayload,
+  toCharge,
   type InstallmentPurchase,
   type InstallmentPurchasePayload,
   toCardPurchase,
@@ -69,6 +72,7 @@ export type StatementItem =
   | ({ kind: "transaction" } & Transaction)
   | ({ kind: "card_purchase" } & CardPurchase)
   | ({ kind: "installment_purchase" } & InstallmentPurchase)
+  | ({ kind: "charge" } & Charge)
   | ({ kind: "occurrence" } & Occurrence)
   | ({ kind: "invoice_payment" } & InvoicePaymentItem)
 
@@ -127,6 +131,7 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
       | ({ kind: "transaction" } & TransactionPayload)
       | ({ kind: "card_purchase" } & CardPurchasePayload)
       | ({ kind: "installment_purchase" } & InstallmentPurchasePayload)
+      | ({ kind: "charge" } & ChargePayload)
       | ({ kind: "occurrence" } & OccurrencePayload)
       | ({ kind: "invoice_payment" } & InvoicePaymentItemPayload)
     )[]
@@ -141,11 +146,13 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
           ? { kind: "card_purchase", ...toCardPurchase(item) }
           : item.kind === "installment_purchase"
             ? { kind: "installment_purchase", ...toInstallmentPurchase(item) }
-            : item.kind === "occurrence"
-            ? { kind: "occurrence", ...toOccurrence(item) }
-            : item.kind === "invoice_payment"
-              ? { kind: "invoice_payment", ...toInvoicePaymentItem(item) }
-              : { kind: "transaction", ...toTransaction(item) },
+            : item.kind === "charge"
+              ? { kind: "charge", ...toCharge(item) }
+              : item.kind === "occurrence"
+                ? { kind: "occurrence", ...toOccurrence(item) }
+                : item.kind === "invoice_payment"
+                  ? { kind: "invoice_payment", ...toInvoicePaymentItem(item) }
+                  : { kind: "transaction", ...toTransaction(item) },
     ),
     total: payload.total,
     limit: payload.limit,

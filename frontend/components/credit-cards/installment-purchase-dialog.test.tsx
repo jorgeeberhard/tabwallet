@@ -50,6 +50,7 @@ const target: InstallmentPurchaseTarget = {
   category: { id: "c1", name: "Outros", active: true },
   creditCard: { id: "k1", name: "Nubank" },
   hasPaidInstallments: false,
+  hasAnticipatedInstallments: false,
 }
 
 function renderDialog(purchase: InstallmentPurchaseTarget) {
@@ -114,6 +115,17 @@ describe("InstallmentPurchaseDialog", () => {
     expect(screen.getByLabelText("Parcelas")).toBeDisabled()
     expect(screen.getByLabelText("Data da compra")).toBeDisabled()
     expect(screen.getByLabelText("Descrição")).toBeDisabled()
+    expect(screen.getByLabelText("Categoria")).toBeEnabled()
+  })
+
+  it("also locks the purchase once some installment was anticipated", () => {
+    renderDialog({ ...target, hasAnticipatedInstallments: true })
+
+    expect(
+      screen.getByText(/parcelas antecipadas, e a antecipação não pode ser desfeita/),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText("Valor total")).toBeDisabled()
+    expect(screen.getByLabelText("Parcelas")).toBeDisabled()
     expect(screen.getByLabelText("Categoria")).toBeEnabled()
   })
 })

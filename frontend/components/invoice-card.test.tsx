@@ -18,6 +18,10 @@ const base: Invoice = {
   paid: 0,
   remainingCents: 123456,
   remaining: 1234.56,
+  chargesCents: 0,
+  carriedBalanceCents: 0,
+  carriedForwardCents: 0,
+  paymentCorrection: { state: "not_due", correctedCents: null, maxCents: 0 },
 }
 
 describe("InvoiceCard", () => {
@@ -93,6 +97,99 @@ describe("InvoiceCard", () => {
     )
     expect(screen.queryByRole("button", { name: "Pagar antecipado" })).not.toBeInTheDocument()
     expect(screen.getByText(/Paga antecipadamente/)).toBeInTheDocument()
+  })
+
+  const paid: Invoice = {
+    ...base,
+    state: "paid",
+    paidCents: 123456,
+    paid: 1234.56,
+    remainingCents: 0,
+    remaining: 0,
+  }
+
+  it("offers to correct the payment of a paid invoice while it can still be corrected", async () => {
+    const onCorrectPayment = vi.fn()
+    const editable: Invoice = {
+      ...paid,
+      paymentCorrection: { state: "editable", correctedCents: null, maxCents: 123456 },
+    }
+    const { rerender } = render(
+      <InvoiceCard cardName="Nubank" invoice={editable} onCorrectPayment={onCorrectPayment} />,
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Corrigir pagamento" }))
+    expect(onCorrectPayment).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...paid, paymentCorrection: { ...editable.paymentCorrection, state: "not_due" } }}
+        onCorrectPayment={onCorrectPayment}
+      />,
+    )
+    expect(screen.queryByRole("button", { name: "Corrigir pagamento" })).not.toBeInTheDocument()
+  })
+
+  it("explains in plain words why a locked payment cannot be corrected", () => {
+    render(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{
+          ...paid,
+          paymentCorrection: { state: "locked", correctedCents: null, maxCents: 123456 },
+        }}
+        onCorrectPayment={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "Corrigir pagamento" })).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/O pagamento desta fatura não pode mais ser corrigido/),
+    ).toBeInTheDocument()
+  })
+
+  it("shows the Carried Balance received from the previous invoice as part of the total", () => {
+    render(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...base, carriedBalanceCents: 10000 }}
+        carriedBalance={{ amountCents: 10000, amount: 100, fromClosingMonth: "2025-12" }}
+      />,
+    )
+
+    expect(screen.getByText(/Saldo rolado da fatura de dezembro de 2025/)).toBeInTheDocument()
+    expect(screen.getByText("R$ 100,00")).toBeInTheDocument()
+    expect(screen.getByText(/Não conta como nova despesa/)).toBeInTheDocument()
+  })
+
+  it("shows the part of a paid invoice that moved on to the next one", () => {
+    render(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...paid, paidCents: 100000, paid: 1000, carriedForwardCents: 23456 }}
+      />,
+    )
+
+    expect(screen.getByText(/Passou para a próxima fatura como saldo rolado/)).toBeInTheDocument()
+    expect(screen.getByText("R$ 234,56")).toBeInTheDocument()
+  })
+
+  it("shows the Charges of the invoice and offers to record more until it is paid", async () => {
+    const onAddCharges = vi.fn()
+    const { rerender } = render(
+      <InvoiceCard
+        cardName="Nubank"
+        invoice={{ ...base, chargesCents: 5000 }}
+        onAddCharges={onAddCharges}
+      />,
+    )
+    expect(screen.getByText(/Encargos:/)).toBeInTheDocument()
+    expect(screen.getByText("R$ 50,00")).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Lançar encargos" }))
+    expect(onAddCharges).toHaveBeenCalledTimes(1)
+
+    rerender(<InvoiceCard cardName="Nubank" invoice={paid} onAddCharges={onAddCharges} />)
+    expect(screen.queryByRole("button", { name: "Lançar encargos" })).not.toBeInTheDocument()
   })
 
   it("shows what was paid on a paid invoice", () => {

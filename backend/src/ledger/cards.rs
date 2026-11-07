@@ -18,9 +18,18 @@
 //! is. Neither is an expense: they leave the balance on their date and are
 //! reported as [`InvoicePayment`]s, apart from card purchases.
 //!
+//! Correcting the payment (UC20) and Charges (UC21): the user may replace the
+//! due-date payment with the amount really paid; what is left unpaid becomes
+//! the Carried Balance of the next invoice, a derived item that is not an
+//! expense and that counts in that invoice's total (and so in what it carries
+//! on in turn). Charges are expenses the user records in an invoice and are part
+//! of its total. Both are stored as facts; the amounts follow from them.
+//!
 //! A card keeps a history of its days ([`CardSchedule`]) so that changing them
 //! only affects invoices still open: closed and paid invoices keep the days
 //! they were closed with.
+
+use std::collections::{BTreeSet, HashMap};
 
 use chrono::{Datelike, NaiveDate};
 
@@ -69,6 +78,20 @@ impl Month {
             Self {
                 year: self.year,
                 month: self.month + 1,
+            }
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        if self.month == 1 {
+            Self {
+                year: self.year - 1,
+                month: 12,
+            }
+        } else {
+            Self {
+                year: self.year,
+                month: self.month - 1,
             }
         }
     }
@@ -212,21 +235,59 @@ impl InvoiceCycle {
     }
 }
 
+/// Whether the payment of an invoice can be corrected to the amount really
+/// paid at the bank (UC20).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CorrectionState {
+    /// The due date has not come: there is no payment yet to correct.
+    NotDue,
+    /// Early Payments covered the whole invoice: the due date debits nothing.
+    NothingToPay,
+    /// The invoice that received (or would receive) the Carried Balance is
+    /// Paid, so the payment is locked like the rest of the invoice.
+    Locked,
+    /// The invoice is Paid and the next one is not: the payment can be
+    /// corrected, again and again.
+    Editable,
+}
+
+/// The state of an invoice's payment correction and its numbers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaymentCorrection {
+    pub state: CorrectionState,
+    /// The amount the user said they paid, once they corrected it.
+    pub corrected_cents: Option<i64>,
+    /// The most the due-date payment can be corrected to: what the Early
+    /// Payments left unpaid.
+    pub max_cents: i64,
+}
+
 /// An invoice with its amounts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Invoice {
     pub card_id: CreditCardId,
     pub cycle: InvoiceCycle,
-    /// The sum of the purchases in it.
+    /// What the invoice comes to: the purchases, the Charges and the Carried
+    /// Balance it received from the previous invoice.
     pub total_cents: i64,
     /// What has left the balance for this invoice: the Early Payments, and
-    /// once the due date has come, the automatic payment of the rest.
+    /// once the due date has come, the due-date payment (automatic, or the
+    /// amount the user corrected it to).
     pub paid_cents: i64,
     /// What is still to be paid: the total less the Early Payments, never
     /// negative. Zero once the invoice is Paid (the due date settles it); an
     /// Open or Closed invoice paid in full early also has zero remaining but
     /// keeps its state until the due date, so purchases may still raise it.
     pub remaining_cents: i64,
+    /// The sum of the Charges recorded in it (part of `total_cents`).
+    pub charges_cents: i64,
+    /// The Carried Balance received from the previous invoice (part of
+    /// `total_cents`). It is not an expense.
+    pub carried_in_cents: i64,
+    /// What was left unpaid at the due date and moved to the next invoice as
+    /// its Carried Balance.
+    pub carried_out_cents: i64,
+    pub payment_correction: PaymentCorrection,
 }
 
 /// Where a payment of an invoice came from.
@@ -236,6 +297,16 @@ pub enum PaymentOrigin {
     Early(InvoicePaymentId),
     /// Derived on the due date from what was still unpaid; never stored.
     Automatic,
+    /// The due-date payment after the user corrected it to the amount really
+    /// paid. The correction is stored; the payment is derived from it.
+    Corrected,
+}
+
+impl PaymentOrigin {
+    /// Whether the payment is derived on read rather than a stored row.
+    pub fn is_derived(self) -> bool {
+        !matches!(self, Self::Early(_))
+    }
 }
 
 /// Money that left (or will leave) the balance to pay an invoice. It is not an
@@ -267,6 +338,24 @@ pub struct PaymentFact {
 pub struct CardSpend {
     pub date: NaiveDate,
     /// Cents, greater than zero.
+    pub amount_cents: i64,
+}
+
+/// A Charge as the ledger needs it: how much, and the invoice it was recorded
+/// in (by closing month, not by date: the user links it to the invoice).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChargeFact {
+    pub closing_month: Month,
+    /// Cents, greater than zero.
+    pub amount_cents: i64,
+}
+
+/// The amount the user said they really paid of an invoice at its due date
+/// (UC20). It replaces the automatic payment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CorrectionFact {
+    pub closing_month: Month,
+    /// Cents, zero or more.
     pub amount_cents: i64,
 }
 
@@ -323,6 +412,37 @@ pub struct CardFacts {
     pub installments: Vec<InstallmentCharge>,
     /// The Early Payments stored for the card's invoices.
     pub payments: Vec<PaymentFact>,
+    /// The Charges recorded in the card's invoices.
+    pub charges: Vec<ChargeFact>,
+    /// The corrections of the due-date payment.
+    pub corrections: Vec<CorrectionFact>,
+}
+
+/// The amounts of one invoice, worked out from the facts alone (they do not
+/// depend on "today"). An invoice's unpaid part may become the Carried Balance
+/// of the next one, so invoices are settled oldest first.
+#[derive(Clone, Copy, Debug)]
+struct Settlement {
+    month: Month,
+    purchases_cents: i64,
+    charges_cents: i64,
+    carried_in_cents: i64,
+    early_cents: i64,
+    /// The total less the Early Payments, never negative: what the due date
+    /// would debit if the user did not correct the payment.
+    unpaid_cents: i64,
+    /// What the user said they paid (at most `unpaid_cents`), if corrected.
+    corrected_cents: Option<i64>,
+    /// What leaves the balance on the due date.
+    due_payment_cents: i64,
+    /// What moves to the next invoice: `unpaid_cents` less `due_payment_cents`.
+    carried_out_cents: i64,
+}
+
+impl Settlement {
+    fn total_cents(&self) -> i64 {
+        self.purchases_cents + self.charges_cents + self.carried_in_cents
+    }
 }
 
 impl CardFacts {
@@ -380,8 +500,9 @@ impl CardFacts {
         self.cycle(self.schedule.invoice_month_for(date), today)
     }
 
-    /// What the invoice closing in `month` adds up to: its single purchases
-    /// and its Installments.
+    /// What the invoice closing in `month` adds up to from purchases: its
+    /// single purchases and its Installments (without Charges or any Carried
+    /// Balance).
     fn total_of(&self, month: Month) -> i64 {
         let purchases: i64 = self
             .spending
@@ -398,6 +519,14 @@ impl CardFacts {
         purchases + installments
     }
 
+    fn charges_of(&self, month: Month) -> i64 {
+        self.charges
+            .iter()
+            .filter(|charge| charge.closing_month == month)
+            .map(|charge| charge.amount_cents)
+            .sum()
+    }
+
     fn early_paid_of(&self, month: Month) -> i64 {
         self.payments
             .iter()
@@ -406,50 +535,106 @@ impl CardFacts {
             .sum()
     }
 
-    /// The closing months with a purchase, an Installment or a payment,
-    /// oldest first.
-    fn active_months(&self) -> Vec<Month> {
-        let mut months: Vec<Month> = self
+    /// Works out every invoice that has something in it, oldest first: those
+    /// with purchases, Installments, Charges, payments or a correction, and those that
+    /// receive a Carried Balance, plus `also` (the first open invoice, which
+    /// exists even when empty).
+    ///
+    /// The unpaid part an invoice's due-date payment leaves (see
+    /// [`Settlement::carried_out_cents`]) is the Carried Balance of the next
+    /// invoice, which counts in that invoice's total and so in what it carries
+    /// on in turn.
+    fn settlements(&self, also: Option<Month>) -> Vec<Settlement> {
+        let mut pending: BTreeSet<Month> = self
             .spending
             .iter()
             .map(|spend| self.schedule.invoice_month_for(spend.date))
             .chain(self.installments.iter().map(|charge| charge.invoice_month))
             .chain(self.payments.iter().map(|payment| payment.closing_month))
+            .chain(self.charges.iter().map(|charge| charge.closing_month))
+            .chain(
+                self.corrections
+                    .iter()
+                    .map(|correction| correction.closing_month),
+            )
+            .chain(also)
             .collect();
-        months.sort();
-        months.dedup();
-        months
+        let mut carried_in: HashMap<Month, i64> = HashMap::new();
+        let mut found = Vec::new();
+        while let Some(month) = pending.pop_first() {
+            let carried_in_cents = carried_in.remove(&month).unwrap_or(0);
+            let purchases_cents = self.total_of(month);
+            let charges_cents = self.charges_of(month);
+            let early_cents = self.early_paid_of(month);
+            let unpaid_cents =
+                (purchases_cents + charges_cents + carried_in_cents - early_cents).max(0);
+            let corrected_cents = self
+                .corrections
+                .iter()
+                .find(|correction| correction.closing_month == month)
+                .map(|correction| correction.amount_cents.min(unpaid_cents));
+            let due_payment_cents = corrected_cents.unwrap_or(unpaid_cents);
+            let carried_out_cents = unpaid_cents - due_payment_cents;
+            if carried_out_cents > 0 {
+                carried_in.insert(month.next(), carried_out_cents);
+                pending.insert(month.next());
+            }
+            found.push(Settlement {
+                month,
+                purchases_cents,
+                charges_cents,
+                carried_in_cents,
+                early_cents,
+                unpaid_cents,
+                corrected_cents,
+                due_payment_cents,
+                carried_out_cents,
+            });
+        }
+        found
     }
 
-    fn invoice(&self, month: Month, today: NaiveDate) -> Invoice {
-        let cycle = self.cycle(month, today);
-        let total_cents = self.total_of(month);
-        let early = self.early_paid_of(month);
-        let unpaid = (total_cents - early).max(0);
+    fn invoice_of(&self, settlement: &Settlement, today: NaiveDate) -> Invoice {
+        let cycle = self.cycle(settlement.month, today);
         let (paid_cents, remaining_cents) = match cycle.state {
-            // The due date debits the rest on its own.
-            InvoiceState::Paid => (early + unpaid, 0),
-            _ => (early, unpaid),
+            // The due date debits what the Early Payments left (or the amount
+            // the user corrected it to) on its own.
+            InvoiceState::Paid => (settlement.early_cents + settlement.due_payment_cents, 0),
+            _ => (settlement.early_cents, settlement.unpaid_cents),
+        };
+        let state = if cycle.state != InvoiceState::Paid {
+            CorrectionState::NotDue
+        } else if self.cycle(settlement.month.next(), today).state == InvoiceState::Paid {
+            CorrectionState::Locked
+        } else if settlement.unpaid_cents == 0 {
+            CorrectionState::NothingToPay
+        } else {
+            CorrectionState::Editable
         };
         Invoice {
             card_id: self.id,
             cycle,
-            total_cents,
+            total_cents: settlement.total_cents(),
             paid_cents,
             remaining_cents,
+            charges_cents: settlement.charges_cents,
+            carried_in_cents: settlement.carried_in_cents,
+            carried_out_cents: settlement.carried_out_cents,
+            payment_correction: PaymentCorrection {
+                state,
+                corrected_cents: settlement.corrected_cents,
+                max_cents: settlement.unpaid_cents,
+            },
         }
     }
 
-    /// The card's invoices, oldest first: every one that has purchases or
-    /// payments and the first open one, even when still empty.
+    /// The card's invoices, oldest first: every one that has purchases,
+    /// Charges, payments or a Carried Balance, and the first open one, even
+    /// when still empty.
     pub fn invoices(&self, today: NaiveDate) -> Vec<Invoice> {
-        let mut months = self.active_months();
-        months.push(self.schedule.first_open_month(today));
-        months.sort();
-        months.dedup();
-        months
-            .into_iter()
-            .map(|month| self.invoice(month, today))
+        self.settlements(Some(self.schedule.first_open_month(today)))
+            .iter()
+            .map(|settlement| self.invoice_of(settlement, today))
             .collect()
     }
 
@@ -460,14 +645,15 @@ impl CardFacts {
     }
 
     /// Every payment of the card's invoices, oldest first: the stored Early
-    /// Payments and, for each invoice, the automatic payment dated on its due
-    /// date for whatever the Early Payments left unpaid. It does not depend on
-    /// "today": an automatic payment in the future is a projection of the same
-    /// rule, and it changes as purchases are added.
+    /// Payments and, for each invoice, the payment dated on its due date for
+    /// whatever the Early Payments left unpaid (the automatic payment) or, once
+    /// the user corrected it, for the amount they said they paid. It does not
+    /// depend on "today": a due-date payment in the future is a projection of
+    /// the same rule, and it changes as purchases are added.
     pub fn payments(&self) -> Vec<InvoicePayment> {
         let mut found = Vec::new();
-        for month in self.active_months() {
-            let early = self.early_paid_of(month);
+        for settlement in self.settlements(None) {
+            let month = settlement.month;
             found.extend(
                 self.payments
                     .iter()
@@ -480,14 +666,17 @@ impl CardFacts {
                         origin: PaymentOrigin::Early(payment.id),
                     }),
             );
-            let unpaid = self.total_of(month) - early;
-            if unpaid > 0 {
+            if settlement.due_payment_cents > 0 {
                 found.push(InvoicePayment {
                     card_id: self.id,
                     closing_month: month,
                     date: self.schedule.due_date(month),
-                    amount_cents: unpaid,
-                    origin: PaymentOrigin::Automatic,
+                    amount_cents: settlement.due_payment_cents,
+                    origin: if settlement.corrected_cents.is_some() {
+                        PaymentOrigin::Corrected
+                    } else {
+                        PaymentOrigin::Automatic
+                    },
                 });
             }
         }

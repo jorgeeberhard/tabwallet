@@ -2,7 +2,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::transactions::{TransactionFilter, TransactionType};
-use crate::ids::{CardPurchaseId, InstallmentPurchaseId, InvoicePaymentId, TransactionId, UserId};
+use crate::ids::{
+    CardPurchaseId, ChargeId, InstallmentPurchaseId, InvoicePaymentId, TransactionId, UserId,
+};
 
 /// Which table a statement entry lives in, with its id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,6 +12,8 @@ pub enum StatementKey {
     Transaction(TransactionId),
     CardPurchase(CardPurchaseId),
     InstallmentPurchase(InstallmentPurchaseId),
+    /// A Charge (Encargo) recorded in an invoice.
+    Charge(ChargeId),
     /// An Early Payment of an invoice (the automatic payment of a due date has
     /// no row and is added by the use case).
     InvoicePayment(InvoicePaymentId),
@@ -63,6 +67,15 @@ macro_rules! entries {
            AND ($5::text IS NULL OR p.type = $5)
            AND ($6::uuid IS NULL OR p.credit_card_id = $6)
          UNION ALL
+         SELECT 'charge' AS kind, ch.id, ch.date, ch.created_at
+         FROM invoice_charges ch
+         WHERE ch.user_id = $1
+           AND ($2::date IS NULL OR ch.date >= $2)
+           AND ($3::date IS NULL OR ch.date <= $3)
+           AND ($4::uuid IS NULL OR ch.category_id = $4)
+           AND ($5::text IS NULL OR ch.type = $5)
+           AND ($6::uuid IS NULL OR ch.credit_card_id = $6)
+         UNION ALL
          SELECT 'invoice_payment' AS kind, ip.id, ip.date, ip.created_at
          FROM invoice_payments ip
          WHERE ip.user_id = $1
@@ -110,6 +123,7 @@ impl StatementRepository {
                 "installment_purchase" => {
                     StatementKey::InstallmentPurchase(InstallmentPurchaseId(row.id))
                 }
+                "charge" => StatementKey::Charge(ChargeId(row.id)),
                 "invoice_payment" => StatementKey::InvoicePayment(InvoicePaymentId(row.id)),
                 _ => StatementKey::Transaction(TransactionId(row.id)),
             })

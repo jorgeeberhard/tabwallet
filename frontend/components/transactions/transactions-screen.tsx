@@ -16,7 +16,10 @@ import {
 } from "@/components/credit-cards/card-purchase-dialog"
 import { CardPurchaseRow } from "@/components/credit-cards/card-purchase-row"
 import { CancelInstallmentPurchaseDialog } from "@/components/credit-cards/cancel-installment-purchase-dialog"
+import { ChargeDialog, type ChargeDialogMode } from "@/components/credit-cards/charge-dialog"
+import { ChargeRow } from "@/components/credit-cards/charge-row"
 import { DeleteCardPurchaseDialog } from "@/components/credit-cards/delete-card-purchase-dialog"
+import { DeleteChargeDialog } from "@/components/credit-cards/delete-charge-dialog"
 import { InvoicePaymentRow } from "@/components/credit-cards/invoice-payment-row"
 import {
   InstallmentPurchaseDialog,
@@ -59,6 +62,7 @@ import { BALANCE_KEY } from "@/lib/balance-api"
 import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
 import {
   type CardPurchase,
+  type Charge,
   CREDIT_CARDS_KEY,
   type InstallmentPurchase,
   listCreditCards,
@@ -119,6 +123,8 @@ export function TransactionsScreen() {
   const [installmentToCancel, setInstallmentToCancel] = useState<InstallmentPurchase | null>(null)
   const [toDelete, setToDelete] = useState<Transaction | null>(null)
   const [cardPurchaseToDelete, setCardPurchaseToDelete] = useState<CardPurchase | null>(null)
+  const [chargeDialog, setChargeDialog] = useState<ChargeDialogMode | null>(null)
+  const [chargeToDelete, setChargeToDelete] = useState<Charge | null>(null)
   const [occurrenceToEdit, setOccurrenceToEdit] = useState<Occurrence | null>(null)
   const [occurrenceToSkip, setOccurrenceToSkip] = useState<Occurrence | null>(null)
 
@@ -399,6 +405,13 @@ export function TransactionsScreen() {
                         onEdit={(purchase) => setInstallmentDialog({ kind: "edit", purchase })}
                         onCancel={setInstallmentToCancel}
                       />
+                    ) : item.kind === "charge" ? (
+                      <ChargeRow
+                        key={statementItemKey(item)}
+                        charge={item}
+                        onEdit={(charge) => setChargeDialog({ kind: "edit", charge })}
+                        onDelete={setChargeToDelete}
+                      />
                     ) : item.kind === "invoice_payment" ? (
                       <InvoicePaymentRow
                         key={statementItemKey(item)}
@@ -464,6 +477,15 @@ export function TransactionsScreen() {
         purchase={cardPurchaseToDelete}
         onClose={() => setCardPurchaseToDelete(null)}
       />
+
+      {chargeDialog && (
+        <ChargeDialog
+          key={chargeDialog.kind === "edit" ? chargeDialog.charge.id : "create"}
+          mode={chargeDialog}
+          onClose={() => setChargeDialog(null)}
+        />
+      )}
+      <DeleteChargeDialog charge={chargeToDelete} onClose={() => setChargeToDelete(null)} />
 
       {installmentDialog && (
         <InstallmentPurchaseDialog

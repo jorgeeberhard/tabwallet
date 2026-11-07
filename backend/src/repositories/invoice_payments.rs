@@ -92,6 +92,32 @@ impl InvoicePaymentRepository {
         Ok(Some(payment))
     }
 
+    /// Stores the amount the user really paid of an invoice at its due date,
+    /// replacing an earlier correction of the same invoice. The caller has
+    /// checked that the invoice is the user's and can be corrected.
+    pub async fn set_correction(
+        &self,
+        user_id: UserId,
+        card_id: CreditCardId,
+        closing_month: Month,
+        amount_cents: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO invoice_payment_corrections
+                 (credit_card_id, closing_month, user_id, amount_cents)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (credit_card_id, closing_month)
+             DO UPDATE SET amount_cents = EXCLUDED.amount_cents, updated_at = now()",
+        )
+        .bind(card_id)
+        .bind(closing_month.first_day())
+        .bind(user_id)
+        .bind(amount_cents)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// The payments with these ids (of the user), in no particular order.
     pub async fn find_many(
         &self,

@@ -707,3 +707,106 @@ async fn the_budget_of_a_deactivated_category_can_still_be_removed() {
     let listed: Value = ana.get("/budgets").await.json().await.unwrap();
     assert_eq!(listed["budgets"], json!([]));
 }
+
+// --- Charges, Carried Balance and Installment Anticipation ---------------
+
+#[tokio::test]
+async fn charges_count_in_the_charges_category_by_the_due_month_of_their_invoice() {
+    let app = TestApp::spawn().await; // today is 2026-01-15
+    let ana = signed_up(&app, "ana@example.com").await;
+    let charges = expense_category(&ana, "Juros e encargos").await;
+    limit(&ana, &charges, 5_000).await;
+    let nubank = card(&ana, "Nubank").await;
+
+    // Recorded in the invoice closing in January (due January 27th); the day
+    // the bank charged it does not matter.
+    let recorded = ana
+        .post_json(
+            &format!("/credit-cards/{nubank}/invoices/2026-01/charges"),
+            &json!({ "amount_cents": 6_000, "date": "2025-12-30" }),
+        )
+        .await;
+    assert_eq!(recorded.status(), 201, "{}", recorded.text().await.unwrap());
+
+    let body = status(&ana, "2026-01").await;
+    let line = line(&body, &charges).unwrap();
+    assert_eq!(line["spent_cents"], json!(6_000));
+    assert_eq!(line["exceeded"], json!(true));
+    assert_eq!(spent(&ana, "2026-02", &charges).await, 0);
+    assert_eq!(spent(&ana, "2025-12", &charges).await, 0);
+}
+
+#[tokio::test]
+async fn the_carried_balance_and_the_corrected_payment_are_not_spending() {
+    let app = TestApp::spawn().await; // today is 2026-01-15
+    let ana = signed_up(&app, "ana@example.com").await;
+    let leisure = expense_category(&ana, "Lazer").await;
+    limit(&ana, &leisure, 100_000).await;
+    let nubank = card(&ana, "Nubank").await;
+    card_purchase(&ana, &nubank, &leisure, 30_000, "2026-01-10").await;
+
+    // The due date comes and only R$ 100,00 of R$ 300,00 were really paid:
+    // R$ 200,00 are carried to the next invoice.
+    app.set_today(2026, 1, 27);
+    let corrected = ana
+        .put_json(
+            &format!("/credit-cards/{nubank}/invoices/2026-01/payment"),
+            &json!({ "amount_cents": 10_000 }),
+        )
+        .await;
+    assert_eq!(
+        corrected.status(),
+        200,
+        "{}",
+        corrected.text().await.unwrap()
+    );
+
+    assert_eq!(spent(&ana, "2026-01", &leisure).await, 30_000);
+    // The next invoice (due February 27th) now totals R$ 200,00 but none of
+    // it is spending.
+    assert_eq!(spent(&ana, "2026-02", &leisure).await, 0);
+}
+
+#[tokio::test]
+async fn anticipated_installments_count_in_the_open_invoices_month_with_their_discount() {
+    let app = TestApp::spawn().await; // today is 2026-01-15
+    let ana = signed_up(&app, "ana@example.com").await;
+    let food = expense_category(&ana, "Alimentação").await;
+    limit(&ana, &food, 100_000).await;
+    let nubank = card(&ana, "Nubank").await;
+    // R$ 300,00 in 3: R$ 100,00 in the invoices due in January, February and
+    // March.
+    installments(&ana, &nubank, &food, 30_000, 3, "2026-01-12").await;
+    assert_eq!(spent(&ana, "2026-02", &food).await, 10_000);
+
+    let anticipable: Value = ana
+        .get(&format!("/credit-cards/{nubank}/anticipable-installments"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let ids: Vec<String> = anticipable["installments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    let anticipated = ana
+        .post_json(
+            &format!("/credit-cards/{nubank}/installment-anticipations"),
+            &json!({ "installment_ids": ids, "discount_cents": 1_000, "confirm": true }),
+        )
+        .await;
+    assert_eq!(
+        anticipated.status(),
+        200,
+        "{}",
+        anticipated.text().await.unwrap()
+    );
+
+    // R$ 100,00 + (R$ 200,00 - R$ 10,00 of discount) in the January invoice.
+    assert_eq!(spent(&ana, "2026-01", &food).await, 29_000);
+    assert_eq!(spent(&ana, "2026-02", &food).await, 0);
+    assert_eq!(spent(&ana, "2026-03", &food).await, 0);
+}

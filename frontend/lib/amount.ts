@@ -43,6 +43,14 @@ export function parseAmountToCents(text: string): number | null {
 }
 
 /**
+ * Like `parseAmountToCents`, but zero is valid: for an amount that may be
+ * nothing, such as what was really paid of an invoice (UC20). Never negative.
+ */
+export function parseAmountOrZeroToCents(text: string): number | null {
+  return parseMagnitude(text)
+}
+
+/**
  * Like `parseAmountToCents`, but for a balance: zero and a leading "-" (or the
  * true minus "−") are accepted, so "-1.180,40" is -118040. Returns `null` if
  * it is not a valid amount.

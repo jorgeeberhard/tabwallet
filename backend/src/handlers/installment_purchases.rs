@@ -54,6 +54,17 @@ pub struct InstallmentResponse {
     /// The month the Installment counts in for reports and budgets: the
     /// month of the invoice's due date.
     reference_month: String,
+    /// It was brought to the open invoice by an Installment Anticipation
+    /// (UC19), which cannot be undone.
+    anticipated: bool,
+    /// The day it was anticipated, `YYYY-MM-DD`; `null` if it was not.
+    anticipated_on: Option<NaiveDate>,
+    /// Cents of Discount it received when anticipated; zero otherwise.
+    discount_cents: i64,
+    /// Cents before the Discount: `amount_cents` plus `discount_cents`.
+    original_amount_cents: i64,
+    /// `YYYY-MM`: the invoice an anticipated Installment came from.
+    original_invoice_month: Option<String>,
 }
 
 impl From<InstallmentView> for InstallmentResponse {
@@ -63,6 +74,14 @@ impl From<InstallmentView> for InstallmentResponse {
             number: view.installment.number,
             amount_cents: view.installment.amount_cents,
             reference_month: view.invoice.reference_month().to_string(),
+            anticipated: view.installment.is_anticipated(),
+            anticipated_on: view.installment.anticipated_on,
+            discount_cents: view.installment.discount_cents,
+            original_amount_cents: view.installment.original_amount_cents(),
+            original_invoice_month: view
+                .installment
+                .original_invoice_month()
+                .map(|month| month.to_string()),
             invoice: view.invoice.into(),
         }
     }
@@ -88,6 +107,14 @@ pub struct InstallmentPurchaseResponse {
     /// Some Installment is in a paid invoice: only the Category can change
     /// and the remaining Installments can be cancelled.
     has_paid_installments: bool,
+    /// Some Installment was anticipated (UC19), which cannot be undone: like
+    /// with paid ones, only the Category can change and the remaining
+    /// Installments can be cancelled.
+    has_anticipated_installments: bool,
+    /// Cents of Discount the purchase received in anticipations. The expense
+    /// in its Category is the sum of the Installments, which already
+    /// excludes it; `total_cents` stays what the user informed.
+    discount_cents: i64,
     /// The Installments still on record, by number.
     installments: Vec<InstallmentResponse>,
     /// The date is after today (America/Sao_Paulo).
@@ -98,6 +125,8 @@ pub struct InstallmentPurchaseResponse {
 impl InstallmentPurchaseResponse {
     pub fn new(view: InstallmentPurchaseView, today: NaiveDate) -> Self {
         let has_paid_installments = view.has_paid_installments();
+        let has_anticipated_installments = view.has_anticipated_installments();
+        let discount_cents = view.discount_cents();
         let purchase = view.purchase;
         Self {
             id: purchase.id,
@@ -118,6 +147,8 @@ impl InstallmentPurchaseResponse {
             ),
             cancelled: purchase.cancelled,
             has_paid_installments,
+            has_anticipated_installments,
+            discount_cents,
             installments: view.installments.into_iter().map(Into::into).collect(),
             is_projection: purchase.date > today,
             created_at: purchase.created_at,
@@ -148,6 +179,17 @@ pub struct InvoiceInstallmentResponse {
     /// Some Installment of the purchase is in a paid invoice, so the purchase
     /// can only have its Category changed or be cancelled.
     purchase_has_paid_installments: bool,
+    /// Some Installment of the purchase was anticipated.
+    purchase_has_anticipated_installments: bool,
+    /// This Installment was brought to this invoice by an Installment
+    /// Anticipation.
+    anticipated: bool,
+    /// Cents of Discount it received when anticipated; zero otherwise.
+    discount_cents: i64,
+    /// Cents before the Discount.
+    original_amount_cents: i64,
+    /// `YYYY-MM`: the invoice an anticipated Installment came from.
+    original_invoice_month: Option<String>,
 }
 
 impl From<InvoiceInstallment> for InvoiceInstallmentResponse {
@@ -174,8 +216,17 @@ impl From<InvoiceInstallment> for InvoiceInstallmentResponse {
                 purchase.credit_card_active,
             ),
             reference_month: item.installment.invoice.reference_month().to_string(),
+            anticipated: item.installment.installment.is_anticipated(),
+            discount_cents: item.installment.installment.discount_cents,
+            original_amount_cents: item.installment.installment.original_amount_cents(),
+            original_invoice_month: item
+                .installment
+                .installment
+                .original_invoice_month()
+                .map(|month| month.to_string()),
             invoice: item.installment.invoice.into(),
             purchase_has_paid_installments: item.purchase_has_paid_installments,
+            purchase_has_anticipated_installments: item.purchase_has_anticipated_installments,
         }
     }
 }

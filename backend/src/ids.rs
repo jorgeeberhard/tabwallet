@@ -24,6 +24,12 @@ pub struct CreditCardId(pub Uuid);
 #[sqlx(transparent)]
 pub struct CardPurchaseId(pub Uuid);
 
+/// The id of a Charge (Encargo): interest, penalty or IOF recorded on an
+/// invoice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct ChargeId(pub Uuid);
+
 /// The id of an Early Payment of an invoice (the only Invoice Payment that is
 /// stored).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]

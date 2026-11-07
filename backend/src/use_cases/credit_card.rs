@@ -10,12 +10,14 @@ use crate::{
         card_purchases::{CardPurchase, CardPurchaseRepository},
         credit_cards::{CreditCard, CreditCardRepository, WriteCardError},
         installment_purchases::InstallmentPurchaseRepository,
+        invoice_charges::InvoiceChargeRepository,
     },
 };
 
 use super::{
     card_purchase::CardPurchaseView,
     installment_purchase::{InvoiceInstallment, invoice_installments, reallocate_for_card},
+    invoice_charge::{ChargeView, view_of as charge_view_of},
 };
 
 /// Why a credit-card use case failed. Unaware of HTTP: the handler layer
@@ -99,6 +101,14 @@ pub(super) async fn card_facts(
         .payments(user_id)
         .await
         .map_err(CreditCardError::internal)?;
+    let mut charges = cards
+        .charges(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
+    let mut corrections = cards
+        .corrections(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
     let facts = list
         .iter()
         .filter_map(|card| {
@@ -108,6 +118,8 @@ pub(super) async fn card_facts(
                 spending: spending.remove(&card.id).unwrap_or_default(),
                 installments: installments.remove(&card.id).unwrap_or_default(),
                 payments: payments.remove(&card.id).unwrap_or_default(),
+                charges: charges.remove(&card.id).unwrap_or_default(),
+                corrections: corrections.remove(&card.id).unwrap_or_default(),
             })
         })
         .collect();
@@ -272,6 +284,8 @@ impl UpdateCreditCardUseCase {
                     spending: Vec::new(),
                     installments: Vec::new(),
                     payments: Vec::new(),
+                    charges: Vec::new(),
+                    corrections: Vec::new(),
                 },
                 today,
             )
@@ -389,8 +403,10 @@ pub struct InvoiceDetail {
     pub purchases: Vec<CardPurchaseView>,
     /// The Installments in the invoice, newest purchase first.
     pub installments: Vec<InvoiceInstallment>,
+    /// The Charges recorded in the invoice, newest first.
+    pub charges: Vec<ChargeView>,
     /// The payments of the invoice, oldest first: the Early Payments and, once
-    /// there is something unpaid, the automatic one on the due date.
+    /// there is something unpaid, the due-date one (automatic or corrected).
     pub payments: Vec<InvoicePayment>,
 }
 
@@ -400,6 +416,7 @@ pub struct GetInvoiceUseCase {
     cards: CreditCardRepository,
     purchases: CardPurchaseRepository,
     installment_purchases: InstallmentPurchaseRepository,
+    charges: InvoiceChargeRepository,
 }
 
 impl GetInvoiceUseCase {
@@ -407,11 +424,13 @@ impl GetInvoiceUseCase {
         cards: CreditCardRepository,
         purchases: CardPurchaseRepository,
         installment_purchases: InstallmentPurchaseRepository,
+        charges: InvoiceChargeRepository,
     ) -> Self {
         Self {
             cards,
             purchases,
             installment_purchases,
+            charges,
         }
     }
 
@@ -448,11 +467,20 @@ impl GetInvoiceUseCase {
         )
         .await
         .map_err(CreditCardError::internal)?;
+        let charges = self
+            .charges
+            .list_for_invoice(user_id, card_id, closing_month)
+            .await
+            .map_err(CreditCardError::internal)?
+            .into_iter()
+            .filter_map(|charge| charge_view_of(&ledger, charge, today))
+            .collect();
         let payments = ledger.payments_of_invoice(card_id, closing_month);
         Ok(InvoiceDetail {
             invoice,
             purchases,
             installments,
+            charges,
             payments,
         })
     }
