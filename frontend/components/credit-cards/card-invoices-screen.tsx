@@ -1,10 +1,18 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeftIcon, InboxIcon, LayersIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
+import {
+  ArrowLeftIcon,
+  FastForwardIcon,
+  InboxIcon,
+  LayersIcon,
+  PlusIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
+import { AnticipateInstallmentsDialog } from "@/components/credit-cards/anticipate-installments-dialog"
 import {
   CardPurchaseDialog,
   type CardPurchaseDialogMode,
@@ -71,6 +79,7 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
     null,
   )
   const [paying, setPaying] = useState(false)
+  const [anticipating, setAnticipating] = useState(false)
 
   const cards = useQuery({ queryKey: CREDIT_CARDS_KEY, queryFn: listCreditCards })
   const card = cards.data?.find((candidate) => candidate.id === cardId)
@@ -156,6 +165,10 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={!card?.active} onClick={() => setAnticipating(true)}>
+            <FastForwardIcon strokeWidth={1.75} />
+            Antecipar parcelas
+          </Button>
           <Button
             variant="outline"
             disabled={!card?.active}
@@ -283,6 +296,7 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
                             id: target.installmentPurchaseId,
                             description: target.description,
                             hasPaidInstallments: target.purchaseHasPaidInstallments,
+                            hasAnticipatedInstallments: target.purchaseHasAnticipatedInstallments,
                           })
                         }
                       />
@@ -314,6 +328,13 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
         purchase={installmentToCancel}
         onClose={() => setInstallmentToCancel(null)}
       />
+      {anticipating && card && (
+        <AnticipateInstallmentsDialog
+          cardId={cardId}
+          cardName={card.name}
+          onClose={() => setAnticipating(false)}
+        />
+      )}
       {paying && card && detail.data && (
         <PayInvoiceDialog
           key={detail.data.invoice.closingMonth}

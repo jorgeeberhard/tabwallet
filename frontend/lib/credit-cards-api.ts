@@ -280,6 +280,14 @@ export interface Installment {
   invoice: InvoiceCycle
   /** `YYYY-MM`: the month of the invoice's due date. */
   referenceMonth: string
+  /** It was brought to the open invoice by an Installment Anticipation (UC19): irreversible. */
+  anticipated: boolean
+  /** Cents of the Discount it received when anticipated; zero otherwise. */
+  discountCents: number
+  /** Cents before the Discount (the same as `amountCents` when there was none). */
+  originalAmountCents: number
+  /** `YYYY-MM`: the invoice an anticipated Installment came from. */
+  originalInvoiceMonth: string | null
 }
 
 interface InstallmentPayload {
@@ -288,6 +296,10 @@ interface InstallmentPayload {
   amount_cents: number
   invoice: InvoiceCyclePayload
   reference_month: string
+  anticipated: boolean
+  discount_cents: number
+  original_amount_cents: number
+  original_invoice_month: string | null
 }
 
 function toInstallment(payload: InstallmentPayload): Installment {
@@ -298,6 +310,10 @@ function toInstallment(payload: InstallmentPayload): Installment {
     amount: centsToReais(payload.amount_cents),
     invoice: toCycle(payload.invoice),
     referenceMonth: payload.reference_month,
+    anticipated: payload.anticipated,
+    discountCents: payload.discount_cents,
+    originalAmountCents: payload.original_amount_cents,
+    originalInvoiceMonth: payload.original_invoice_month,
   }
 }
 
@@ -318,6 +334,10 @@ export interface InstallmentPurchase {
   cancelled: boolean
   /** Some Installment is in a paid invoice: only the Category can change. */
   hasPaidInstallments: boolean
+  /** Some Installment was anticipated: like a paid one, only the Category can change. */
+  hasAnticipatedInstallments: boolean
+  /** Cents of Discount the purchase got in Installment Anticipations. */
+  discountCents: number
   installments: Installment[]
   isProjection: boolean
 }
@@ -332,6 +352,8 @@ export interface InstallmentPurchasePayload {
   credit_card: { id: string; name: string; active: boolean }
   cancelled: boolean
   has_paid_installments: boolean
+  has_anticipated_installments: boolean
+  discount_cents: number
   installments: InstallmentPayload[]
   is_projection: boolean
 }
@@ -352,6 +374,8 @@ export function toInstallmentPurchase(payload: InstallmentPurchasePayload): Inst
     creditCard: payload.credit_card,
     cancelled: payload.cancelled,
     hasPaidInstallments: payload.has_paid_installments,
+    hasAnticipatedInstallments: payload.has_anticipated_installments,
+    discountCents: payload.discount_cents,
     installments: payload.installments.map(toInstallment),
     isProjection: payload.is_projection,
   }
@@ -375,9 +399,17 @@ export interface InvoiceInstallment {
   referenceMonth: string
   /** Some Installment of the purchase (not only this one) is in a paid invoice. */
   purchaseHasPaidInstallments: boolean
+  /** Some Installment of the purchase was anticipated. */
+  purchaseHasAnticipatedInstallments: boolean
+  /** This Installment was brought to this invoice by an Installment Anticipation. */
+  anticipated: boolean
+  discountCents: number
+  originalAmountCents: number
+  /** `YYYY-MM`: the invoice it came from, when anticipated. */
+  originalInvoiceMonth: string | null
 }
 
-interface InvoiceInstallmentPayload {
+export interface InvoiceInstallmentPayload {
   id: string
   installment_purchase_id: string
   number: number
@@ -391,9 +423,14 @@ interface InvoiceInstallmentPayload {
   invoice: InvoiceCyclePayload
   reference_month: string
   purchase_has_paid_installments: boolean
+  purchase_has_anticipated_installments: boolean
+  anticipated: boolean
+  discount_cents: number
+  original_amount_cents: number
+  original_invoice_month: string | null
 }
 
-function toInvoiceInstallment(payload: InvoiceInstallmentPayload): InvoiceInstallment {
+export function toInvoiceInstallment(payload: InvoiceInstallmentPayload): InvoiceInstallment {
   return {
     id: payload.id,
     installmentPurchaseId: payload.installment_purchase_id,
@@ -413,6 +450,11 @@ function toInvoiceInstallment(payload: InvoiceInstallmentPayload): InvoiceInstal
     invoice: toCycle(payload.invoice),
     referenceMonth: payload.reference_month,
     purchaseHasPaidInstallments: payload.purchase_has_paid_installments,
+    purchaseHasAnticipatedInstallments: payload.purchase_has_anticipated_installments,
+    anticipated: payload.anticipated,
+    discountCents: payload.discount_cents,
+    originalAmountCents: payload.original_amount_cents,
+    originalInvoiceMonth: payload.original_invoice_month,
   }
 }
 

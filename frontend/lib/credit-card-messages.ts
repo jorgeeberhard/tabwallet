@@ -17,6 +17,15 @@ const MESSAGES: Record<string, string> = {
   installment_purchase_not_found: "Esta compra parcelada não existe mais. Atualize a página.",
   installments_paid:
     "Esta compra já tem parcelas em fatura paga. Só a categoria pode mudar e as parcelas restantes podem ser canceladas.",
+  installments_anticipated:
+    "Esta compra tem parcelas antecipadas, e a antecipação não pode ser desfeita. Só a categoria pode mudar e as parcelas restantes podem ser canceladas.",
+  installments_not_anticipable:
+    "Alguma parcela escolhida não pode mais ser antecipada: só entram parcelas de faturas depois da fatura aberta. A lista foi atualizada; escolha de novo.",
+  installment_not_found: "Alguma parcela escolhida não existe mais. A lista foi atualizada.",
+  installments_required: "Escolha pelo menos uma parcela.",
+  confirmation_required: "Confirme a antecipação para continuar.",
+  discount_range: "O desconto precisa ser maior que zero.",
+  discount_exceeds_total: "O desconto precisa ser menor que o total das parcelas escolhidas.",
   installment_count_range: "Escolha de 2 a 48 parcelas.",
   total_below_installments: "O valor total precisa dar pelo menos R$ 0,01 para cada parcela.",
   name_length: "Digite um nome de até 60 caracteres.",
