@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     middleware::from_fn_with_state,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
 };
 use sqlx::PgPool;
 
@@ -116,6 +116,12 @@ pub fn build_router(state: AppState) -> Router {
             "/recurring-transactions/{id}/occurrences/{month}",
             patch(handlers::recurring::edit_occurrence)
                 .delete(handlers::recurring::delete_occurrence),
+        )
+        .route("/budgets", get(handlers::budgets::list))
+        .route("/budgets/status", get(handlers::budgets::status))
+        .route(
+            "/budgets/{category_id}",
+            put(handlers::budgets::set).delete(handlers::budgets::remove),
         )
         .route_layer(from_fn_with_state(state.clone(), require_auth));
 

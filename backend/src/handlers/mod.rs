@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod balance;
 pub mod balance_series;
+pub mod budgets;
 pub mod card_purchases;
 pub mod categories;
 pub mod credit_cards;
