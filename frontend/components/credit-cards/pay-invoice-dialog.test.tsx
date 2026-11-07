@@ -22,6 +22,10 @@ const invoice: Invoice = {
   paid: 100,
   remainingCents: 20000,
   remaining: 200,
+  chargesCents: 0,
+  carriedBalanceCents: 0,
+  carriedForwardCents: 0,
+  paymentCorrection: { state: "not_due", correctedCents: null, maxCents: 0 },
 }
 
 function json(status: number, body?: unknown) {
@@ -67,7 +71,7 @@ describe("PayInvoiceDialog", () => {
           date: "2026-01-15",
           is_projection: false,
         },
-        invoice: {},
+        invoice: { payment_correction: { state: "not_due", corrected_cents: null, max_cents: 0 } },
       }),
     )
     renderDialog()
@@ -87,7 +91,7 @@ describe("PayInvoiceDialog", () => {
     fetchMock.mockImplementation(() =>
       json(201, {
         payment: { id: "p1", origin: "early", amount_cents: 5050, date: "2026-01-15", is_projection: false },
-        invoice: {},
+        invoice: { payment_correction: { state: "not_due", corrected_cents: null, max_cents: 0 } },
       }),
     )
     renderDialog()

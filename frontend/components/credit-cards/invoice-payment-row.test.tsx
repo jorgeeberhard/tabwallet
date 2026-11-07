@@ -34,6 +34,14 @@ describe("InvoicePaymentRow", () => {
     expect(screen.queryByText("Projeção")).not.toBeInTheDocument()
   })
 
+  it("marks the due-date payment the person corrected to the amount really paid", () => {
+    renderRow({ ...early, id: null, origin: "corrected" })
+
+    expect(screen.getByText("Pagamento corrigido da fatura de janeiro de 2026")).toBeInTheDocument()
+    expect(screen.getByText("Corrigido")).toBeInTheDocument()
+    expect(screen.getByText("Pagamento de fatura")).toBeInTheDocument()
+  })
+
   it("marks the automatic payment of the due date, as a projection while it is in the future", () => {
     renderRow({ ...early, id: null, origin: "automatic", isProjection: true })
 

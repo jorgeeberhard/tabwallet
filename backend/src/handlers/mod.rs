@@ -8,6 +8,7 @@ mod extract;
 pub mod health;
 pub mod installment_anticipations;
 pub mod installment_purchases;
+pub mod invoice_charges;
 pub mod invoice_payments;
 pub mod password_reset;
 pub mod profile;

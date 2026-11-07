@@ -11,6 +11,7 @@ mod delete_transaction;
 mod get_current_user;
 mod installment_anticipation;
 mod installment_purchase;
+mod invoice_charge;
 mod invoice_payment;
 mod list_categories;
 mod list_transactions;
@@ -55,7 +56,14 @@ pub use installment_purchase::{
     InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView, InvoiceInstallment,
     UpdateInstallmentPurchaseUseCase,
 };
-pub use invoice_payment::{EarlyPaymentReceipt, InvoicePaymentError, PayInvoiceUseCase};
+pub use invoice_charge::{
+    ChargeError, ChargeReceipt, ChargeView, CreateChargeUseCase, DeleteChargeUseCase,
+    NewChargeInput, UpdateChargeUseCase,
+};
+pub use invoice_payment::{
+    CorrectInvoicePaymentUseCase, CorrectionReceipt, EarlyPaymentReceipt, InvoicePaymentError,
+    PayInvoiceUseCase,
+};
 pub use list_categories::ListCategoriesUseCase;
 pub use list_transactions::{
     ListTransactionsUseCase, Statement, StatementInvoicePayment, StatementItem, StatementOccurrence,

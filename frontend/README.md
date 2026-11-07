@@ -47,6 +47,16 @@ O botão "Nova compra parcelada" (extrato e tela de faturas do cartão) abre `in
 - Editar: enquanto nenhuma parcela está em fatura paga, todos os campos mudam e tudo é recalculado; com parcelas pagas o diálogo avisa e só a Categoria fica ativa. Excluir (`cancel-installment-purchase-dialog.tsx`) remove a compra inteira, ou, com parcelas pagas, vira "Cancelar parcelas restantes" (as pagas ficam). Com todas as parcelas pagas a ação fica desligada.
 - Chamadas em `lib/credit-cards-api.ts` (`createInstallmentPurchase`, `updateInstallmentPurchase`, `cancelInstallmentPurchase`); erros em `lib/credit-card-messages.ts`.
 
+## Pagamento corrigido, Saldo rolado e Encargos
+
+Na tela de faturas do cartão (`card-invoices-screen.tsx`), o `InvoiceCard` ganhou três ações e linhas novas:
+
+- **Corrigir pagamento** (UC20, `correct-payment-dialog.tsx`): aparece numa fatura Paga enquanto a API diz `payment_correction.state = "editable"`. O campo "Valor realmente pago" começa no que foi debitado (ou no valor já corrigido), aceita zero e não passa do máximo; embaixo, o diálogo mostra quanto vai como saldo rolado para a próxima fatura. Quando está `locked`, o cartão explica em português que o pagamento não pode mais ser corrigido porque a fatura seguinte já foi paga; antes do vencimento não há botão.
+- **Saldo rolado**: a fatura que recebeu o saldo mostra a linha "Saldo rolado da fatura de ...", dizendo que não conta como nova despesa; a fatura de origem mostra "Passou para a próxima fatura como saldo rolado". O pagamento corrigido aparece na lista de pagamentos como "Pagamento corrigido" (`InvoicePaymentRow`, origem `corrected`).
+- **Lançar encargos** (UC21, `charge-dialog.tsx`): valor, data e descrição opcional, com o aviso de que o sistema não calcula juros e de que o encargo entra no total da fatura e no mês do vencimento. A lista "Encargos da fatura" (`charge-row.tsx`) tem editar e excluir (`delete-charge-dialog.tsx`), desligados quando a fatura está paga. O extrato (`/transacoes`) mostra os encargos como itens `kind: "charge"` com o mesmo `ChargeRow`. Se "Juros e encargos" estiver desativada, o diálogo manda reativá-la em Categorias.
+
+`lib/credit-cards-api.ts` tem `correctInvoicePayment`, `createCharge`, `updateCharge` e `deleteCharge`; `lib/amount.ts` ganhou `parseAmountOrZeroToCents`. Todas as ações invalidam faturas, extrato e saldos.
+
 ## Antecipação de parcelas
 
 O botão "Antecipar parcelas" na tela de faturas do cartão (`card-invoices-screen.tsx`) abre `anticipate-installments-dialog.tsx` (UC19). Primeiro o `Dialog` de escolha: as Parcelas de faturas depois da aberta (`GET /credit-cards/{id}/anticipable-installments`), agrupadas por fatura, com "Selecionar todas"; o Desconto opcional (`MoneyInput`, em branco é sem desconto) e o resumo "parcelas escolhidas / desconto / total na fatura de {mês}". "Continuar" abre o `AlertDialog` de confirmação, com um aviso `warning` de que **a operação não pode ser desfeita**; só o botão "Antecipar parcelas" dele chama a API (`POST .../installment-anticipations`, sempre com `confirm: true`). Recusas da API (parcela que deixou de poder ser antecipada, desconto alto demais) voltam à escolha com o motivo. Não existe ação de desfazer.

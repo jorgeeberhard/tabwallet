@@ -5,6 +5,18 @@ import { Badge } from "@/components/ui/badge"
 import type { InvoicePayment } from "@/lib/credit-cards-api"
 import { formatDate, formatMonthOfYear } from "@/lib/format"
 
+const PAYMENT_TITLE: Record<InvoicePayment["origin"], string> = {
+  early: "Pagamento antecipado",
+  automatic: "Pagamento automático",
+  corrected: "Pagamento corrigido",
+}
+
+const PAYMENT_BADGE: Record<InvoicePayment["origin"], string> = {
+  early: "Antecipado",
+  automatic: "No vencimento",
+  corrected: "Corrigido",
+}
+
 interface InvoicePaymentRowProps {
   payment: InvoicePayment
   /** The card it pays for; hidden on the invoice screen, which is about one card. */
@@ -21,7 +33,8 @@ interface InvoicePaymentRowProps {
  * colour (the "−" still says it leaves the balance).
  */
 export function InvoicePaymentRow({ payment, cardName, referenceMonth }: InvoicePaymentRowProps) {
-  const early = payment.origin === "early"
+  const title = PAYMENT_TITLE[payment.origin]
+  const badge = PAYMENT_BADGE[payment.origin]
 
   return (
     <li className="flex items-center gap-3 bg-muted/40 px-4 py-3">
@@ -31,14 +44,13 @@ export function InvoicePaymentRow({ payment, cardName, referenceMonth }: Invoice
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate font-medium">
-          {early ? "Pagamento antecipado" : "Pagamento automático"} da fatura de{" "}
-          {formatMonthOfYear(referenceMonth)}
+          {title} da fatura de {formatMonthOfYear(referenceMonth)}
         </span>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
           <time dateTime={payment.date}>{formatDate(payment.date)}</time>
           <Badge variant="secondary">Pagamento de fatura</Badge>
           {cardName && <Badge variant="outline">{cardName}</Badge>}
-          <Badge variant="outline">{early ? "Antecipado" : "No vencimento"}</Badge>
+          <Badge variant="outline">{badge}</Badge>
           {payment.isProjection && <Badge variant="warning">Projeção</Badge>}
         </span>
       </div>

@@ -22,7 +22,11 @@ import {
   CancelInstallmentPurchaseDialog,
   type CancelInstallmentTarget,
 } from "@/components/credit-cards/cancel-installment-purchase-dialog"
+import { ChargeDialog, type ChargeDialogMode } from "@/components/credit-cards/charge-dialog"
+import { ChargeRow } from "@/components/credit-cards/charge-row"
+import { CorrectPaymentDialog } from "@/components/credit-cards/correct-payment-dialog"
 import { DeleteCardPurchaseDialog } from "@/components/credit-cards/delete-card-purchase-dialog"
+import { DeleteChargeDialog } from "@/components/credit-cards/delete-charge-dialog"
 import {
   InstallmentPurchaseDialog,
   type InstallmentPurchaseDialogMode,
@@ -48,6 +52,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   type CardPurchase,
+  type Charge,
   CREDIT_CARDS_KEY,
   getInvoice,
   type Invoice,
@@ -79,6 +84,9 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
     null,
   )
   const [paying, setPaying] = useState(false)
+  const [correcting, setCorrecting] = useState(false)
+  const [chargeDialog, setChargeDialog] = useState<ChargeDialogMode | null>(null)
+  const [chargeToDelete, setChargeToDelete] = useState<Charge | null>(null)
   const [anticipating, setAnticipating] = useState(false)
 
   const cards = useQuery({ queryKey: CREDIT_CARDS_KEY, queryFn: listCreditCards })
@@ -232,11 +240,22 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
               <InvoiceCard
                 cardName={card.name}
                 invoice={detail.data.invoice}
+                carriedBalance={detail.data.carriedBalance}
                 onPayEarly={() => setPaying(true)}
+                onCorrectPayment={() => setCorrecting(true)}
+                onAddCharges={() =>
+                  setChargeDialog({
+                    kind: "create",
+                    cardId,
+                    cardName: card.name,
+                    invoice: detail.data.invoice,
+                  })
+                }
               />
               {detail.data.invoice.state === "paid" && (
                 <p className="max-w-prose text-sm text-muted-foreground">
-                  Fatura paga: as compras dela não podem mais ser editadas nem excluídas.
+                  Fatura paga: as compras e os encargos dela não podem mais ser editados nem
+                  excluídos.
                 </p>
               )}
               {detail.data.payments.length > 0 && (
@@ -251,6 +270,26 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
                           key={payment.id ?? "automatic"}
                           payment={payment}
                           referenceMonth={detail.data.invoice.referenceMonth}
+                        />
+                      ))}
+                    </ul>
+                  </Card>
+                </div>
+              )}
+              {detail.data.charges.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <h2 className="font-display text-lg font-bold tracking-tight">
+                    Encargos da fatura
+                  </h2>
+                  <Card className="gap-0 overflow-hidden py-0">
+                    <ul aria-label="Encargos da fatura" className="divide-y">
+                      {detail.data.charges.map((charge) => (
+                        <ChargeRow
+                          key={charge.id}
+                          charge={charge}
+                          showCard={false}
+                          onEdit={(target) => setChargeDialog({ kind: "edit", charge: target })}
+                          onDelete={setChargeToDelete}
                         />
                       ))}
                     </ul>
@@ -317,6 +356,23 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
         />
       )}
       <DeleteCardPurchaseDialog purchase={toDelete} onClose={() => setToDelete(null)} />
+      {chargeDialog && (
+        <ChargeDialog
+          key={chargeDialog.kind === "edit" ? chargeDialog.charge.id : "create"}
+          mode={chargeDialog}
+          onClose={() => setChargeDialog(null)}
+        />
+      )}
+      <DeleteChargeDialog charge={chargeToDelete} onClose={() => setChargeToDelete(null)} />
+      {correcting && card && detail.data && (
+        <CorrectPaymentDialog
+          key={detail.data.invoice.closingMonth}
+          cardId={cardId}
+          cardName={card.name}
+          invoice={detail.data.invoice}
+          onClose={() => setCorrecting(false)}
+        />
+      )}
       {installmentDialog && (
         <InstallmentPurchaseDialog
           key={installmentDialog.kind === "edit" ? installmentDialog.purchase.id : "create"}

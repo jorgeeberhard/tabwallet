@@ -115,17 +115,41 @@ function toCycle(payload: InvoiceCyclePayload): InvoiceCycle {
   }
 }
 
+/**
+ * Whether the payment of an invoice can be corrected to the amount really paid
+ * at the bank (UC20): `not_due` before the due date, `nothing_to_pay` when
+ * early payments covered it all, `editable` until the next invoice (the one
+ * that receives the Carried Balance) is paid, and `locked` after that.
+ */
+export type PaymentCorrectionState = "not_due" | "nothing_to_pay" | "editable" | "locked"
+
+export interface PaymentCorrection {
+  state: PaymentCorrectionState
+  /** The amount the person said they paid, if they corrected the payment. */
+  correctedCents: number | null
+  /** The most the payment can be corrected to: what the due date would debit. */
+  maxCents: number
+}
+
 export interface Invoice extends InvoiceCycle {
   creditCardId: string
+  /** Purchases, Charges and the Carried Balance received. */
   totalCents: number
   /** In reais, for the Design System components. */
   total: number
-  /** What left the balance for this invoice: Early Payments and, once paid, the automatic one. */
+  /** What left the balance for this invoice: Early Payments and, once paid, the due-date payment. */
   paidCents: number
   paid: number
   /** What is still to pay: the total less the Early Payments. Zero once the invoice is paid. */
   remainingCents: number
   remaining: number
+  /** Interest, penalty and IOF the person recorded in this invoice. */
+  chargesCents: number
+  /** Carried Balance received from the previous invoice (not an expense). */
+  carriedBalanceCents: number
+  /** Part of this invoice that was not paid and moved to the next one. */
+  carriedForwardCents: number
+  paymentCorrection: PaymentCorrection
 }
 
 interface InvoicePayload extends InvoiceCyclePayload {
@@ -133,6 +157,14 @@ interface InvoicePayload extends InvoiceCyclePayload {
   total_cents: number
   paid_cents: number
   remaining_cents: number
+  charges_cents: number
+  carried_balance_cents: number
+  carried_forward_cents: number
+  payment_correction: {
+    state: PaymentCorrectionState
+    corrected_cents: number | null
+    max_cents: number
+  }
 }
 
 function toInvoice(payload: InvoicePayload): Invoice {
@@ -145,19 +177,31 @@ function toInvoice(payload: InvoicePayload): Invoice {
     paid: centsToReais(payload.paid_cents),
     remainingCents: payload.remaining_cents,
     remaining: centsToReais(payload.remaining_cents),
+    chargesCents: payload.charges_cents,
+    carriedBalanceCents: payload.carried_balance_cents,
+    carriedForwardCents: payload.carried_forward_cents,
+    paymentCorrection: {
+      state: payload.payment_correction.state,
+      correctedCents: payload.payment_correction.corrected_cents,
+      maxCents: payload.payment_correction.max_cents,
+    },
   }
 }
 
 /**
  * A payment of an invoice (an Invoice Payment): `early` is one the person made
  * before the due date, `automatic` is the one the system debits on the due
- * date for what is still unpaid (derived by the API on read). Neither is an
- * expense: the spending was counted when the purchases were made.
+ * date for what is still unpaid (derived by the API on read), and `corrected`
+ * is the due-date payment after the person edited it to the amount really
+ * paid. None is an expense: the spending was counted when the purchases were
+ * made.
  */
+export type InvoicePaymentOrigin = "early" | "automatic" | "corrected"
+
 export interface InvoicePayment {
   /** Only an Early Payment is stored, so only it has an id. */
   id: string | null
-  origin: "early" | "automatic"
+  origin: InvoicePaymentOrigin
   amountCents: number
   /** In reais, for the Design System components. */
   amount: number
@@ -169,7 +213,7 @@ export interface InvoicePayment {
 
 export interface InvoicePaymentPayload {
   id: string | null
-  origin: "early" | "automatic"
+  origin: InvoicePaymentOrigin
   amount_cents: number
   date: string
   is_projection: boolean
@@ -252,6 +296,69 @@ export function toCardPurchase(payload: CardPurchasePayload): CardPurchase {
     referenceMonth: payload.reference_month,
     isProjection: payload.is_projection,
   }
+}
+
+/**
+ * Charges (Encargos): the interest, penalty and IOF the bank charged on an
+ * invoice, recorded by the person as an expense of the "Juros e encargos"
+ * Category. The system never calculates them. They are part of the invoice
+ * total and count in the reference month of its due date.
+ */
+export interface Charge {
+  id: string
+  /** Always greater than zero. */
+  amountCents: number
+  /** In reais, for the Design System components. */
+  amount: number
+  /** The day the bank charged it, `YYYY-MM-DD`. */
+  date: string
+  description: string
+  category: { id: string; name: string; active: boolean }
+  creditCard: { id: string; name: string; active: boolean }
+  /** The invoice it was charged on. */
+  invoice: InvoiceCycle
+  /** `YYYY-MM`: the month of the invoice's due date. */
+  referenceMonth: string
+  isProjection: boolean
+}
+
+export interface ChargePayload {
+  id: string
+  amount_cents: number
+  date: string
+  description: string
+  category: { id: string; name: string; type: "expense"; active: boolean }
+  credit_card: { id: string; name: string; active: boolean }
+  invoice: InvoiceCyclePayload
+  reference_month: string
+  is_projection: boolean
+}
+
+export function toCharge(payload: ChargePayload): Charge {
+  return {
+    id: payload.id,
+    amountCents: payload.amount_cents,
+    amount: centsToReais(payload.amount_cents),
+    date: payload.date,
+    description: payload.description,
+    category: {
+      id: payload.category.id,
+      name: payload.category.name,
+      active: payload.category.active,
+    },
+    creditCard: payload.credit_card,
+    invoice: toCycle(payload.invoice),
+    referenceMonth: payload.reference_month,
+    isProjection: payload.is_projection,
+  }
+}
+
+/** Part of an invoice that was not paid on the previous one (not an expense). */
+export interface CarriedBalance {
+  amountCents: number
+  amount: number
+  /** `YYYY-MM`: the closing month of the invoice it came from. */
+  fromClosingMonth: string
 }
 
 export function invoicesKey(cardId: string) {
@@ -463,7 +570,11 @@ export interface InvoiceDetail {
   purchases: CardPurchase[]
   /** The Installments of installment purchases that are in this invoice. */
   installments: InvoiceInstallment[]
-  /** The Early Payments and, when something is unpaid, the automatic one; oldest first. */
+  /** The Charges recorded in the invoice, newest first. */
+  charges: Charge[]
+  /** The Carried Balance this invoice received from the previous one, if any. */
+  carriedBalance: CarriedBalance | null
+  /** The Early Payments and, when something is unpaid, the due-date one; oldest first. */
   payments: InvoicePayment[]
 }
 
@@ -476,14 +587,81 @@ export async function getInvoice(cardId: string, closingMonth: string): Promise<
     invoice: InvoicePayload
     purchases: CardPurchasePayload[]
     installments: InvoiceInstallmentPayload[]
+    charges: ChargePayload[]
+    carried_balance: { amount_cents: number; from_closing_month: string } | null
     payments: InvoicePaymentPayload[]
   }>(`/credit-cards/${cardId}/invoices/${closingMonth}`)
   return {
     invoice: toInvoice(payload.invoice),
     purchases: payload.purchases.map(toCardPurchase),
     installments: payload.installments.map(toInvoiceInstallment),
+    charges: payload.charges.map(toCharge),
+    carriedBalance: payload.carried_balance && {
+      amountCents: payload.carried_balance.amount_cents,
+      amount: centsToReais(payload.carried_balance.amount_cents),
+      fromClosingMonth: payload.carried_balance.from_closing_month,
+    },
     payments: payload.payments.map(toInvoicePayment),
   }
+}
+
+/**
+ * UC20: corrects the payment of a paid invoice to the amount really paid at
+ * the bank. What is left unpaid becomes the Carried Balance of the next
+ * invoice; the correction can be repeated until that invoice is paid.
+ */
+export async function correctInvoicePayment(
+  cardId: string,
+  closingMonth: string,
+  amountCents: number,
+): Promise<{ payment: InvoicePayment; invoice: Invoice }> {
+  const payload = await api<{ payment: InvoicePaymentPayload; invoice: InvoicePayload }>(
+    `/credit-cards/${cardId}/invoices/${closingMonth}/payment`,
+    { method: "PUT", body: { amount_cents: amountCents } },
+  )
+  return { payment: toInvoicePayment(payload.payment), invoice: toInvoice(payload.invoice) }
+}
+
+export interface ChargeInput {
+  amountCents: number
+  date: string
+  description?: string
+}
+
+/** UC21: records the interest, penalty and IOF the bank charged on an invoice. */
+export async function createCharge(
+  cardId: string,
+  closingMonth: string,
+  input: ChargeInput,
+): Promise<Charge> {
+  const { charge } = await api<{ charge: ChargePayload }>(
+    `/credit-cards/${cardId}/invoices/${closingMonth}/charges`,
+    {
+      method: "POST",
+      body: {
+        amount_cents: input.amountCents,
+        date: input.date,
+        description: input.description,
+      },
+    },
+  )
+  return toCharge(charge)
+}
+
+export async function updateCharge(id: string, changes: Partial<ChargeInput>): Promise<Charge> {
+  const { charge } = await api<{ charge: ChargePayload }>(`/charges/${id}`, {
+    method: "PATCH",
+    body: {
+      amount_cents: changes.amountCents,
+      date: changes.date,
+      description: changes.description,
+    },
+  })
+  return toCharge(charge)
+}
+
+export async function deleteCharge(id: string): Promise<void> {
+  await api(`/charges/${id}`, { method: "DELETE" })
 }
 
 /**

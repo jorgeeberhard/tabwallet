@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { formatAmountInput, parseAmountToCents, parseSignedAmountToCents } from "@/lib/amount"
+import {
+  formatAmountInput,
+  parseAmountOrZeroToCents,
+  parseAmountToCents,
+  parseSignedAmountToCents,
+} from "@/lib/amount"
 
 describe("parseAmountToCents", () => {
   it.each([
@@ -44,6 +49,20 @@ describe("parseSignedAmountToCents", () => {
       expect(parseSignedAmountToCents(text)).toBeNull()
     },
   )
+})
+
+describe("parseAmountOrZeroToCents", () => {
+  it("accepts zero, which an amount really paid may be", () => {
+    expect(parseAmountOrZeroToCents("0")).toBe(0)
+    expect(parseAmountOrZeroToCents("0,00")).toBe(0)
+    expect(parseAmountOrZeroToCents("1.180,40")).toBe(118040)
+  })
+
+  it("still refuses negatives and text", () => {
+    expect(parseAmountOrZeroToCents("-5")).toBeNull()
+    expect(parseAmountOrZeroToCents("abc")).toBeNull()
+    expect(parseAmountOrZeroToCents("")).toBeNull()
+  })
 })
 
 describe("formatAmountInput", () => {

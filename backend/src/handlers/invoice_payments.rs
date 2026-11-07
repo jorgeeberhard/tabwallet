@@ -27,7 +27,7 @@ use crate::{
         card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         invoice_payments::InvoicePaymentRepository,
     },
-    use_cases::{PayInvoiceUseCase, StatementInvoicePayment},
+    use_cases::{CorrectInvoicePaymentUseCase, PayInvoiceUseCase, StatementInvoicePayment},
 };
 
 /// One payment of an invoice: an Early Payment the user made, or the automatic
@@ -36,8 +36,9 @@ use crate::{
 pub struct InvoicePaymentResponse {
     /// Only an Early Payment is stored, so only it has an id.
     id: Option<InvoicePaymentId>,
-    /// `early` (made by the user before the due date) or `automatic` (debited
-    /// on the due date, derived on every read).
+    /// `early` (made by the user before the due date), `automatic` (debited
+    /// on the due date, derived on every read) or `corrected` (the due-date
+    /// payment after the user edited it to the amount really paid).
     origin: &'static str,
     /// Cents, greater than zero.
     amount_cents: i64,
@@ -53,6 +54,7 @@ impl InvoicePaymentResponse {
         let (id, origin) = match payment.origin {
             PaymentOrigin::Early(id) => (Some(id), "early"),
             PaymentOrigin::Automatic => (None, "automatic"),
+            PaymentOrigin::Corrected => (None, "corrected"),
         };
         Self {
             id,
@@ -108,6 +110,57 @@ pub struct PayRequest {
     /// invoice, not here).
     #[validate(range(min = 1, max = MAX_AMOUNT_CENTS, code = "amount_range"))]
     amount_cents: i64,
+}
+
+#[derive(Deserialize, Validate)]
+pub struct CorrectRequest {
+    /// What the user really paid of the invoice at its due date: zero up to
+    /// what the Early Payments left unpaid (checked against the invoice, not
+    /// here).
+    #[validate(range(min = 0, max = MAX_AMOUNT_CENTS, code = "amount_range"))]
+    amount_cents: i64,
+}
+
+#[derive(Serialize)]
+pub struct CorrectResponse {
+    /// The due-date payment as corrected (`origin: "corrected"`). With zero it
+    /// is not a payment that leaves the balance, but it still reports what the
+    /// user said they paid.
+    payment: InvoicePaymentResponse,
+    /// The invoice after the correction.
+    invoice: InvoiceResponse,
+}
+
+/// `PUT /credit-cards/{id}/invoices/{closing_month}/payment` (protected):
+/// corrects the payment of a Paid invoice to the amount really paid at the
+/// bank (UC20). The difference from what was unpaid becomes the Carried
+/// Balance of the next invoice. It can be repeated until that invoice is Paid.
+/// `409 invoice_payment_not_due` before the due date, `409
+/// invoice_nothing_to_pay` when Early Payments covered it all, `409
+/// invoice_payment_locked` once the next invoice is Paid, and `422` with
+/// `fields.amount_cents = amount_exceeds_remaining` for more than was unpaid.
+pub async fn correct(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((id, closing_month)): Path<(String, String)>,
+    ValidatedJson(request): ValidatedJson<CorrectRequest>,
+) -> Result<Json<CorrectResponse>, ApiError> {
+    let card_id = Uuid::parse_str(&id)
+        .map(CreditCardId)
+        .map_err(|_| ApiError::CreditCardNotFound)?;
+    let month = Month::parse(&closing_month).ok_or(ApiError::InvoiceNotFound)?;
+    let today = state.clock.today();
+    let receipt = CorrectInvoicePaymentUseCase::new(
+        CreditCardRepository::new(state.pool.clone()),
+        CardPurchaseRepository::new(state.pool.clone()),
+        InvoicePaymentRepository::new(state.pool.clone()),
+    )
+    .execute(auth_user.id, card_id, month, request.amount_cents, today)
+    .await?;
+    Ok(Json(CorrectResponse {
+        payment: InvoicePaymentResponse::new(&receipt.payment, today),
+        invoice: receipt.invoice.into(),
+    }))
 }
 
 #[derive(Serialize)]

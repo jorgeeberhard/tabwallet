@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use crate::{
     ids::{CreditCardId, UserId},
-    ledger::cards::{Invoice, InvoiceState, Month},
+    ledger::cards::{CorrectionState, Invoice, InvoicePayment, InvoiceState, Month, PaymentOrigin},
     repositories::{
         card_purchases::CardPurchaseRepository,
         credit_cards::CreditCardRepository,
@@ -27,6 +27,16 @@ pub enum InvoicePaymentError {
     /// The amount is more than the invoice still has to pay.
     #[error("the amount is more than the invoice's remaining amount")]
     AmountExceedsRemaining,
+    /// The due date has not come, so there is no payment to correct yet.
+    #[error("the invoice is not due yet")]
+    NotDue,
+    /// Early Payments covered the whole invoice: the due date debits nothing.
+    #[error("the invoice has no due-date payment to correct")]
+    NothingToPay,
+    /// The invoice that received the Carried Balance is Paid, which locks the
+    /// payment.
+    #[error("the payment is locked")]
+    Locked,
     #[error("unexpected failure: {0}")]
     Internal(String),
 }
@@ -51,6 +61,82 @@ impl From<CreditCardError> for InvoicePaymentError {
 pub struct EarlyPaymentReceipt {
     pub payment: EarlyPayment,
     pub invoice: Invoice,
+}
+
+/// The corrected due-date payment and the invoice as it stands after it.
+pub struct CorrectionReceipt {
+    pub payment: InvoicePayment,
+    pub invoice: Invoice,
+}
+
+/// UC20: corrects the payment of an invoice to the amount really paid at the
+/// bank. The invoice must be Paid (its due date has come) and the one after
+/// it, which receives what is left unpaid as a Carried Balance, must not be
+/// Paid yet. The amount is zero up to what the Early Payments left unpaid;
+/// the difference moves to the next invoice. Correcting again replaces the
+/// earlier correction. Nothing but the corrected amount is stored.
+pub struct CorrectInvoicePaymentUseCase {
+    cards: CreditCardRepository,
+    purchases: CardPurchaseRepository,
+    payments: InvoicePaymentRepository,
+}
+
+impl CorrectInvoicePaymentUseCase {
+    pub fn new(
+        cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
+        payments: InvoicePaymentRepository,
+    ) -> Self {
+        Self {
+            cards,
+            purchases,
+            payments,
+        }
+    }
+
+    pub async fn execute(
+        &self,
+        user_id: UserId,
+        card_id: CreditCardId,
+        closing_month: Month,
+        amount_cents: i64,
+        today: NaiveDate,
+    ) -> Result<CorrectionReceipt, InvoicePaymentError> {
+        let (cards, ledger) = card_ledger(&self.cards, &self.purchases, user_id).await?;
+        if !cards.iter().any(|card| card.id == card_id) {
+            return Err(InvoicePaymentError::CardNotFound);
+        }
+        let invoice = ledger
+            .invoice(card_id, closing_month, today)
+            .ok_or(InvoicePaymentError::InvoiceNotFound)?;
+        match invoice.payment_correction.state {
+            CorrectionState::NotDue => return Err(InvoicePaymentError::NotDue),
+            CorrectionState::Locked => return Err(InvoicePaymentError::Locked),
+            CorrectionState::NothingToPay => return Err(InvoicePaymentError::NothingToPay),
+            CorrectionState::Editable => {}
+        }
+        if amount_cents > invoice.payment_correction.max_cents {
+            return Err(InvoicePaymentError::AmountExceedsRemaining);
+        }
+        self.payments
+            .set_correction(user_id, card_id, closing_month, amount_cents)
+            .await
+            .map_err(InvoicePaymentError::internal)?;
+        let (_, ledger) = card_ledger(&self.cards, &self.purchases, user_id).await?;
+        let invoice = ledger
+            .invoice(card_id, closing_month, today)
+            .ok_or(InvoicePaymentError::InvoiceNotFound)?;
+        Ok(CorrectionReceipt {
+            payment: InvoicePayment {
+                card_id,
+                closing_month,
+                date: invoice.cycle.due_date,
+                amount_cents,
+                origin: PaymentOrigin::Corrected,
+            },
+            invoice,
+        })
+    }
 }
 
 /// UC17: pays an Open or Closed invoice before its due date, in full or in

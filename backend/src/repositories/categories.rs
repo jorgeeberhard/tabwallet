@@ -173,17 +173,36 @@ impl CategoryRepository {
 
     /// The "Juros e encargos" rule's single check: whether Charges were
     /// recorded in this category, which then cannot be deactivated.
-    ///
-    /// There is no Charges table yet (a later ticket adds it), so nothing can
-    /// have been recorded and this is always `false`. The ticket that creates
-    /// Charges replaces this body with a query on them; the deactivation use
-    /// case and its HTTP error (`category_has_charges`) are already in place.
     pub async fn has_charges(
         &self,
-        _user_id: UserId,
-        _category_id: CategoryId,
+        user_id: UserId,
+        category_id: CategoryId,
     ) -> Result<bool, sqlx::Error> {
-        Ok(false)
+        sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1 FROM invoice_charges WHERE user_id = $1 AND category_id = $2
+             )",
+        )
+        .bind(user_id)
+        .bind(category_id)
+        .fetch_one(&self.pool)
+        .await
+    }
+
+    /// The user's "Juros e encargos" category, where Charges are recorded: the
+    /// default category marked by `is_charges` (active or not, and whatever
+    /// its name is now).
+    pub async fn find_charges_category(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<Category>, sqlx::Error> {
+        sqlx::query_as::<_, Category>(
+            "SELECT id, name, type, active, is_charges, created_at
+             FROM categories WHERE user_id = $1 AND is_charges",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
     }
 }
 

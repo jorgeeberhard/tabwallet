@@ -20,8 +20,8 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
-        CategoryProblem, CreditCardError, InstallmentAnticipationError, InstallmentPurchaseError,
-        InvoicePaymentError, RecurringError, TransactionError,
+        CategoryProblem, ChargeError, CreditCardError, InstallmentAnticipationError,
+        InstallmentPurchaseError, InvoicePaymentError, RecurringError, TransactionError,
     },
 };
 
@@ -66,6 +66,15 @@ pub enum ApiError {
     /// The invoice is paid, so its purchases cannot be edited or deleted and it
     /// takes no payment.
     InvoicePaid,
+    /// No such Charge for this user.
+    ChargeNotFound,
+    /// The invoice's due date has not come, so its payment cannot be corrected.
+    InvoicePaymentNotDue,
+    /// Early Payments covered the whole invoice: no due-date payment to correct.
+    InvoiceNothingToPay,
+    /// The invoice that received the Carried Balance is paid, which locks the
+    /// payment.
+    InvoicePaymentLocked,
     /// No such installment purchase for this user.
     InstallmentPurchaseNotFound,
     /// Some Installment of the purchase is in a paid invoice, so only its
@@ -198,7 +207,26 @@ impl From<InvoicePaymentError> for ApiError {
                 "amount_cents".to_string(),
                 "amount_exceeds_remaining".to_string(),
             )])),
+            InvoicePaymentError::NotDue => Self::InvoicePaymentNotDue,
+            InvoicePaymentError::NothingToPay => Self::InvoiceNothingToPay,
+            InvoicePaymentError::Locked => Self::InvoicePaymentLocked,
             InvoicePaymentError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<ChargeError> for ApiError {
+    fn from(error: ChargeError) -> Self {
+        match error {
+            ChargeError::CardNotFound => Self::CreditCardNotFound,
+            ChargeError::InvoiceNotFound => Self::InvoiceNotFound,
+            ChargeError::NotFound => Self::ChargeNotFound,
+            ChargeError::InvoicePaid => Self::InvoicePaid,
+            ChargeError::CategoryInactive => Self::Validation(BTreeMap::from([(
+                "category_id".to_string(),
+                "category_inactive".to_string(),
+            )])),
+            ChargeError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -429,6 +457,30 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "invoice_paid",
                 "The invoice is paid and cannot be changed.",
+                None,
+            ),
+            Self::ChargeNotFound => (
+                StatusCode::NOT_FOUND,
+                "charge_not_found",
+                "There is no such charge.",
+                None,
+            ),
+            Self::InvoicePaymentNotDue => (
+                StatusCode::CONFLICT,
+                "invoice_payment_not_due",
+                "The invoice is not due yet, so its payment cannot be corrected.",
+                None,
+            ),
+            Self::InvoiceNothingToPay => (
+                StatusCode::CONFLICT,
+                "invoice_nothing_to_pay",
+                "Early payments covered the whole invoice: there is no due-date payment to correct.",
+                None,
+            ),
+            Self::InvoicePaymentLocked => (
+                StatusCode::CONFLICT,
+                "invoice_payment_locked",
+                "The invoice that received the carried balance is paid, so this payment can no longer be corrected.",
                 None,
             ),
             Self::InstallmentPurchaseNotFound => (
