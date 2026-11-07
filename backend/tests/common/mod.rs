@@ -111,15 +111,6 @@ impl Session {
         .await
     }
 
-    pub async fn put_json(&self, path: &str, body: &Value) -> Response {
-        self.send(
-            self.client
-                .put(format!("{}{}", self.address, path))
-                .json(body),
-        )
-        .await
-    }
-
     pub async fn delete(&self, path: &str) -> Response {
         self.send(self.client.delete(format!("{}{}", self.address, path)))
             .await

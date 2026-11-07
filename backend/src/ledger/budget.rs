@@ -316,6 +316,8 @@ mod tests {
                 spending: vec![],
                 installments: vec![],
                 payments: vec![],
+                charges: vec![],
+                corrections: vec![],
             }],
             ..LedgerFacts::default()
         };
@@ -372,6 +374,8 @@ mod tests {
                 spending: vec![],
                 installments: vec![],
                 payments: vec![],
+                charges: vec![],
+                corrections: vec![],
             }],
             ..LedgerFacts::default()
         })
