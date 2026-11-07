@@ -254,7 +254,11 @@ impl Ledger {
     /// The invoice of the card that is open on `today` (the one receiving
     /// purchases), whether or not anything is in it yet. `None` for an
     /// unknown card.
-    pub fn open_invoice_cycle(&self, card_id: CreditCardId, today: NaiveDate) -> Option<InvoiceCycle> {
+    pub fn open_invoice_cycle(
+        &self,
+        card_id: CreditCardId,
+        today: NaiveDate,
+    ) -> Option<InvoiceCycle> {
         let card = self.card(card_id)?;
         Some(card.cycle_of(card.schedule.first_open_month(today), today))
     }

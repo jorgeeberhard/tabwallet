@@ -170,8 +170,17 @@ mod tests {
 
     #[test]
     fn a_discount_is_split_in_proportion_in_exact_cents() {
-        assert_eq!(split_discount(&[2_500, 3_000, 2_500], 1_000).unwrap().iter().sum::<i64>(), 1_000);
-        assert_eq!(split_discount(&[2_500, 3_000, 2_500], 1_000), Some(vec![313, 375, 312]));
+        assert_eq!(
+            split_discount(&[2_500, 3_000, 2_500], 1_000)
+                .unwrap()
+                .iter()
+                .sum::<i64>(),
+            1_000
+        );
+        assert_eq!(
+            split_discount(&[2_500, 3_000, 2_500], 1_000),
+            Some(vec![313, 375, 312])
+        );
         assert_eq!(split_discount(&[3_333, 3_333], 1), Some(vec![1, 0]));
         assert_eq!(split_discount(&[100, 300], 100), Some(vec![25, 75]));
     }

@@ -47,6 +47,12 @@ O botão "Nova compra parcelada" (extrato e tela de faturas do cartão) abre `in
 - Editar: enquanto nenhuma parcela está em fatura paga, todos os campos mudam e tudo é recalculado; com parcelas pagas o diálogo avisa e só a Categoria fica ativa. Excluir (`cancel-installment-purchase-dialog.tsx`) remove a compra inteira, ou, com parcelas pagas, vira "Cancelar parcelas restantes" (as pagas ficam). Com todas as parcelas pagas a ação fica desligada.
 - Chamadas em `lib/credit-cards-api.ts` (`createInstallmentPurchase`, `updateInstallmentPurchase`, `cancelInstallmentPurchase`); erros em `lib/credit-card-messages.ts`.
 
+## Antecipação de parcelas
+
+O botão "Antecipar parcelas" na tela de faturas do cartão (`card-invoices-screen.tsx`) abre `anticipate-installments-dialog.tsx` (UC19). Primeiro o `Dialog` de escolha: as Parcelas de faturas depois da aberta (`GET /credit-cards/{id}/anticipable-installments`), agrupadas por fatura, com "Selecionar todas"; o Desconto opcional (`MoneyInput`, em branco é sem desconto) e o resumo "parcelas escolhidas / desconto / total na fatura de {mês}". "Continuar" abre o `AlertDialog` de confirmação, com um aviso `warning` de que **a operação não pode ser desfeita**; só o botão "Antecipar parcelas" dele chama a API (`POST .../installment-anticipations`, sempre com `confirm: true`). Recusas da API (parcela que deixou de poder ser antecipada, desconto alto demais) voltam à escolha com o motivo. Não existe ação de desfazer.
+
+Depois de antecipar, as faturas, o extrato e os saldos são invalidados. Parcelas antecipadas ganham o selo "Antecipada" (e o desconto) nas linhas da fatura e do extrato; uma compra com parcela antecipada só deixa mudar a categoria e "Excluir" vira "Cancelar parcelas restantes" (a antecipada fica). A conta do total é só prévia (`lib/installment-anticipation.ts`); quem divide o desconto é a API. Chamadas em `lib/installment-anticipation.ts`; `components/ui/checkbox.tsx` é o `checkbox` do shadcn ajustado ao Design System.
+
 ## Gastos e receitas fixos
 
 `app/(app)/fixos` mostra a tela "Gastos e receitas fixos" (`components/recurring/`), com atalho na página inicial: lista os lançamentos fixos em andamento (dia do mês, Categoria, próxima data e valor) e os encerrados, e permite cadastrar (tipo, valor, dia do mês de 1 a 31, mês de início, descrição, Categoria), editar e encerrar (com confirmação). Editar o valor vale a partir do mês atual, o que o diálogo avisa; o tipo e o dia não mudam. `lib/recurring-api.ts` fala com a API e `lib/recurring-messages.ts` traduz os erros.

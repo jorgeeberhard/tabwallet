@@ -226,6 +226,27 @@ Rotas protegidas; cada usuário só enxerga os próprios pagamentos. Valores em 
 
 **Módulo de cálculo.** `CardFacts` ganhou `payments: Vec<PaymentFact>` (os antecipados gravados). `Invoice` ganhou `paid_cents`. `CardFacts::payments()` devolve, por Fatura, os antecipados e o automático do vencimento como `InvoicePayment { card_id, closing_month, date, amount_cents, origin: Early(id) | Automatic }`, sem depender de "hoje". `Ledger::invoice_payments(from, to)` e `Ledger::payments_of_invoice(card, mês)` os expõem; `Ledger::current_balance` e `Ledger::balances_at` (base do histórico e do Saldo projetado) os somam como saídas datadas. Os testes ficam em `tests/invoice_payments.rs`, pela API, movendo o "hoje" com `set_today`. Corrigir o Pagamento de fatura (Saldo rolado) e os Encargos são tickets à parte.
 
+## Antecipação de parcelas com Desconto (UC19)
+
+O usuário traz Parcelas futuras de **um mesmo cartão** para a Fatura aberta (a que hoje recebe compras), com um Desconto opcional. É **irreversível**: não existe rota nem use case que desfaça, e a API só executa com confirmação explícita. Rotas protegidas; valores em centavos.
+
+| Rota | Efeito |
+| --- | --- |
+| `GET /credit-cards/{id}/anticipable-installments` | O que dá para antecipar agora: `{open_invoice: {closing_month, closing_date, due_date, reference_month, state}, installments: [...]}`. Cada item tem a forma das linhas "3/10" da Fatura (`InvoiceInstallmentResponse`), da Fatura mais próxima para a mais distante. `404 credit_card_not_found`. |
+| `POST /credit-cards/{id}/installment-anticipations` `{installment_ids, discount_cents?, confirm}` | Antecipa. `200 {anticipation: {credit_card_id, original_total_cents, discount_cents, total_cents, invoice, installments}}`: `invoice` é a Fatura aberta depois da operação e `installments` as Parcelas já antecipadas. |
+
+**Erros.** `confirm` ausente ou `false`: `422 validation_failed` com `fields.confirm = confirmation_required` (nada muda). `installment_ids` vazio: `fields.installment_ids = installments_required`; id que não existe, é de outro cartão ou de outro usuário: `fields.installment_ids = installment_not_found`. `discount_cents` informado precisa ser maior que zero (`fields.discount_cents = discount_range`; omitido ou `null` é sem desconto) e deixar ao menos 1 centavo em cada Parcela, o que inclui nunca igualar nem passar da soma delas (`fields.discount_cents = discount_exceeds_total`). Parcela fora de Fatura posterior à aberta: `409 installments_not_anticipable`, e nada é movido (tudo ou nada).
+
+**Regras.**
+
+- Só Parcela de Fatura **posterior à aberta** pode ser antecipada. Isso exclui as Faturas aberta, fechadas e pagas e as Parcelas já antecipadas (já estão na Fatura que era a aberta, que não é mais posterior). Ids repetidos contam uma vez.
+- Cada Parcela antecipada passa a estar na Fatura aberta (`invoice_month` dela), então conta no **Mês de referência** do vencimento dela. A Fatura aberta, o extrato e o Saldo projetado já refletem isso, porque tudo isso é calculado na leitura (ADR-0002): a operação só altera as Parcelas.
+- **Desconto.** Dividido entre as Parcelas em proporção ao valor de cada uma, em centavos exatos (maior resto): cada parte é arredondada para baixo e os centavos que sobram vão, um a um, às Parcelas com a maior fração de centavo; no empate, à da Fatura mais antiga, depois à compra mais antiga e ao menor número. Cada Parcela diminui do seu quinhão (`amount_cents`), e assim a Despesa na Categoria da compra original, que é a soma das suas Parcelas. `total_cents` da compra continua o que o usuário informou; `discount_cents` na compra soma o Desconto recebido. A Parcela guarda `discount_cents`, `original_amount_cents` (valor + desconto), `original_invoice_month` e `anticipated_on`.
+- **Parcela antecipada é histórico, como a paga.** Mudar os dias do cartão não a move (as demais Parcelas da compra são realocadas, mantendo o valor). Compra com Parcela antecipada só aceita mudar a Categoria (`409 installments_anticipated` para outros campos do `PATCH`), e o `DELETE` cancela só as Parcelas restantes (nem pagas nem antecipadas) e devolve `200`; sem restante, `409 installments_anticipated`.
+- Uma operação concorrente sobre a mesma Parcela não passa duas vezes: o `UPDATE` confere que ela ainda está na Fatura e com o valor que o plano viu.
+
+**Banco e módulo de cálculo.** A migration `0013` acrescenta a `installments` as colunas `anticipated_on`, `original_invoice_month` e `discount_cents` (só o que a operação muda). `ledger::anticipation` é puro: `Ledger::plan_anticipation(card, escolhidas, desconto, hoje)` devolve um `AnticipationPlan` (Fatura aberta e `AnticipatedShare` por Parcela) ou um `AnticipationError`, e `split_discount` faz a divisão; `Ledger::open_invoice_cycle` dá a Fatura aberta. `AnticipateInstallmentsUseCase` e `ListAnticipableInstallmentsUseCase` orquestram; `InstallmentPurchaseRepository::anticipate` grava tudo ou nada. Os testes ficam em `tests/installment_anticipations.rs`, pela API.
+
 ## Rodar os testes
 
 ```bash

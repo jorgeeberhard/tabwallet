@@ -20,8 +20,8 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
-        CategoryProblem, CreditCardError, InstallmentPurchaseError, InvoicePaymentError,
-        RecurringError, TransactionError,
+        CategoryProblem, CreditCardError, InstallmentAnticipationError, InstallmentPurchaseError,
+        InvoicePaymentError, RecurringError, TransactionError,
     },
 };
 
@@ -71,6 +71,11 @@ pub enum ApiError {
     /// Some Installment of the purchase is in a paid invoice, so only its
     /// Category can change.
     InstallmentsPaid,
+    /// Some Installment of the purchase was anticipated, which cannot be
+    /// undone, so only its Category can change.
+    InstallmentsAnticipated,
+    /// Some chosen Installment is not in an invoice later than the open one.
+    InstallmentsNotAnticipable,
     /// No such recurring Transaction for this user.
     RecurringTransactionNotFound,
     /// The recurring Transaction has no Occurrence in that month.
@@ -255,7 +260,31 @@ impl From<InstallmentPurchaseError> for ApiError {
             // Every Installment is in a paid invoice: same answer as a single
             // purchase in a paid invoice.
             InstallmentPurchaseError::AllPaid => Self::InvoicePaid,
+            InstallmentPurchaseError::InstallmentsAnticipated => Self::InstallmentsAnticipated,
             InstallmentPurchaseError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<InstallmentAnticipationError> for ApiError {
+    fn from(error: InstallmentAnticipationError) -> Self {
+        let field = |name: &str, rule: &str| {
+            Self::Validation(BTreeMap::from([(name.to_string(), rule.to_string())]))
+        };
+        match error {
+            InstallmentAnticipationError::CardNotFound => Self::CreditCardNotFound,
+            InstallmentAnticipationError::NotConfirmed => field("confirm", "confirmation_required"),
+            InstallmentAnticipationError::NothingChosen => {
+                field("installment_ids", "installments_required")
+            }
+            InstallmentAnticipationError::InstallmentNotFound => {
+                field("installment_ids", "installment_not_found")
+            }
+            InstallmentAnticipationError::NotAnticipable => Self::InstallmentsNotAnticipable,
+            InstallmentAnticipationError::DiscountTooLarge => {
+                field("discount_cents", "discount_exceeds_total")
+            }
+            InstallmentAnticipationError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -412,6 +441,18 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "installments_paid",
                 "Some installments are already in a paid invoice; only the category can change.",
+                None,
+            ),
+            Self::InstallmentsAnticipated => (
+                StatusCode::CONFLICT,
+                "installments_anticipated",
+                "Some installments were anticipated, which cannot be undone; only the category can change and the remaining installments can be cancelled.",
+                None,
+            ),
+            Self::InstallmentsNotAnticipable => (
+                StatusCode::CONFLICT,
+                "installments_not_anticipable",
+                "Only installments in invoices after the open one can be anticipated.",
                 None,
             ),
             Self::RecurringTransactionNotFound => (

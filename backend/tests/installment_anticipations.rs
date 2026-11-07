@@ -305,7 +305,17 @@ async fn installments_of_several_purchases_can_be_anticipated_together() {
         invoice_closing(&listed, "2026-02")["total_cents"],
         json!(11_000)
     );
-    assert_eq!(invoice_closing(&listed, "2026-03")["total_cents"], json!(0));
+    // March has nothing left, so it is not listed; April still has its own.
+    assert!(
+        listed
+            .iter()
+            .all(|invoice| invoice["closing_month"] != json!("2026-03")),
+        "{listed:?}"
+    );
+    assert_eq!(
+        invoice_closing(&listed, "2026-04")["total_cents"],
+        json!(2_500)
+    );
 }
 
 #[tokio::test]

@@ -64,6 +64,15 @@ describe("AnticipateInstallmentsDialog", () => {
 
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock)
+    // jsdom has none; the Radix checkbox measures itself with it.
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     onClose.mockReset()
     toast.success.mockReset()
   })
