@@ -13,11 +13,14 @@
 //! history and the Projected Balance (series of points over time) in [`series`].
 //! The reports by Reference Month (expenses by Category, income x expenses per
 //! month) are in [`reports`].
+//! Monthly Budgets, the spending of a Category in a Reference Month and the
+//! Budget Alert live in [`budget`].
 //! Bringing future Installments to the open invoice with a Discount
 //! (Installment Anticipation) is planned by [`Ledger::plan_anticipation`], in
 //! [`anticipation`].
 
 pub mod anticipation;
+pub mod budget;
 pub mod cards;
 mod recurring;
 pub mod reports;
@@ -29,6 +32,8 @@ pub use recurring::{
     AmountFrom, Occurrence, OccurrenceChange, OccurrenceException, RecurringDefinition,
     date_in_month, first_of_month, last_day_of_month, next_month, previous_month,
 };
+
+pub use budget::{Budget, BudgetFacts, BudgetStatus, SpendingFacts};
 
 pub use series::{BalancePoint, Granularity, MAX_SERIES_POINTS, SeriesError};
 
@@ -99,11 +104,16 @@ fn signed(kind: FlowKind, amount_cents: i64) -> i64 {
 #[derive(Clone, Debug)]
 pub struct Ledger {
     facts: LedgerFacts,
+    /// What the budget questions need besides `facts` (see [`budget`]).
+    budget: BudgetFacts,
 }
 
 impl Ledger {
     pub fn new(facts: LedgerFacts) -> Self {
-        Self { facts }
+        Self {
+            facts,
+            budget: BudgetFacts::default(),
+        }
     }
 
     /// The Current Balance on `today`, in cents: the Opening Balance plus

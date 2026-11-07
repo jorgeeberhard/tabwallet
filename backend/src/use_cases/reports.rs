@@ -10,14 +10,14 @@ use chrono::NaiveDate;
 use crate::{
     ids::{CategoryId, UserId},
     ledger::{
-        Ledger, LedgerFacts,
+        BudgetFacts, Ledger, LedgerFacts,
         cards::Month,
-        reports::{MonthTotals, ReportFacts, ReportPeriodError},
+        reports::{MonthTotals, ReportPeriodError},
     },
     repositories::{
         card_purchases::CardPurchaseRepository, categories::CategoryRepository,
         credit_cards::CreditCardRepository, recurring::RecurringRepository,
-        reports::ReportRepository,
+        spending::SpendingRepository, transactions::TransactionRepository,
     },
 };
 
@@ -77,11 +77,12 @@ struct ReportLoader {
     cards: CreditCardRepository,
     purchases: CardPurchaseRepository,
     recurring: RecurringRepository,
-    reports: ReportRepository,
+    transactions: TransactionRepository,
+    spending: SpendingRepository,
 }
 
 impl ReportLoader {
-    async fn load(&self, user_id: UserId) -> Result<(Ledger, ReportFacts), ReportError> {
+    async fn load(&self, user_id: UserId) -> Result<Ledger, ReportError> {
         let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
             .await
             .map_err(ReportError::internal)?;
@@ -90,38 +91,31 @@ impl ReportLoader {
             .list(user_id)
             .await
             .map_err(ReportError::internal)?;
-        let recurring_categories = recurring
-            .iter()
-            .map(|recurring| (recurring.id, recurring.category_id))
-            .collect();
         let definitions = recurring
             .into_iter()
             .map(|recurring| recurring.definition)
             .collect();
-        let facts = ReportFacts {
-            cash_flows: self
-                .reports
-                .cash_flows(user_id)
-                .await
-                .map_err(ReportError::internal)?,
-            recurring_categories,
-            card_purchases: self
-                .reports
-                .card_purchases(user_id)
-                .await
-                .map_err(ReportError::internal)?,
-            invoice_items: self
-                .reports
-                .invoice_items(user_id)
-                .await
-                .map_err(ReportError::internal)?,
-        };
-        let ledger = Ledger::new(LedgerFacts {
+        let cash_flows = self
+            .transactions
+            .cash_flows(user_id)
+            .await
+            .map_err(ReportError::internal)?;
+        // The expenses with their Categories are the same facts the Budgets use.
+        let spending = self
+            .spending
+            .facts(user_id)
+            .await
+            .map_err(ReportError::internal)?;
+        Ok(Ledger::new(LedgerFacts {
+            cash_flows,
             cards,
             recurring: definitions,
             ..LedgerFacts::default()
-        });
-        Ok((ledger, facts))
+        })
+        .with_budget_facts(BudgetFacts {
+            spending,
+            budgets: Vec::new(),
+        }))
     }
 }
 
@@ -132,7 +126,8 @@ macro_rules! constructor {
             cards: CreditCardRepository,
             purchases: CardPurchaseRepository,
             recurring: RecurringRepository,
-            reports: ReportRepository,
+            transactions: TransactionRepository,
+            spending: SpendingRepository,
         ) -> Self {
             Self {
                 loader: ReportLoader {
@@ -140,7 +135,8 @@ macro_rules! constructor {
                     cards,
                     purchases,
                     recurring,
-                    reports,
+                    transactions,
+                    spending,
                 },
             }
         }
@@ -186,8 +182,8 @@ impl GetExpensesByCategoryUseCase {
     ) -> Result<ExpensesByCategory, ReportError> {
         let to = period.to.unwrap_or_else(|| Month::of(today));
         let from = period.from.unwrap_or(to);
-        let (ledger, facts) = self.loader.load(user_id).await?;
-        let spending = ledger.expenses_by_category(&facts, from, to, today)?;
+        let ledger = self.loader.load(user_id).await?;
+        let spending = ledger.expenses_by_category(from, to, today)?;
 
         let names: HashMap<CategoryId, (String, bool)> = self
             .loader
@@ -257,8 +253,8 @@ impl GetIncomeVsExpensesUseCase {
         let from = period
             .from
             .unwrap_or_else(|| shift_back(to, DEFAULT_SERIES_MONTHS - 1));
-        let (ledger, facts) = self.loader.load(user_id).await?;
-        let months = ledger.income_vs_expenses(&facts, from, to, today)?;
+        let ledger = self.loader.load(user_id).await?;
+        let months = ledger.income_vs_expenses(from, to, today)?;
         Ok(IncomeVsExpenses {
             from,
             to,

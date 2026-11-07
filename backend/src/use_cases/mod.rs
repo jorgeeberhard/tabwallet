@@ -1,6 +1,7 @@
 mod auth_error;
 mod balance;
 mod balance_series;
+mod budget;
 mod card_purchase;
 mod category_error;
 mod check_health;
@@ -32,6 +33,10 @@ pub use balance::{BalanceError, BalanceReport, GetBalanceUseCase, SetOpeningBala
 pub use balance_series::{
     BalanceHistory, BalanceSeriesError, GetBalanceHistoryUseCase, GetProjectedBalanceUseCase,
     HistoryQuery, ProjectedBalance,
+};
+pub use budget::{
+    BudgetCategory, BudgetError, BudgetReport, BudgetStatusLine, BudgetView,
+    GetBudgetStatusUseCase, ListBudgetsUseCase, RemoveBudgetUseCase, SetBudgetUseCase,
 };
 pub use card_purchase::{
     CardProblem, CardPurchaseError, CardPurchaseView, CreateCardPurchaseUseCase,

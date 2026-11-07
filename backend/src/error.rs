@@ -19,8 +19,8 @@ use validator::ValidationErrors;
 use crate::{
     ids::CategoryId,
     use_cases::{
-        AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
-        CategoryProblem, ChargeError, CreditCardError, InstallmentAnticipationError,
+        AuthError, BalanceError, BalanceSeriesError, BudgetError, CardProblem, CardPurchaseError,
+        CategoryError, CategoryProblem, ChargeError, CreditCardError, InstallmentAnticipationError,
         InstallmentPurchaseError, InvoicePaymentError, RecurringError, ReportError,
         TransactionError,
     },
@@ -92,6 +92,8 @@ pub enum ApiError {
     OccurrenceNotFound,
     /// The recurring Transaction was already ended and cannot change.
     RecurringTransactionEnded,
+    /// The Category has no Budget in force to remove.
+    BudgetNotFound,
     /// Something unexpected; the cause is logged, never sent to the client.
     Internal(String),
 }
@@ -193,6 +195,24 @@ impl From<ReportError> for ApiError {
                 Self::Validation(BTreeMap::from([(field.to_string(), rule.to_string())]))
             }
             ReportError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<BudgetError> for ApiError {
+    fn from(error: BudgetError) -> Self {
+        match error {
+            BudgetError::InvalidCategory(problem) => Self::Validation(BTreeMap::from([(
+                "category_id".to_string(),
+                match problem {
+                    CategoryProblem::NotFound => "category_not_found",
+                    CategoryProblem::TypeMismatch => "category_type_mismatch",
+                    CategoryProblem::Inactive => "category_inactive",
+                }
+                .to_string(),
+            )])),
+            BudgetError::NotFound => Self::BudgetNotFound,
+            BudgetError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -535,6 +555,12 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "recurring_transaction_ended",
                 "The recurring transaction has ended and cannot be changed.",
+                None,
+            ),
+            Self::BudgetNotFound => (
+                StatusCode::NOT_FOUND,
+                "budget_not_found",
+                "The category has no budget.",
                 None,
             ),
             Self::Internal(cause) => {

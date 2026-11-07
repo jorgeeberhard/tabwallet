@@ -87,6 +87,12 @@ A página inicial (`app/(app)/page.tsx`) mostra o Saldo atual logo abaixo da sau
 
 Os valores, os meses de referência e o que é Projeção vêm prontos da API (`GET /reports/expenses-by-category` e `GET /reports/income-vs-expenses`, em `lib/reports-api.ts`, que converte centavos em reais na borda); o front-end só escolhe o período (`lib/report-periods.ts`, funções puras). As consultas ficam sob `BALANCE_KEY` e são sempre refeitas ao abrir a tela. Pagamentos de fatura e Saldo rolado não aparecem: não são despesas.
 
+## Orçamentos e Alerta de orçamento
+
+`app/(app)/orcamentos` mostra a tela de orçamentos (`components/budgets/budgets-screen.tsx`), com atalho "Orçamentos" na página inicial: para o mês escolhido (setas de mês anterior e próximo, até 12 meses à frente, e "Mês atual"), cada Categoria de Despesa com limite aparece numa `BudgetBar` do Design System (`components/budget-bar.tsx`: "41% usado", "92% do limite" com ícone de alerta a partir de 80%, "Limite excedido em R$ 120,00"; o estado é sempre escrito), a mais crítica primeiro. Cada uma tem "Alterar limite" (`budget-dialog.tsx`, `MoneyInput`) e "Remover" (com confirmação). As Categorias ativas de Despesa sem orçamento ficam em "Sem orçamento", com "Definir limite". O diálogo avisa que o limite vale todo mês a partir do mês atual, até ser alterado, e que os meses anteriores não mudam; ao olhar um mês passado a tela mostra o limite que ele tinha. Um orçamento de Categoria desativada aparece em "Categorias desativadas", com a barra neutra e sem alerta, e volta a valer se a Categoria for reativada.
+
+O Alerta de orçamento (UC13) aparece dentro do app, na página inicial (`components/budgets/budget-alerts.tsx`): um `Alert` por Categoria acima do limite no mês atual ("Você passou R$ 120,00 do limite de Lazer."), até três, mais a contagem do resto e o link "Ver orçamentos", e o atalho "Orçamentos" ganha o selo "N acima do limite". Não há e-mail nem push. O front-end não calcula o gasto nem o alerta: `lib/budgets-api.ts` lê `GET /budgets/status` (que soma Projeções, compras no cartão e Parcelas pelo mês de vencimento da Fatura), converte centavos em reais na borda e usa `staleTime: 0`, para que o alerta nunca fique velho. `lib/budget-messages.ts` traduz os erros e `lib/budget-month.ts` faz a conta dos meses.
+
 ## Pré-requisitos
 
 - Node.js 22 e npm.

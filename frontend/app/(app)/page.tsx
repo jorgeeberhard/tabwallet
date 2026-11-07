@@ -2,6 +2,7 @@ import { ChartLineIcon, ChartPieIcon, CreditCardIcon, ReceiptTextIcon, RepeatIco
 import Link from "next/link"
 
 import { BalanceSection } from "@/components/balance/balance-section"
+import { BudgetAlerts, BudgetsShortcut } from "@/components/budgets/budget-alerts"
 import { Welcome } from "@/components/welcome"
 
 const SHORTCUT_CLASS =
@@ -16,6 +17,7 @@ export default function Home() {
         </h1>
         <Welcome />
       </div>
+      <BudgetAlerts />
       <BalanceSection />
       <nav aria-label="Atalhos" className="flex flex-wrap gap-2">
         <Link href="/saldo" className={SHORTCUT_CLASS}>
@@ -38,6 +40,7 @@ export default function Home() {
           <RepeatIcon strokeWidth={1.75} className="size-4" />
           Gastos e receitas fixos
         </Link>
+        <BudgetsShortcut className={SHORTCUT_CLASS} />
         <Link href="/categorias" className={SHORTCUT_CLASS}>
           <TagIcon strokeWidth={1.75} className="size-4" />
           Categorias
