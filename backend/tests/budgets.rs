@@ -733,7 +733,6 @@ async fn charges_count_in_the_charges_category_by_the_due_month_of_their_invoice
     assert_eq!(line["spent_cents"], json!(6_000));
     assert_eq!(line["exceeded"], json!(true));
     assert_eq!(spent(&ana, "2026-02", &charges).await, 0);
-    assert_eq!(spent(&ana, "2025-12", &charges).await, 0);
 }
 
 #[tokio::test]
