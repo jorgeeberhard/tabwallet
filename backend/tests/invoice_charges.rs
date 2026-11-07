@@ -573,3 +573,60 @@ async fn charges_and_the_carried_balance_work_on_invoices_with_installments() {
     app.set_today(2026, 2, 27);
     assert_eq!(balance(&ana).await, 79_500);
 }
+
+#[tokio::test]
+async fn charges_and_the_carried_balance_work_on_invoices_with_anticipated_installments() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    set_opening(&ana, 100_000).await;
+    let nubank = card(&ana, "Nubank").await;
+    let category = category_id(&ana, "Outros", "expense").await;
+    let response = ana
+        .post_json(
+            "/installment-purchases",
+            &json!({
+                "credit_card_id": nubank,
+                "total_cents": 30_000,
+                "installment_count": 3,
+                "date": "2026-01-10",
+                "description": "geladeira",
+                "category_id": category,
+            }),
+        )
+        .await;
+    assert_eq!(response.status(), 201);
+    let bought: Value = response.json().await.unwrap();
+    let third = bought["installment_purchase"]["installments"][2]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The March Installment comes to the open January invoice, with a discount.
+    let response = ana
+        .post_json(
+            &format!("/credit-cards/{nubank}/installment-anticipations"),
+            &json!({ "installment_ids": [third], "discount_cents": 500, "confirm": true }),
+        )
+        .await;
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    let january = invoice(&ana, &nubank, "2026-01").await;
+    assert_eq!(january["invoice"]["total_cents"], json!(19_500));
+
+    let body = charge_ok(&ana, &nubank, "2026-01", 500, "2026-01-16").await;
+    assert_eq!(body["invoice"]["total_cents"], json!(20_000));
+    app.set_today(2026, 1, 27);
+    assert_eq!(balance(&ana).await, 80_000);
+
+    let response = ana
+        .put_json(
+            &format!("/credit-cards/{nubank}/invoices/2026-01/payment"),
+            &json!({ "amount_cents": 15_000 }),
+        )
+        .await;
+    let status = response.status();
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["invoice"]["carried_forward_cents"], json!(5_000));
+    assert_eq!(balance(&ana).await, 85_000);
+    let february = invoice(&ana, &nubank, "2026-02").await;
+    assert_eq!(february["invoice"]["total_cents"], json!(15_000));
+}
