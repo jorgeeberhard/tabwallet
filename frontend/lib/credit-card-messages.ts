@@ -10,7 +10,9 @@ const MESSAGES: Record<string, string> = {
   credit_card_inactive: "Este cartão está desativado. Escolha outro ou reative-o.",
   invoice_not_found: "Esta fatura não existe.",
   invoice_paid:
-    "Esta compra pertence a uma fatura já paga e não pode ser alterada. A data escolhida também não pode cair numa fatura paga.",
+    "Esta fatura já está paga e não pode mais ser alterada. Uma compra não pode ser editada, excluída nem movida para uma fatura paga, e a fatura paga não recebe pagamento antecipado.",
+  amount_exceeds_remaining:
+    "O valor não pode passar do que ainda falta pagar nesta fatura. Atualize a página para ver o valor restante.",
   card_purchase_not_found: "Esta compra não existe mais. Atualize a página.",
   name_length: "Digite um nome de até 60 caracteres.",
   day_range: "Escolha um dia de 1 a 31.",

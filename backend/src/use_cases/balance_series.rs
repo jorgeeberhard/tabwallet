@@ -11,10 +11,13 @@ use crate::{
         projection_horizon,
     },
     repositories::{
+        card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
         transactions::TransactionRepository,
     },
 };
+
+use super::credit_card::card_facts;
 
 /// How many days a daily history shows when the caller gives no start.
 pub const DEFAULT_HISTORY_DAYS: u64 = 30;
@@ -60,6 +63,8 @@ struct FactsLoader {
     transactions: TransactionRepository,
     opening_balance: OpeningBalanceRepository,
     recurring: RecurringRepository,
+    cards: CreditCardRepository,
+    purchases: CardPurchaseRepository,
 }
 
 impl FactsLoader {
@@ -82,13 +87,16 @@ impl FactsLoader {
             .into_iter()
             .map(|recurring| recurring.definition)
             .collect();
+        // Card purchases reach the balance only through Invoice Payments, which
+        // the ledger derives from the cards' purchases and Early Payments.
+        let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
+            .await
+            .map_err(BalanceSeriesError::internal)?;
         Ok(Ledger::new(LedgerFacts {
             opening_balance_cents,
             cash_flows,
             recurring,
-            // Card purchases reach the balance only through invoice payments
-            // (a later ticket), so they are not loaded for these series yet.
-            ..LedgerFacts::default()
+            cards,
         }))
     }
 }
@@ -125,12 +133,16 @@ impl GetBalanceHistoryUseCase {
         transactions: TransactionRepository,
         opening_balance: OpeningBalanceRepository,
         recurring: RecurringRepository,
+        cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
     ) -> Self {
         Self {
             loader: FactsLoader {
                 transactions,
                 opening_balance,
                 recurring,
+                cards,
+                purchases,
             },
         }
     }
@@ -195,12 +207,16 @@ impl GetProjectedBalanceUseCase {
         transactions: TransactionRepository,
         opening_balance: OpeningBalanceRepository,
         recurring: RecurringRepository,
+        cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
     ) -> Self {
         Self {
             loader: FactsLoader {
                 transactions,
                 opening_balance,
                 recurring,
+                cards,
+                purchases,
             },
         }
     }

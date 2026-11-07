@@ -120,6 +120,10 @@ export interface Invoice extends InvoiceCycle {
   totalCents: number
   /** In reais, for the Design System components. */
   total: number
+  /** What left the balance for this invoice: Early Payments and, once paid, the automatic one. */
+  paidCents: number
+  paid: number
+  /** What is still to pay: the total less the Early Payments. Zero once the invoice is paid. */
   remainingCents: number
   remaining: number
 }
@@ -127,6 +131,7 @@ export interface Invoice extends InvoiceCycle {
 interface InvoicePayload extends InvoiceCyclePayload {
   credit_card_id: string
   total_cents: number
+  paid_cents: number
   remaining_cents: number
 }
 
@@ -136,8 +141,67 @@ function toInvoice(payload: InvoicePayload): Invoice {
     creditCardId: payload.credit_card_id,
     totalCents: payload.total_cents,
     total: centsToReais(payload.total_cents),
+    paidCents: payload.paid_cents,
+    paid: centsToReais(payload.paid_cents),
     remainingCents: payload.remaining_cents,
     remaining: centsToReais(payload.remaining_cents),
+  }
+}
+
+/**
+ * A payment of an invoice (an Invoice Payment): `early` is one the person made
+ * before the due date, `automatic` is the one the system debits on the due
+ * date for what is still unpaid (derived by the API on read). Neither is an
+ * expense: the spending was counted when the purchases were made.
+ */
+export interface InvoicePayment {
+  /** Only an Early Payment is stored, so only it has an id. */
+  id: string | null
+  origin: "early" | "automatic"
+  amountCents: number
+  /** In reais, for the Design System components. */
+  amount: number
+  /** The day the money leaves (or left) the Current Balance, `YYYY-MM-DD`. */
+  date: string
+  /** An automatic payment not yet due: the Projected Balance already subtracts it. */
+  isProjection: boolean
+}
+
+export interface InvoicePaymentPayload {
+  id: string | null
+  origin: "early" | "automatic"
+  amount_cents: number
+  date: string
+  is_projection: boolean
+}
+
+export function toInvoicePayment(payload: InvoicePaymentPayload): InvoicePayment {
+  return {
+    id: payload.id,
+    origin: payload.origin,
+    amountCents: payload.amount_cents,
+    amount: centsToReais(payload.amount_cents),
+    date: payload.date,
+    isProjection: payload.is_projection,
+  }
+}
+
+/** An Invoice Payment in the statement, with the card and the invoice it pays. */
+export interface InvoicePaymentItem extends InvoicePayment {
+  creditCard: { id: string; name: string; active: boolean }
+  invoice: InvoiceCycle
+}
+
+export interface InvoicePaymentItemPayload extends InvoicePaymentPayload {
+  credit_card: { id: string; name: string; active: boolean }
+  invoice: InvoiceCyclePayload
+}
+
+export function toInvoicePaymentItem(payload: InvoicePaymentItemPayload): InvoicePaymentItem {
+  return {
+    ...toInvoicePayment(payload),
+    creditCard: payload.credit_card,
+    invoice: toCycle(payload.invoice),
   }
 }
 
@@ -204,6 +268,8 @@ export async function listInvoices(cardId: string): Promise<Invoice[]> {
 export interface InvoiceDetail {
   invoice: Invoice
   purchases: CardPurchase[]
+  /** The Early Payments and, when something is unpaid, the automatic one; oldest first. */
+  payments: InvoicePayment[]
 }
 
 export function invoiceKey(cardId: string, closingMonth: string) {
@@ -211,13 +277,32 @@ export function invoiceKey(cardId: string, closingMonth: string) {
 }
 
 export async function getInvoice(cardId: string, closingMonth: string): Promise<InvoiceDetail> {
-  const payload = await api<{ invoice: InvoicePayload; purchases: CardPurchasePayload[] }>(
-    `/credit-cards/${cardId}/invoices/${closingMonth}`,
-  )
+  const payload = await api<{
+    invoice: InvoicePayload
+    purchases: CardPurchasePayload[]
+    payments: InvoicePaymentPayload[]
+  }>(`/credit-cards/${cardId}/invoices/${closingMonth}`)
   return {
     invoice: toInvoice(payload.invoice),
     purchases: payload.purchases.map(toCardPurchase),
+    payments: payload.payments.map(toInvoicePayment),
   }
+}
+
+/**
+ * UC17: pays an Open or Closed invoice early, in full or in part, for at most
+ * what it still has to pay. The payment is dated today by the API.
+ */
+export async function payInvoice(
+  cardId: string,
+  closingMonth: string,
+  amountCents: number,
+): Promise<{ payment: InvoicePayment; invoice: Invoice }> {
+  const payload = await api<{ payment: InvoicePaymentPayload; invoice: InvoicePayload }>(
+    `/credit-cards/${cardId}/invoices/${closingMonth}/payments`,
+    { method: "POST", body: { amount_cents: amountCents } },
+  )
+  return { payment: toInvoicePayment(payload.payment), invoice: toInvoice(payload.invoice) }
 }
 
 export interface CardPurchaseInput {

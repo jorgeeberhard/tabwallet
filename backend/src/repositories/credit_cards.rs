@@ -5,7 +5,7 @@ use sqlx::PgPool;
 
 use crate::{
     ids::{CreditCardId, UserId},
-    ledger::cards::{CardSchedule, Month, ScheduleVersion},
+    ledger::cards::{CardSchedule, Month, PaymentFact, ScheduleVersion},
 };
 
 /// A credit card. Its closing and due days are not here: they have a history
@@ -62,6 +62,15 @@ impl ScheduleRow {
             due_day: self.due_day as u32,
         }
     }
+}
+
+#[derive(sqlx::FromRow)]
+struct PaymentRow {
+    id: crate::ids::InvoicePaymentId,
+    credit_card_id: CreditCardId,
+    closing_month: NaiveDate,
+    date: NaiveDate,
+    amount_cents: i64,
 }
 
 pub struct CreditCardRepository {
@@ -197,6 +206,34 @@ impl CreditCardRepository {
             .into_iter()
             .filter_map(|(id, versions)| CardSchedule::new(versions).map(|s| (id, s)))
             .collect())
+    }
+
+    /// The Early Payments of every invoice of every card of the user, as facts
+    /// for the ledger.
+    pub async fn payments(
+        &self,
+        user_id: UserId,
+    ) -> Result<HashMap<CreditCardId, Vec<PaymentFact>>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, PaymentRow>(
+            "SELECT id, credit_card_id, closing_month, date, amount_cents
+             FROM invoice_payments WHERE user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut grouped: HashMap<CreditCardId, Vec<PaymentFact>> = HashMap::new();
+        for row in rows {
+            grouped
+                .entry(row.credit_card_id)
+                .or_default()
+                .push(PaymentFact {
+                    id: row.id,
+                    closing_month: Month::of(row.closing_month),
+                    date: row.date,
+                    amount_cents: row.amount_cents,
+                });
+        }
+        Ok(grouped)
     }
 
     /// Starts new closing and due days at the invoice closing in `from`,

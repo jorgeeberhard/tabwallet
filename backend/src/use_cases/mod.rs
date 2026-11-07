@@ -9,6 +9,7 @@ mod create_transaction;
 mod credit_card;
 mod delete_transaction;
 mod get_current_user;
+mod invoice_payment;
 mod list_categories;
 mod list_transactions;
 mod log_in;
@@ -43,9 +44,10 @@ pub use credit_card::{
 };
 pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
+pub use invoice_payment::{EarlyPaymentReceipt, InvoicePaymentError, PayInvoiceUseCase};
 pub use list_categories::ListCategoriesUseCase;
 pub use list_transactions::{
-    ListTransactionsUseCase, Statement, StatementItem, StatementOccurrence,
+    ListTransactionsUseCase, Statement, StatementInvoicePayment, StatementItem, StatementOccurrence,
 };
 pub use log_in::LogInUseCase;
 pub use recurring::{

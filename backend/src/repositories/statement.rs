@@ -2,13 +2,16 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::transactions::{TransactionFilter, TransactionType};
-use crate::ids::{CardPurchaseId, TransactionId, UserId};
+use crate::ids::{CardPurchaseId, InvoicePaymentId, TransactionId, UserId};
 
 /// Which table a statement entry lives in, with its id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatementKey {
     Transaction(TransactionId),
     CardPurchase(CardPurchaseId),
+    /// An Early Payment of an invoice (the automatic payment of a due date has
+    /// no row and is added by the use case).
+    InvoicePayment(InvoicePaymentId),
 }
 
 #[derive(sqlx::FromRow)]
@@ -27,7 +30,9 @@ pub struct StatementRepository {
 }
 
 /// The filtered, unioned entries; `$1` is the user and `$2` to `$7` the
-/// filter (from, to, Category, type, card).
+/// filter (from, to, Category, type, card). An Invoice Payment has no Category
+/// and is neither an income nor an expense, so a Category or type filter
+/// leaves it out.
 macro_rules! entries {
     () => {
         "SELECT 'transaction' AS kind, t.id, t.date, t.created_at
@@ -46,7 +51,16 @@ macro_rules! entries {
            AND ($3::date IS NULL OR p.date <= $3)
            AND ($4::uuid IS NULL OR p.category_id = $4)
            AND ($5::text IS NULL OR p.type = $5)
-           AND ($6::uuid IS NULL OR p.credit_card_id = $6)"
+           AND ($6::uuid IS NULL OR p.credit_card_id = $6)
+         UNION ALL
+         SELECT 'invoice_payment' AS kind, ip.id, ip.date, ip.created_at
+         FROM invoice_payments ip
+         WHERE ip.user_id = $1
+           AND ($2::date IS NULL OR ip.date >= $2)
+           AND ($3::date IS NULL OR ip.date <= $3)
+           AND $4::uuid IS NULL
+           AND $5::text IS NULL
+           AND ($6::uuid IS NULL OR ip.credit_card_id = $6)"
     };
 }
 
@@ -83,6 +97,7 @@ impl StatementRepository {
             .into_iter()
             .map(|row| match row.kind.as_str() {
                 "card_purchase" => StatementKey::CardPurchase(CardPurchaseId(row.id)),
+                "invoice_payment" => StatementKey::InvoicePayment(InvoicePaymentId(row.id)),
                 _ => StatementKey::Transaction(TransactionId(row.id)),
             })
             .collect())

@@ -2,6 +2,7 @@ pub mod card_purchases;
 pub mod categories;
 pub mod credit_cards;
 pub mod health;
+pub mod invoice_payments;
 pub mod opening_balance;
 pub mod password_resets;
 pub mod recurring;

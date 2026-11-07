@@ -11,6 +11,7 @@ use validator::Validate;
 use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
+    invoice_payments::InvoicePaymentResponse,
 };
 use crate::{
     app::AppState,
@@ -227,7 +228,11 @@ pub struct InvoiceResponse {
     cycle: InvoiceCycleResponse,
     /// Cents: the sum of the purchases in the invoice.
     total_cents: i64,
-    /// Cents still to pay. Zero once the invoice is paid.
+    /// Cents that left the balance for this invoice: the Early Payments and,
+    /// once the invoice is paid, the automatic payment of the rest.
+    paid_cents: i64,
+    /// Cents still to pay: the total less the Early Payments. Zero once the
+    /// invoice is paid (the due date debits the rest by itself).
     remaining_cents: i64,
 }
 
@@ -237,6 +242,7 @@ impl From<Invoice> for InvoiceResponse {
             credit_card_id: invoice.card_id,
             cycle: invoice.cycle.into(),
             total_cents: invoice.total_cents,
+            paid_cents: invoice.paid_cents,
             remaining_cents: invoice.remaining_cents,
         }
     }
@@ -271,6 +277,9 @@ pub struct InvoiceDetailResponse {
     invoice: InvoiceResponse,
     /// Newest first.
     purchases: Vec<CardPurchaseResponse>,
+    /// The Early Payments and the automatic payment of the due date (when
+    /// something is left unpaid), oldest first. None is an expense.
+    payments: Vec<InvoicePaymentResponse>,
 }
 
 /// `GET /credit-cards/{id}/invoices/{closing_month}` (protected): one invoice
@@ -295,6 +304,11 @@ pub async fn invoice(
             .purchases
             .into_iter()
             .map(|view| CardPurchaseResponse::new(view, today))
+            .collect(),
+        payments: detail
+            .payments
+            .iter()
+            .map(|payment| InvoicePaymentResponse::new(payment, today))
             .collect(),
     }))
 }
