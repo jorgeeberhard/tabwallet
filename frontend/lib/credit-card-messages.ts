@@ -14,6 +14,11 @@ const MESSAGES: Record<string, string> = {
   amount_exceeds_remaining:
     "O valor não pode passar do que ainda falta pagar nesta fatura. Atualize a página para ver o valor restante.",
   card_purchase_not_found: "Esta compra não existe mais. Atualize a página.",
+  installment_purchase_not_found: "Esta compra parcelada não existe mais. Atualize a página.",
+  installments_paid:
+    "Esta compra já tem parcelas em fatura paga. Só a categoria pode mudar e as parcelas restantes podem ser canceladas.",
+  installment_count_range: "Escolha de 2 a 48 parcelas.",
+  total_below_installments: "O valor total precisa dar pelo menos R$ 0,01 para cada parcela.",
   name_length: "Digite um nome de até 60 caracteres.",
   day_range: "Escolha um dia de 1 a 31.",
   amount_range: "Digite um valor maior que zero.",

@@ -41,7 +41,7 @@ pub fn projection_horizon(today: NaiveDate) -> NaiveDate {
 }
 
 use crate::ids::CreditCardId;
-use cards::{CardFacts, Invoice, InvoiceCycle, InvoicePayment, Month};
+use cards::{CardFacts, Invoice, InvoiceCycle, InvoicePayment, Month, PlannedInstallment};
 
 /// Which way money moves in a [`CashFlow`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,6 +216,35 @@ impl Ledger {
     ) -> Option<InvoiceCycle> {
         self.card(card_id)
             .map(|card| card.cycle_for_purchase(date, today))
+    }
+
+    /// The dates and state of the invoice of a card closing in `closing_month`,
+    /// whether or not anything is in it yet. `None` for an unknown card.
+    pub fn invoice_cycle(
+        &self,
+        card_id: CreditCardId,
+        closing_month: Month,
+        today: NaiveDate,
+    ) -> Option<InvoiceCycle> {
+        self.card(card_id)
+            .map(|card| card.cycle_of(closing_month, today))
+    }
+
+    /// How a purchase of `total_cents` made on `date` with this card would be
+    /// split in `count` Installments: exact cents with the leftover on the
+    /// first, each in a consecutive invoice starting with the one that would
+    /// take the purchase paid in full. `None` for an unknown card or a total
+    /// that gives some Installment less than one cent.
+    pub fn plan_installments(
+        &self,
+        card_id: CreditCardId,
+        date: NaiveDate,
+        total_cents: i64,
+        count: u32,
+        today: NaiveDate,
+    ) -> Option<Vec<PlannedInstallment>> {
+        self.card(card_id)?
+            .plan_installments(date, total_cents, count, today)
     }
 
     /// Whether any invoice of the card still has something to pay on `today`.

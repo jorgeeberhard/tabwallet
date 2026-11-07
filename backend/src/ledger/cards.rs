@@ -73,6 +73,15 @@ impl Month {
         }
     }
 
+    /// The month `months` after this one.
+    pub fn plus(self, months: u32) -> Self {
+        let index = self.year * 12 + self.month as i32 - 1 + months as i32;
+        Self {
+            year: index.div_euclid(12),
+            month: index.rem_euclid(12) as u32 + 1,
+        }
+    }
+
     /// The date of `day` in this month; in a shorter month, its last day.
     pub fn day_or_last(self, day: u32) -> NaiveDate {
         let last = self.next().first_day().pred_opt().expect("a valid date");
@@ -261,17 +270,93 @@ pub struct CardSpend {
     pub amount_cents: i64,
 }
 
+/// One Installment's weight on the invoice it is in. Unlike a single
+/// purchase, whose invoice follows from its date, an Installment is
+/// allocated to an invoice when it is stored, so that it can be moved alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InstallmentCharge {
+    /// The closing month of the invoice the Installment is in.
+    pub invoice_month: Month,
+    /// Cents, greater than zero.
+    pub amount_cents: i64,
+}
+
+/// One Installment of an installment purchase that has not been stored yet:
+/// its number, its amount and the invoice it would go to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlannedInstallment {
+    /// 1 for the first.
+    pub number: u32,
+    pub amount_cents: i64,
+    pub cycle: InvoiceCycle,
+}
+
+/// The fewest and the most Installments an installment purchase can have.
+pub const MIN_INSTALLMENTS: u32 = 2;
+pub const MAX_INSTALLMENTS: u32 = 48;
+
+/// Splits `total_cents` in `count` amounts of exact cents that add up to the
+/// total, the cents left over by the division going to the first one: R$ 100
+/// in 3 is 33,34 + 33,33 + 33,33. `None` if `count` is zero or the total
+/// does not give every amount at least one cent.
+pub fn split_installments(total_cents: i64, count: u32) -> Option<Vec<i64>> {
+    let count_cents = i64::from(count);
+    if count == 0 || total_cents < count_cents {
+        return None;
+    }
+    let share = total_cents / count_cents;
+    let leftover = total_cents % count_cents;
+    Some(
+        (0..count)
+            .map(|index| if index == 0 { share + leftover } else { share })
+            .collect(),
+    )
+}
+
 /// What is stored about one card that the ledger needs.
 #[derive(Clone, Debug)]
 pub struct CardFacts {
     pub id: CreditCardId,
     pub schedule: CardSchedule,
     pub spending: Vec<CardSpend>,
+    /// The card's Installments, each already allocated to an invoice.
+    pub installments: Vec<InstallmentCharge>,
     /// The Early Payments stored for the card's invoices.
     pub payments: Vec<PaymentFact>,
 }
 
 impl CardFacts {
+    /// The dates and state of the invoice closing in `month`, whether or not
+    /// it has anything in it.
+    pub fn cycle_of(&self, month: Month, today: NaiveDate) -> InvoiceCycle {
+        self.cycle(month, today)
+    }
+
+    /// Splits a purchase of `total_cents` made on `date` in `count`
+    /// Installments and gives each to a consecutive invoice, the first to the
+    /// one that would take the purchase paid in full. `None` if the total
+    /// cannot be split (see [`split_installments`]).
+    pub fn plan_installments(
+        &self,
+        date: NaiveDate,
+        total_cents: i64,
+        count: u32,
+        today: NaiveDate,
+    ) -> Option<Vec<PlannedInstallment>> {
+        let first = self.schedule.invoice_month_for(date);
+        Some(
+            split_installments(total_cents, count)?
+                .into_iter()
+                .zip(0..)
+                .map(|(amount_cents, offset)| PlannedInstallment {
+                    number: offset + 1,
+                    amount_cents,
+                    cycle: self.cycle(first.plus(offset), today),
+                })
+                .collect(),
+        )
+    }
+
     fn cycle(&self, month: Month, today: NaiveDate) -> InvoiceCycle {
         let closing_date = self.schedule.closing_date(month);
         let due_date = self.schedule.due_date(month);
@@ -295,12 +380,22 @@ impl CardFacts {
         self.cycle(self.schedule.invoice_month_for(date), today)
     }
 
+    /// What the invoice closing in `month` adds up to: its single purchases
+    /// and its Installments.
     fn total_of(&self, month: Month) -> i64 {
-        self.spending
+        let purchases: i64 = self
+            .spending
             .iter()
             .filter(|spend| self.schedule.invoice_month_for(spend.date) == month)
             .map(|spend| spend.amount_cents)
-            .sum()
+            .sum();
+        let installments: i64 = self
+            .installments
+            .iter()
+            .filter(|charge| charge.invoice_month == month)
+            .map(|charge| charge.amount_cents)
+            .sum();
+        purchases + installments
     }
 
     fn early_paid_of(&self, month: Month) -> i64 {
@@ -311,12 +406,14 @@ impl CardFacts {
             .sum()
     }
 
-    /// The closing months with a purchase or a payment, oldest first.
+    /// The closing months with a purchase, an Installment or a payment,
+    /// oldest first.
     fn active_months(&self) -> Vec<Month> {
         let mut months: Vec<Month> = self
             .spending
             .iter()
             .map(|spend| self.schedule.invoice_month_for(spend.date))
+            .chain(self.installments.iter().map(|charge| charge.invoice_month))
             .chain(self.payments.iter().map(|payment| payment.closing_month))
             .collect();
         months.sort();

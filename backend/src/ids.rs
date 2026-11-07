@@ -41,3 +41,13 @@ pub struct CategoryId(pub Uuid);
 )]
 #[sqlx(transparent)]
 pub struct RecurringTransactionId(pub Uuid);
+
+/// The id of an installment purchase (a card purchase split in Installments).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct InstallmentPurchaseId(pub Uuid);
+
+/// The id of one Installment of an installment purchase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct InstallmentId(pub Uuid);

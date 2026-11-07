@@ -4,9 +4,12 @@ import { centsToReais } from "@/lib/amount"
 import {
   type CardPurchase,
   type CardPurchasePayload,
+  type InstallmentPurchase,
+  type InstallmentPurchasePayload,
+  toCardPurchase,
+  toInstallmentPurchase,
   type InvoicePaymentItem,
   type InvoicePaymentItemPayload,
-  toCardPurchase,
   toInvoicePaymentItem,
 } from "@/lib/credit-cards-api"
 import { type Occurrence, type OccurrencePayload, toOccurrence } from "@/lib/recurring-api"
@@ -65,6 +68,7 @@ function toTransaction(payload: TransactionPayload): Transaction {
 export type StatementItem =
   | ({ kind: "transaction" } & Transaction)
   | ({ kind: "card_purchase" } & CardPurchase)
+  | ({ kind: "installment_purchase" } & InstallmentPurchase)
   | ({ kind: "occurrence" } & Occurrence)
   | ({ kind: "invoice_payment" } & InvoicePaymentItem)
 
@@ -122,6 +126,7 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
     items: (
       | ({ kind: "transaction" } & TransactionPayload)
       | ({ kind: "card_purchase" } & CardPurchasePayload)
+      | ({ kind: "installment_purchase" } & InstallmentPurchasePayload)
       | ({ kind: "occurrence" } & OccurrencePayload)
       | ({ kind: "invoice_payment" } & InvoicePaymentItemPayload)
     )[]
@@ -134,7 +139,9 @@ export async function listTransactions(filters: TransactionFilters = {}): Promis
       (item): StatementItem =>
         item.kind === "card_purchase"
           ? { kind: "card_purchase", ...toCardPurchase(item) }
-          : item.kind === "occurrence"
+          : item.kind === "installment_purchase"
+            ? { kind: "installment_purchase", ...toInstallmentPurchase(item) }
+            : item.kind === "occurrence"
             ? { kind: "occurrence", ...toOccurrence(item) }
             : item.kind === "invoice_payment"
               ? { kind: "invoice_payment", ...toInvoicePaymentItem(item) }

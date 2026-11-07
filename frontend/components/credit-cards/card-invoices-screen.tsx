@@ -1,7 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeftIcon, InboxIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
+import { ArrowLeftIcon, InboxIcon, LayersIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -10,7 +10,17 @@ import {
   type CardPurchaseDialogMode,
 } from "@/components/credit-cards/card-purchase-dialog"
 import { CardPurchaseRow } from "@/components/credit-cards/card-purchase-row"
+import {
+  CancelInstallmentPurchaseDialog,
+  type CancelInstallmentTarget,
+} from "@/components/credit-cards/cancel-installment-purchase-dialog"
 import { DeleteCardPurchaseDialog } from "@/components/credit-cards/delete-card-purchase-dialog"
+import {
+  InstallmentPurchaseDialog,
+  type InstallmentPurchaseDialogMode,
+  targetOfInvoiceInstallment,
+} from "@/components/credit-cards/installment-purchase-dialog"
+import { InvoiceInstallmentRow } from "@/components/credit-cards/invoice-installment-row"
 import { InvoicePaymentRow } from "@/components/credit-cards/invoice-payment-row"
 import { PayInvoiceDialog } from "@/components/credit-cards/pay-invoice-dialog"
 import { InvoiceCard, invoiceStateLabel } from "@/components/invoice-card"
@@ -54,6 +64,12 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [dialog, setDialog] = useState<CardPurchaseDialogMode | null>(null)
   const [toDelete, setToDelete] = useState<CardPurchase | null>(null)
+  const [installmentDialog, setInstallmentDialog] = useState<InstallmentPurchaseDialogMode | null>(
+    null,
+  )
+  const [installmentToCancel, setInstallmentToCancel] = useState<CancelInstallmentTarget | null>(
+    null,
+  )
   const [paying, setPaying] = useState(false)
 
   const cards = useQuery({ queryKey: CREDIT_CARDS_KEY, queryFn: listCreditCards })
@@ -139,13 +155,23 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
             </Badge>
           )}
         </div>
-        <Button
-          disabled={!card?.active}
-          onClick={() => setDialog({ kind: "create", creditCardId: cardId })}
-        >
-          <PlusIcon strokeWidth={1.75} />
-          Nova compra
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={!card?.active}
+            onClick={() => setInstallmentDialog({ kind: "create", creditCardId: cardId })}
+          >
+            <LayersIcon strokeWidth={1.75} />
+            Nova compra parcelada
+          </Button>
+          <Button
+            disabled={!card?.active}
+            onClick={() => setDialog({ kind: "create", creditCardId: cardId })}
+          >
+            <PlusIcon strokeWidth={1.75} />
+            Nova compra
+          </Button>
+        </div>
       </div>
 
       {!card || invoices.isPending ? (
@@ -218,7 +244,7 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
                   </Card>
                 </div>
               )}
-              {detail.data.purchases.length === 0 ? (
+              {detail.data.purchases.length === 0 && detail.data.installments.length === 0 ? (
                 <Empty className="border">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
@@ -242,6 +268,25 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
                         onDelete={setToDelete}
                       />
                     ))}
+                    {detail.data.installments.map((item) => (
+                      <InvoiceInstallmentRow
+                        key={item.id}
+                        item={item}
+                        onEdit={(target) =>
+                          setInstallmentDialog({
+                            kind: "edit",
+                            purchase: targetOfInvoiceInstallment(target),
+                          })
+                        }
+                        onCancel={(target) =>
+                          setInstallmentToCancel({
+                            id: target.installmentPurchaseId,
+                            description: target.description,
+                            hasPaidInstallments: target.purchaseHasPaidInstallments,
+                          })
+                        }
+                      />
+                    ))}
                   </ul>
                 </Card>
               )}
@@ -258,6 +303,17 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
         />
       )}
       <DeleteCardPurchaseDialog purchase={toDelete} onClose={() => setToDelete(null)} />
+      {installmentDialog && (
+        <InstallmentPurchaseDialog
+          key={installmentDialog.kind === "edit" ? installmentDialog.purchase.id : "create"}
+          mode={installmentDialog}
+          onClose={() => setInstallmentDialog(null)}
+        />
+      )}
+      <CancelInstallmentPurchaseDialog
+        purchase={installmentToCancel}
+        onClose={() => setInstallmentToCancel(null)}
+      />
       {paying && card && detail.data && (
         <PayInvoiceDialog
           key={detail.data.invoice.closingMonth}
