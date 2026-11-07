@@ -31,6 +31,8 @@ const purchase: InstallmentPurchase = {
   creditCard: { id: "k1", name: "Nubank", active: true },
   cancelled: false,
   hasPaidInstallments: false,
+  hasAnticipatedInstallments: false,
+  discountCents: 0,
   isProjection: false,
   installments: [
     {
@@ -40,6 +42,10 @@ const purchase: InstallmentPurchase = {
       amount: 33.34,
       invoice: cycle("2026-01", "open"),
       referenceMonth: "2026-01",
+      anticipated: false,
+      discountCents: 0,
+      originalAmountCents: 3_333,
+      originalInvoiceMonth: null,
     },
     {
       id: "i2",
@@ -48,6 +54,10 @@ const purchase: InstallmentPurchase = {
       amount: 33.33,
       invoice: cycle("2026-02", "open"),
       referenceMonth: "2026-02",
+      anticipated: false,
+      discountCents: 0,
+      originalAmountCents: 3_333,
+      originalInvoiceMonth: null,
     },
     {
       id: "i3",
@@ -56,6 +66,10 @@ const purchase: InstallmentPurchase = {
       amount: 33.33,
       invoice: cycle("2026-03", "open"),
       referenceMonth: "2026-03",
+      anticipated: false,
+      discountCents: 0,
+      originalAmountCents: 3_333,
+      originalInvoiceMonth: null,
     },
   ],
 }
@@ -133,6 +147,47 @@ describe("InstallmentPurchaseRow", () => {
     ).toBeDisabled()
   })
 
+  it("shows anticipated installments and cancels only the others", async () => {
+    const anticipated: InstallmentPurchase = {
+      ...purchase,
+      hasAnticipatedInstallments: true,
+      installments: purchase.installments.map((installment, index) =>
+        index === 2
+          ? {
+              ...installment,
+              anticipated: true,
+              discountCents: 100,
+              originalInvoiceMonth: "2026-03",
+              invoice: cycle("2026-01", "open"),
+              referenceMonth: "2026-01",
+            }
+          : installment,
+      ),
+    }
+    const handlers = renderRow(anticipated)
+
+    expect(screen.getByText("Antecipada · desconto de R$ 1,00")).toBeInTheDocument()
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cancelar parcelas restantes Geladeira" }),
+    )
+    expect(handlers.onCancel).toHaveBeenCalledWith(anticipated)
+  })
+
+  it("turns cancelling off when what is left is paid or anticipated", () => {
+    renderRow({
+      ...purchase,
+      hasAnticipatedInstallments: true,
+      installments: purchase.installments.map((installment) => ({
+        ...installment,
+        anticipated: true,
+      })),
+    })
+
+    expect(
+      screen.getByRole("button", { name: "Cancelar parcelas restantes Geladeira" }),
+    ).toBeDisabled()
+  })
+
   it("says when the remaining installments were cancelled", () => {
     renderRow({
       ...purchase,
@@ -163,6 +218,11 @@ const line: InvoiceInstallment = {
   invoice: cycle("2026-03", "open"),
   referenceMonth: "2026-03",
   purchaseHasPaidInstallments: false,
+  purchaseHasAnticipatedInstallments: false,
+  anticipated: false,
+  discountCents: 0,
+  originalAmountCents: 3_333,
+  originalInvoiceMonth: null,
 }
 
 describe("InvoiceInstallmentRow", () => {
@@ -205,6 +265,34 @@ describe("InvoiceInstallmentRow", () => {
       </ul>,
     )
 
+    expect(
+      screen.getByRole("button", { name: "Cancelar parcelas restantes Geladeira 3/10" }),
+    ).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Editar Geladeira 3/10" })).toBeEnabled()
+  })
+
+  it("marks an anticipated installment, where it came from and the discount, and cannot cancel it", () => {
+    render(
+      <ul>
+        <InvoiceInstallmentRow
+          item={{
+            ...line,
+            amountCents: 3_083,
+            amount: 30.83,
+            anticipated: true,
+            discountCents: 250,
+            originalAmountCents: 3_333,
+            originalInvoiceMonth: "2026-06",
+            purchaseHasAnticipatedInstallments: true,
+          }}
+          onEdit={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </ul>,
+    )
+
+    expect(screen.getByText("Antecipada de junho de 2026")).toBeInTheDocument()
+    expect(screen.getByText(/Desconto de R\$ 2,50 \(era R\$ 33,33\)/)).toBeInTheDocument()
     expect(
       screen.getByRole("button", { name: "Cancelar parcelas restantes Geladeira 3/10" }),
     ).toBeDisabled()

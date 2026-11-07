@@ -28,6 +28,8 @@ export interface CancelInstallmentTarget {
   description: string
   /** Some Installment is in a paid invoice: only the remaining ones are cancelled. */
   hasPaidInstallments: boolean
+  /** Some Installment was anticipated (UC19): it stays, like a paid one. */
+  hasAnticipatedInstallments: boolean
 }
 
 interface CancelInstallmentPurchaseDialogProps {
@@ -63,7 +65,8 @@ export function CancelInstallmentPurchaseDialog({
     },
   })
 
-  const onlyRemaining = purchase?.hasPaidInstallments ?? false
+  const onlyRemaining =
+    (purchase?.hasPaidInstallments || purchase?.hasAnticipatedInstallments) ?? false
 
   return (
     <AlertDialog open={purchase !== null} onOpenChange={(open) => !open && onClose()}>
@@ -75,7 +78,7 @@ export function CancelInstallmentPurchaseDialog({
           <AlertDialogDescription>
             {purchase
               ? onlyRemaining
-                ? `"${purchase.description}" já tem parcelas em fatura paga. Elas continuam como estão; só as parcelas restantes serão removidas das faturas. Essa ação não pode ser desfeita.`
+                ? `"${purchase.description}" já tem parcelas pagas ou antecipadas. Elas continuam como estão; só as parcelas restantes serão removidas das faturas. Essa ação não pode ser desfeita.`
                 : `"${purchase.description}" e todas as suas parcelas serão removidas das faturas. Essa ação não pode ser desfeita.`
               : ""}
           </AlertDialogDescription>

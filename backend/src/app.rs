@@ -86,6 +86,14 @@ pub fn build_router(state: AppState) -> Router {
             "/credit-cards/{id}/invoices/{closing_month}/payments",
             post(handlers::invoice_payments::pay),
         )
+        .route(
+            "/credit-cards/{id}/anticipable-installments",
+            get(handlers::installment_anticipations::list_anticipable),
+        )
+        .route(
+            "/credit-cards/{id}/installment-anticipations",
+            post(handlers::installment_anticipations::anticipate),
+        )
         .route("/card-purchases", post(handlers::card_purchases::create))
         .route(
             "/card-purchases/{id}",

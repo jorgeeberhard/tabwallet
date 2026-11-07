@@ -51,6 +51,11 @@ pub enum InstallmentPurchaseError {
     /// Every Installment is in a paid invoice: nothing is left to cancel.
     #[error("every installment is in a paid invoice")]
     AllPaid,
+    /// Some Installment was anticipated, which cannot be undone, so only the
+    /// Category can change; or nothing is left to cancel because what remains
+    /// was anticipated.
+    #[error("some installments were anticipated")]
+    InstallmentsAnticipated,
     #[error("unexpected failure: {0}")]
     Internal(String),
 }
@@ -101,6 +106,36 @@ impl InstallmentPurchaseView {
             .iter()
             .any(|view| view.invoice.state == InvoiceState::Paid)
     }
+
+    /// Some Installment was brought to another invoice by an Installment
+    /// Anticipation. Irreversible, so the purchase is treated like one with
+    /// paid Installments: only the Category can change and the remaining
+    /// Installments can be cancelled.
+    pub fn has_anticipated_installments(&self) -> bool {
+        self.installments
+            .iter()
+            .any(|view| view.installment.is_anticipated())
+    }
+
+    /// Cents of Discount the purchase received in Installment Anticipations.
+    pub fn discount_cents(&self) -> i64 {
+        self.installments
+            .iter()
+            .map(|view| view.installment.discount_cents)
+            .sum()
+    }
+
+    /// The Installments a cancellation takes away: those neither paid nor
+    /// anticipated.
+    fn cancellable_ids(&self) -> Vec<crate::ids::InstallmentId> {
+        self.installments
+            .iter()
+            .filter(|view| {
+                view.invoice.state != InvoiceState::Paid && !view.installment.is_anticipated()
+            })
+            .map(|view| view.installment.id)
+            .collect()
+    }
 }
 
 /// One Installment as an item of the invoice it is in, with its purchase.
@@ -111,6 +146,8 @@ pub struct InvoiceInstallment {
     /// Some Installment of the purchase (not only this one) is in a paid
     /// invoice.
     pub purchase_has_paid_installments: bool,
+    /// Some Installment of the purchase was anticipated.
+    pub purchase_has_anticipated_installments: bool,
 }
 
 /// The Installments in the invoice of `card_id` closing in `closing_month`,
@@ -132,6 +169,7 @@ pub(super) async fn invoice_installments(
         .into_iter()
         .flat_map(|view| {
             let has_paid = view.has_paid_installments();
+            let has_anticipated = view.has_anticipated_installments();
             let purchase = view.purchase;
             view.installments
                 .into_iter()
@@ -140,6 +178,7 @@ pub(super) async fn invoice_installments(
                     purchase: purchase.clone(),
                     installment,
                     purchase_has_paid_installments: has_paid,
+                    purchase_has_anticipated_installments: has_anticipated,
                 })
         })
         .collect())
@@ -189,6 +228,40 @@ pub(super) async fn reallocate_for_card(
             .first()
             .is_some_and(|first| first.cycle.state == InvoiceState::Paid)
         {
+            continue;
+        }
+        let own: Vec<&Installment> = installments
+            .iter()
+            .filter(|installment| installment.installment_purchase_id == purchase.id)
+            .collect();
+        if own.iter().any(|installment| installment.is_anticipated()) {
+            // An anticipated Installment is history and stays where it is
+            // (with its reduced amount). The others take the invoices the
+            // new days give them; their amounts do not change.
+            let moves: Vec<_> = own
+                .iter()
+                .filter(|installment| !installment.is_anticipated())
+                .filter_map(|installment| {
+                    let planned = plan
+                        .iter()
+                        .find(|planned| planned.number as i32 == installment.number)?;
+                    Some((installment.id, planned.cycle))
+                })
+                .collect();
+            if moves
+                .iter()
+                .any(|(_, cycle)| cycle.state == InvoiceState::Paid)
+            {
+                continue;
+            }
+            let moves: Vec<_> = moves
+                .into_iter()
+                .map(|(id, cycle)| (id, cycle.closing_month))
+                .collect();
+            repository
+                .move_installments(user_id, &moves)
+                .await
+                .map_err(InstallmentPurchaseError::internal)?;
             continue;
         }
         repository
@@ -424,14 +497,20 @@ impl UpdateInstallmentPurchaseUseCase {
             today,
         )
         .await?;
-        let locked = view.has_paid_installments();
+        // Paid and anticipated Installments are history: the purchase cannot
+        // be recalculated, only its Category can change.
+        let locked = view.has_paid_installments() || view.has_anticipated_installments();
         if locked
             && (changes.total_cents.is_some()
                 || changes.installment_count.is_some()
                 || changes.date.is_some()
                 || changes.description.is_some())
         {
-            return Err(InstallmentPurchaseError::InstallmentsPaid);
+            return Err(if view.has_paid_installments() {
+                InstallmentPurchaseError::InstallmentsPaid
+            } else {
+                InstallmentPurchaseError::InstallmentsAnticipated
+            });
         }
         if let Some(category_id) = changes.category_id
             && category_id != current.category_id
@@ -527,16 +606,20 @@ impl CancelInstallmentPurchaseUseCase {
             today,
         )
         .await?;
-        let remaining: Vec<_> = view
-            .installments
-            .iter()
-            .filter(|installment| installment.invoice.state != InvoiceState::Paid)
-            .map(|installment| installment.installment.id)
-            .collect();
+        // Paid and anticipated Installments stay; the others are cancelled.
+        let remaining = view.cancellable_ids();
         if remaining.is_empty() {
-            return Err(InstallmentPurchaseError::AllPaid);
+            let anticipated_and_unpaid = view.installments.iter().any(|installment| {
+                installment.installment.is_anticipated()
+                    && installment.invoice.state != InvoiceState::Paid
+            });
+            return Err(if anticipated_and_unpaid {
+                InstallmentPurchaseError::InstallmentsAnticipated
+            } else {
+                InstallmentPurchaseError::AllPaid
+            });
         }
-        if !view.has_paid_installments() {
+        if !view.has_paid_installments() && !view.has_anticipated_installments() {
             return match self.installment_purchases.delete(user_id, id).await {
                 Ok(true) => Ok(CancelOutcome::Deleted),
                 Ok(false) => Err(InstallmentPurchaseError::NotFound),

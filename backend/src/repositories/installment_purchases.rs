@@ -42,12 +42,46 @@ pub struct Installment {
     pub amount_cents: i64,
     /// The first day of the closing month of the invoice it is in.
     pub invoice_month: NaiveDate,
+    /// The day it was brought to the open invoice by an Installment
+    /// Anticipation; `None` if it never was. Irreversible.
+    pub anticipated_on: Option<NaiveDate>,
+    /// The first day of the closing month of the invoice an anticipated
+    /// Installment came from.
+    pub original_invoice_month: Option<NaiveDate>,
+    /// Cents of Discount an anticipated Installment received; zero otherwise.
+    pub discount_cents: i64,
 }
 
 impl Installment {
     pub fn invoice_month(&self) -> Month {
         Month::of(self.invoice_month)
     }
+
+    /// It was brought to the open invoice by an Installment Anticipation.
+    pub fn is_anticipated(&self) -> bool {
+        self.anticipated_on.is_some()
+    }
+
+    /// Cents before the Discount.
+    pub fn original_amount_cents(&self) -> i64 {
+        self.amount_cents + self.discount_cents
+    }
+
+    pub fn original_invoice_month(&self) -> Option<Month> {
+        self.original_invoice_month.map(Month::of)
+    }
+}
+
+/// One Installment as an Installment Anticipation leaves it.
+#[derive(Clone, Copy, Debug)]
+pub struct AnticipationRow {
+    pub id: InstallmentId,
+    /// The invoice it is in before, for the check that nothing changed since
+    /// the plan was made.
+    pub from_month: Month,
+    /// The amount it has before, for the same check.
+    pub original_cents: i64,
+    pub discount_cents: i64,
 }
 
 /// What a new purchase is made of. The caller has already checked the card
@@ -207,7 +241,8 @@ impl InstallmentPurchaseRepository {
     ) -> Result<Vec<Installment>, sqlx::Error> {
         let ids: Vec<uuid::Uuid> = purchase_ids.iter().map(|id| id.0).collect();
         sqlx::query_as::<_, Installment>(
-            "SELECT id, installment_purchase_id, number, amount_cents, invoice_month
+            "SELECT id, installment_purchase_id, number, amount_cents, invoice_month,
+                    anticipated_on, original_invoice_month, discount_cents
              FROM installments
              WHERE user_id = $1 AND installment_purchase_id = ANY($2)
              ORDER BY installment_purchase_id, number",
@@ -264,6 +299,72 @@ impl InstallmentPurchaseRepository {
         }
         tx.commit().await?;
         self.find(user_id, id).await
+    }
+
+    /// Brings Installments to the invoice closing in `to_month` on `today`,
+    /// reducing each by its Discount and marking it as anticipated, all or
+    /// nothing. Returns `false` (and changes nothing) if some Installment is
+    /// no longer as the plan saw it: already anticipated, moved or with
+    /// another amount, which happens when two requests race.
+    pub async fn anticipate(
+        &self,
+        user_id: UserId,
+        to_month: Month,
+        today: NaiveDate,
+        rows: &[AnticipationRow],
+    ) -> Result<bool, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        for row in rows {
+            let moved = sqlx::query(
+                "UPDATE installments SET
+                     amount_cents = amount_cents - $3,
+                     discount_cents = $3,
+                     original_invoice_month = invoice_month,
+                     invoice_month = $4,
+                     anticipated_on = $5
+                 WHERE user_id = $1 AND id = $2
+                   AND anticipated_on IS NULL
+                   AND invoice_month = $6
+                   AND amount_cents = $7",
+            )
+            .bind(user_id)
+            .bind(row.id)
+            .bind(row.discount_cents)
+            .bind(to_month.first_day())
+            .bind(today)
+            .bind(row.from_month.first_day())
+            .bind(row.original_cents)
+            .execute(&mut *tx)
+            .await?;
+            if moved.rows_affected() != 1 {
+                tx.rollback().await?;
+                return Ok(false);
+            }
+        }
+        tx.commit().await?;
+        Ok(true)
+    }
+
+    /// Puts Installments in other invoices, keeping their amounts. Used when
+    /// the card's days change; an anticipated Installment is never moved.
+    pub async fn move_installments(
+        &self,
+        user_id: UserId,
+        moves: &[(InstallmentId, Month)],
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        for (id, month) in moves {
+            sqlx::query(
+                "UPDATE installments SET invoice_month = $3
+                 WHERE user_id = $1 AND id = $2 AND anticipated_on IS NULL",
+            )
+            .bind(user_id)
+            .bind(id)
+            .bind(month.first_day())
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await
     }
 
     /// Removes the Installments with these ids and marks the purchase as

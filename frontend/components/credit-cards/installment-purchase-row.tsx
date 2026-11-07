@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { InstallmentPurchase } from "@/lib/credit-cards-api"
-import { formatDate, formatMonthOfYear } from "@/lib/format"
+import { formatBRL, formatDate, formatMonthOfYear } from "@/lib/format"
 
 interface InstallmentPurchaseRowProps {
   purchase: InstallmentPurchase
@@ -24,13 +24,17 @@ interface InstallmentPurchaseRowProps {
 
 /** What the person can do about a purchase, from the state of its Installments. */
 export function installmentPurchaseActions(purchase: InstallmentPurchase) {
-  const unpaid = purchase.installments.filter((installment) => installment.invoice.state !== "paid")
+  const cancellable = purchase.installments.filter(
+    (installment) => installment.invoice.state !== "paid" && !installment.anticipated,
+  )
+  // Paid and anticipated Installments are history: "delete" leaves them.
+  const onlyRemaining = purchase.hasPaidInstallments || purchase.hasAnticipatedInstallments
   return {
-    /** Nothing is left to cancel when every Installment is paid. */
-    canCancel: unpaid.length > 0,
-    /** With paid Installments, "delete" only cancels the remaining ones. */
-    cancelsOnlyRemaining: purchase.hasPaidInstallments,
-    cancelLabel: purchase.hasPaidInstallments ? "Cancelar parcelas restantes" : "Excluir",
+    /** Nothing is left to cancel when every Installment is paid or anticipated. */
+    canCancel: cancellable.length > 0,
+    /** With paid or anticipated Installments, "delete" only cancels the remaining ones. */
+    cancelsOnlyRemaining: onlyRemaining,
+    cancelLabel: onlyRemaining ? "Cancelar parcelas restantes" : "Excluir",
   }
 }
 
@@ -104,7 +108,7 @@ export function InstallmentPurchaseRow({
             size="icon"
             disabled={!canCancel}
             aria-label={`${cancelLabel} ${purchase.description}`}
-            title={canCancel ? undefined : "Todas as parcelas estão em fatura paga"}
+            title={canCancel ? undefined : "Todas as parcelas estão pagas ou antecipadas"}
             onClick={() => onCancel(purchase)}
           >
             <Trash2Icon strokeWidth={1.75} />
@@ -155,6 +159,13 @@ export function InstallmentPurchaseRow({
                 fatura de {formatMonthOfYear(installment.referenceMonth)} ·{" "}
                 {invoiceStateLabel(installment.invoice.state).toLowerCase()}
               </span>
+              {installment.anticipated && (
+                <Badge variant="outline">
+                  Antecipada
+                  {installment.discountCents > 0 &&
+                    ` · desconto de ${formatBRL(installment.discountCents / 100)}`}
+                </Badge>
+              )}
             </li>
           ))}
         </ol>
