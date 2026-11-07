@@ -54,8 +54,11 @@ function dateLabel(isoDay: string, granularity: Granularity): string {
  * Balance of the past; the dashed one is the Projected Balance (Projections
  * and Occurrences of fixed transactions; purchases not yet recorded are not
  * known, so they are not in it).
+ *
+ * `embedded` is for the reports screen (UC11 reuses this history instead of
+ * drawing its own): the title is then a section heading, not the page's.
  */
-export function BalanceEvolution() {
+export function BalanceEvolution({ embedded = false }: { embedded?: boolean } = {}) {
   const [granularity, setGranularity] = useState<Granularity>("month")
   const [historyId, setHistoryId] = useState(DEFAULT_PERIODS.month.history)
   const [projectionId, setProjectionId] = useState(DEFAULT_PERIODS.month.projection)
@@ -111,7 +114,11 @@ export function BalanceEvolution() {
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Evolução do saldo</h1>
+        {embedded ? (
+          <h2 className="font-display text-xl font-bold tracking-tight">Evolução do saldo</h2>
+        ) : (
+          <h1 className="font-display text-3xl font-bold tracking-tight">Evolução do saldo</h1>
+        )}
         <p className="max-w-prose text-muted-foreground">
           Como seu saldo chegou até hoje e para onde ele vai nos próximos meses, com as projeções e
           os lançamentos fixos. Compras no cartão ainda não lançadas não entram na projeção.
