@@ -52,6 +52,10 @@ pub struct InvoiceExpense {
     pub category_id: CategoryId,
     /// The closing month of the invoice it is in.
     pub invoice_month: Month,
+    /// The day the expense was made: the date of the purchase an Installment
+    /// belongs to, or of the Charge. It does not decide the month it counts
+    /// in (the invoice does); it tells whether it is still a Projection.
+    pub date: NaiveDate,
     /// Cents, greater than zero.
     pub amount_cents: i64,
 }
@@ -66,6 +70,18 @@ pub struct SpendingFacts {
     pub recurring_categories: HashMap<RecurringTransactionId, CategoryId>,
     pub card_purchases: Vec<CardPurchaseExpense>,
     pub invoice_expenses: Vec<InvoiceExpense>,
+}
+
+/// One expense in its Reference Month, as [`Ledger::expense_entries`] gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExpenseEntry {
+    pub month: Month,
+    pub category_id: CategoryId,
+    /// The day the expense was made (the Occurrence's day, the purchase's, the
+    /// Charge's): after today, it is a Projection.
+    pub date: NaiveDate,
+    /// Cents, greater than zero.
+    pub amount_cents: i64,
 }
 
 /// The limit a Budget has from one month on.
@@ -132,42 +148,75 @@ impl Ledger {
     /// The spending of every Category that has any in the Reference Month
     /// `month`, in cents. See the module documentation for what counts.
     pub fn category_spending(&self, month: Month) -> HashMap<CategoryId, i64> {
-        let spending = &self.budget.spending;
         let mut totals: HashMap<CategoryId, i64> = HashMap::new();
-        let mut add = |category_id: CategoryId, amount_cents: i64| {
-            *totals.entry(category_id).or_default() += amount_cents;
-        };
+        for entry in self.expense_entries(month, month) {
+            *totals.entry(entry.category_id).or_default() += entry.amount_cents;
+        }
+        totals
+    }
+
+    /// Every expense whose Reference Month is from `from` to `to`, both
+    /// inclusive, in no particular order: the one place that says which
+    /// expenses count and in which month (see the module documentation). The
+    /// Budgets and the reports both add these up.
+    pub(super) fn expense_entries(&self, from: Month, to: Month) -> Vec<ExpenseEntry> {
+        let spending = &self.budget.spending;
+        let in_period = |month: Month| month >= from && month <= to;
+        let mut entries = Vec::new();
 
         for expense in &spending.cash_expenses {
-            if Month::of(expense.date) == month {
-                add(expense.category_id, expense.amount_cents);
+            let month = Month::of(expense.date);
+            if in_period(month) {
+                entries.push(ExpenseEntry {
+                    month,
+                    category_id: expense.category_id,
+                    date: expense.date,
+                    amount_cents: expense.amount_cents,
+                });
             }
         }
 
-        let first_day = month.first_day();
-        for occurrence in self.occurrences(first_day, last_day_of_month(first_day)) {
+        for occurrence in self.occurrences(from.first_day(), last_day_of_month(to.first_day())) {
             if occurrence.kind != FlowKind::Expense {
                 continue;
             }
             if let Some(category_id) = spending.recurring_categories.get(&occurrence.recurring_id) {
-                add(*category_id, occurrence.amount_cents);
+                entries.push(ExpenseEntry {
+                    month: Month::of(occurrence.date),
+                    category_id: *category_id,
+                    date: occurrence.date,
+                    amount_cents: occurrence.amount_cents,
+                });
             }
         }
 
         for purchase in &spending.card_purchases {
-            if self.reference_month_of_purchase(purchase.card_id, purchase.date) == Some(month) {
-                add(purchase.category_id, purchase.amount_cents);
+            if let Some(month) = self.reference_month_of_purchase(purchase.card_id, purchase.date)
+                && in_period(month)
+            {
+                entries.push(ExpenseEntry {
+                    month,
+                    category_id: purchase.category_id,
+                    date: purchase.date,
+                    amount_cents: purchase.amount_cents,
+                });
             }
         }
 
         for expense in &spending.invoice_expenses {
-            if self.reference_month_of_invoice(expense.card_id, expense.invoice_month)
-                == Some(month)
+            if let Some(month) =
+                self.reference_month_of_invoice(expense.card_id, expense.invoice_month)
+                && in_period(month)
             {
-                add(expense.category_id, expense.amount_cents);
+                entries.push(ExpenseEntry {
+                    month,
+                    category_id: expense.category_id,
+                    date: expense.date,
+                    amount_cents: expense.amount_cents,
+                });
             }
         }
-        totals
+        entries
     }
 
     /// The Reference Month of a card purchase made on `date`: the month of the
@@ -340,6 +389,7 @@ mod tests {
                 card_id: card,
                 category_id: food,
                 invoice_month: month(2026, 2),
+                date: day(2026, 1, 12),
                 amount_cents: 1,
             }],
             ..SpendingFacts::default()

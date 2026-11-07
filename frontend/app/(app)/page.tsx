@@ -1,4 +1,4 @@
-import { ChartLineIcon, CreditCardIcon, ReceiptTextIcon, RepeatIcon, TagIcon } from "lucide-react"
+import { ChartLineIcon, ChartPieIcon, CreditCardIcon, ReceiptTextIcon, RepeatIcon, TagIcon } from "lucide-react"
 import Link from "next/link"
 
 import { BalanceSection } from "@/components/balance/balance-section"
@@ -23,6 +23,10 @@ export default function Home() {
         <Link href="/saldo" className={SHORTCUT_CLASS}>
           <ChartLineIcon strokeWidth={1.75} className="size-4" />
           Evolução do saldo
+        </Link>
+        <Link href="/relatorios" className={SHORTCUT_CLASS}>
+          <ChartPieIcon strokeWidth={1.75} className="size-4" />
+          Relatórios
         </Link>
         <Link href="/transacoes" className={SHORTCUT_CLASS}>
           <ReceiptTextIcon strokeWidth={1.75} className="size-4" />

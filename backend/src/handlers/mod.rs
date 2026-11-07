@@ -14,4 +14,5 @@ pub mod invoice_payments;
 pub mod password_reset;
 pub mod profile;
 pub mod recurring;
+pub mod reports;
 pub mod transactions;

@@ -32,6 +32,7 @@ struct InvoiceItemRow {
     credit_card_id: CreditCardId,
     category_id: CategoryId,
     invoice_month: NaiveDate,
+    date: NaiveDate,
     amount_cents: i64,
 }
 
@@ -106,12 +107,12 @@ impl SpendingRepository {
         .collect();
 
         let invoice_expenses: Vec<InvoiceExpense> = sqlx::query_as::<_, InvoiceItemRow>(
-            "SELECT p.credit_card_id, p.category_id, i.invoice_month,
+            "SELECT p.credit_card_id, p.category_id, i.invoice_month, p.date,
                     sum(i.amount_cents)::bigint AS amount_cents
              FROM installments i
              JOIN installment_purchases p ON p.id = i.installment_purchase_id
              WHERE i.user_id = $1
-             GROUP BY p.credit_card_id, p.category_id, i.invoice_month",
+             GROUP BY p.credit_card_id, p.category_id, i.invoice_month, p.date",
         )
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -121,6 +122,7 @@ impl SpendingRepository {
             card_id: row.credit_card_id,
             category_id: row.category_id,
             invoice_month: Month::of(row.invoice_month),
+            date: row.date,
             amount_cents: row.amount_cents,
         })
         .collect();
@@ -130,11 +132,11 @@ impl SpendingRepository {
         let mut invoice_expenses = invoice_expenses;
         invoice_expenses.extend(
             sqlx::query_as::<_, InvoiceItemRow>(
-                "SELECT credit_card_id, category_id, closing_month AS invoice_month,
+                "SELECT credit_card_id, category_id, closing_month AS invoice_month, date,
                         sum(amount_cents)::bigint AS amount_cents
                  FROM invoice_charges
                  WHERE user_id = $1
-                 GROUP BY credit_card_id, category_id, closing_month",
+                 GROUP BY credit_card_id, category_id, closing_month, date",
             )
             .bind(user_id)
             .fetch_all(&self.pool)
@@ -144,6 +146,7 @@ impl SpendingRepository {
                 card_id: row.credit_card_id,
                 category_id: row.category_id,
                 invoice_month: Month::of(row.invoice_month),
+                date: row.date,
                 amount_cents: row.amount_cents,
             }),
         );

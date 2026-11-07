@@ -270,6 +270,27 @@ O usuário traz Parcelas futuras de **um mesmo cartão** para a Fatura aberta (a
 
 **Banco e módulo de cálculo.** A migration `0013` acrescenta a `installments` as colunas `anticipated_on`, `original_invoice_month` e `discount_cents` (só o que a operação muda). `ledger::anticipation` é puro: `Ledger::plan_anticipation(card, escolhidas, desconto, hoje)` devolve um `AnticipationPlan` (Fatura aberta e `AnticipatedShare` por Parcela) ou um `AnticipationError`, e `split_discount` faz a divisão; `Ledger::open_invoice_cycle` dá a Fatura aberta. `AnticipateInstallmentsUseCase` e `ListAnticipableInstallmentsUseCase` orquestram; `InstallmentPurchaseRepository::anticipate` grava tudo ou nada. Os testes ficam em `tests/installment_anticipations.rs`, pela API.
 
+## Relatórios (UC11)
+
+Dois relatórios por **Mês de referência**; o terceiro, o histórico do Saldo atual, já é `GET /balance/history` (veja acima) e a tela de relatórios o reutiliza. Rotas protegidas; valores em centavos; períodos em **meses inteiros** `YYYY-MM`, de no máximo 36 meses.
+
+| Rota | Efeito |
+| --- | --- |
+| `GET /reports/expenses-by-category?from=&to=` | Despesas por Categoria no período. Padrão: o mês atual (`to` = mês atual, `from` = `to`). `200 {from, to, total_cents, projected_cents, categories: [{category_id, name, active, total_cents, projected_cents}]}`, da Categoria que mais gastou para a que menos gastou (empate: por nome); Categorias sem despesa no período não aparecem. |
+| `GET /reports/income-vs-expenses?from=&to=` | Receitas e Despesas de cada mês do período, em série. Padrão: os últimos 6 meses, este incluído. `200 {from, to, income_cents, expense_cents, months: [{month, income_cents, expense_cents, balance_cents, projected_income_cents, projected_expense_cents}]}`, do mês mais antigo ao mais novo, com uma linha para cada mês, mesmo vazio. `balance_cents` é Receitas menos Despesas e pode ser negativo. |
+
+**Erros.** Mês fora do formato `YYYY-MM`: `422 validation_failed` com `fields.from` ou `fields.to = invalid_month`. Mês inicial depois do final: `fields.to = period_order`. Mais de 36 meses: `fields.from = period_too_long`.
+
+**O que conta.** Cada Receita ou Despesa conta no seu Mês de referência (GLOSSARY):
+
+- Receita ou Despesa fora do cartão: o mês da própria data.
+- Ocorrência de Transação fixa: o mês em que cai, **Projeções do período incluídas** (a Ocorrência futura de uma Receita fixa conta nas Receitas).
+- Compra no cartão: o mês do vencimento da Fatura em que entra. Parcela e Encargo: o mês do vencimento da Fatura em que estão. Uma Parcela antecipada está na Fatura que era a aberta, com o valor já reduzido pelo Desconto; os Encargos entram na Categoria "Juros e encargos".
+- **Ficam de fora**: Pagamentos de fatura (antecipados, automáticos e corrigidos) e o Saldo rolado. Não são Despesas: o gasto já contou quando foi feito.
+
+`projected_cents` (e `projected_income_cents`/`projected_expense_cents`) é a parte do total que é Projeção: Transação ou Ocorrência com data depois de hoje, compra no cartão e Encargo com data depois de hoje e Parcela de uma compra feita depois de hoje. Parcelas de compras já feitas, ainda que em Faturas futuras, não são Projeções.
+
+**Módulo de cálculo.** As regras de "o que conta e em que mês" são as dos Orçamentos e ficam num lugar só: `Ledger::expense_entries` (`ledger::budget`), alimentado por `SpendingRepository` (`Ledger::with_budget_facts`), devolve cada Despesa com Categoria, Mês de referência e data; `Ledger::category_spending` (Orçamentos) e os relatórios somam essas entradas. `ledger::reports` acrescenta a Receita (as Transações de entrada de `LedgerFacts` e as Ocorrências de Receitas fixas), a marca de Projeção e a validação do período: `Ledger::expenses_by_category` e `Ledger::income_vs_expenses`. `GetExpensesByCategoryUseCase` e `GetIncomeVsExpensesUseCase` orquestram. Os testes ficam em `tests/reports.rs`, pela API.
 ## Orçamentos e Alerta de orçamento (UC12 e UC13)
 
 Um Orçamento é o limite mensal de uma Categoria de Despesa e vale todo mês até o usuário alterá-lo. Rotas protegidas; cada usuário só enxerga os próprios Orçamentos (uma Categoria de outro usuário responde como inexistente). Valores em centavos inteiros.
