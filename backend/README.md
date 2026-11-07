@@ -165,6 +165,23 @@ Mês sem Ocorrência (antes do início, depois do fim, já excluída ou malforma
 
 **Módulo de cálculo.** `LedgerFacts` ganhou `recurring: Vec<RecurringDefinition>` (dia, mês de início e de fim, versões de valor e exceções; `src/ledger/recurring.rs`). `Ledger::current_balance` soma as Ocorrências até hoje, e `Ledger::occurrences(from, to)` e `Ledger::occurrence(id, month)` respondem à listagem e às ações sobre uma Ocorrência. Os testes ficam em `tests/recurring.rs` (pela API, avançando o relógio por vários meses) e, para a regra do último dia do mês, nos testes unitários de `ledger/recurring.rs`.
 
+## Histórico do saldo e Saldo projetado (UC10)
+
+Rotas protegidas; cada usuário só enxerga o próprio saldo. Valores em centavos inteiros. As duas devolvem uma série de pontos `{date, balance_cents}`: o saldo no **fim** do dia `date`.
+
+| Rota | Efeito |
+| --- | --- |
+| `GET /balance/history?from=&to=&granularity=day\|month` | Histórico do Saldo atual até hoje. `granularity` é `day` (padrão) ou `month`; `to` (padrão: hoje) não pode ser depois de hoje; `from` (padrão: 30 dias, ou 12 meses, até `to`). Devolve `{granularity, from, to, points}`. |
+| `GET /balance/projection?to=&granularity=day\|month` | Saldo projetado de hoje até `to` (padrão: o horizonte). Devolve `{granularity, today, to, current_balance_cents, points}`. |
+
+**Pontos.** Por dia, um ponto para cada dia de `from` a `to` (na projeção, de hoje a `to`: o primeiro ponto é o Saldo atual). Por mês, um ponto para cada mês do período, no último dia do mês, cortado em `to`: o mês que contém `to` mostra o saldo em `to` (no histórico, o mês corrente mostra o saldo de hoje); na projeção o primeiro ponto é o fim do mês corrente.
+
+**Regras.** O histórico é o Saldo atual que a pessoa tinha no fim de cada dia ou mês: Saldo inicial mais Receitas e Despesas fora do cartão com data até ali, incluindo as Ocorrências que já tinham caído. O Saldo projetado em uma data é o Saldo atual mais Receitas e Despesas fora do cartão com data depois de hoje até ela, com Projeções e Ocorrências futuras (inclusive edições e exclusões de uma só Ocorrência). Compras no cartão ainda não lançadas não entram. As Faturas ainda não entram: o ticket de pagamento de fatura vai subtrair, em cada ponto, o valor restante das Faturas com vencimento até a data (ponto único de extensão: `Ledger::projected_balances_at`), sem mudar a rota.
+
+**Horizonte e erros.** O horizonte é o fim do mês 12 meses depois do mês de hoje (`ledger::projection_horizon`, o mesmo da listagem). Erros `422 validation_failed` com `fields`: `to = history_in_future` (histórico além de hoje), `to = projection_in_past` (projeção antes de hoje), `to = beyond_horizon` (projeção além do horizonte), `to = period_order` (`from` depois de `to`), `from = period_too_long` (mais de 1.000 pontos). Data inválida ou `granularity` desconhecida dão `400 invalid_request`.
+
+**Módulo de cálculo.** `src/ledger/series.rs` acrescenta `Ledger::balance_history(from, to, granularity, today)` e `Ledger::projected_balance(to, granularity, today)`, ambos varrendo uma só lista ordenada de fluxos e Ocorrências (sem consulta por ponto). Os testes ficam em `tests/balance_series.rs`, pela API, movendo o "hoje" com `set_today`.
+
 ## Rodar os testes
 
 ```bash

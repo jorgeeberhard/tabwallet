@@ -48,6 +48,11 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/balance", get(handlers::balance::get))
         .route("/balance/opening", post(handlers::balance::set_opening))
+        .route("/balance/history", get(handlers::balance_series::history))
+        .route(
+            "/balance/projection",
+            get(handlers::balance_series::projection),
+        )
         .route(
             "/transactions",
             get(handlers::transactions::list).post(handlers::transactions::create),
