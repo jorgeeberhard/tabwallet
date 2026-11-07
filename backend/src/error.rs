@@ -65,6 +65,13 @@ pub enum ApiError {
     /// The invoice is paid, so its purchases cannot be edited or deleted and it
     /// takes no payment.
     InvoicePaid,
+    /// The invoice's due date has not come, so its payment cannot be corrected.
+    InvoicePaymentNotDue,
+    /// Early Payments covered the whole invoice: no due-date payment to correct.
+    InvoiceNothingToPay,
+    /// The invoice that received the Carried Balance is paid, which locks the
+    /// payment.
+    InvoicePaymentLocked,
     /// No such recurring Transaction for this user.
     RecurringTransactionNotFound,
     /// The recurring Transaction has no Occurrence in that month.
@@ -187,6 +194,9 @@ impl From<InvoicePaymentError> for ApiError {
                 "amount_cents".to_string(),
                 "amount_exceeds_remaining".to_string(),
             )])),
+            InvoicePaymentError::NotDue => Self::InvoicePaymentNotDue,
+            InvoicePaymentError::NothingToPay => Self::InvoiceNothingToPay,
+            InvoicePaymentError::Locked => Self::InvoicePaymentLocked,
             InvoicePaymentError::Internal(cause) => Self::Internal(cause),
         }
     }
@@ -361,6 +371,24 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "invoice_paid",
                 "The invoice is paid and cannot be changed.",
+                None,
+            ),
+            Self::InvoicePaymentNotDue => (
+                StatusCode::CONFLICT,
+                "invoice_payment_not_due",
+                "The invoice is not due yet, so its payment cannot be corrected.",
+                None,
+            ),
+            Self::InvoiceNothingToPay => (
+                StatusCode::CONFLICT,
+                "invoice_nothing_to_pay",
+                "Early payments covered the whole invoice: there is no due-date payment to correct.",
+                None,
+            ),
+            Self::InvoicePaymentLocked => (
+                StatusCode::CONFLICT,
+                "invoice_payment_locked",
+                "The invoice that received the carried balance is paid, so this payment can no longer be corrected.",
                 None,
             ),
             Self::RecurringTransactionNotFound => (

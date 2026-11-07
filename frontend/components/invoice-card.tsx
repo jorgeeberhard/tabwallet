@@ -4,8 +4,9 @@ import { Money } from "@/components/money"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { centsToReais } from "@/lib/amount"
 import { formatDate, formatMonthOfYear } from "@/lib/format"
-import type { Invoice, InvoiceState } from "@/lib/credit-cards-api"
+import type { CarriedBalance, Invoice, InvoiceState } from "@/lib/credit-cards-api"
 
 const STATE_LABEL: Record<InvoiceState, string> = {
   open: "Aberta",
@@ -29,6 +30,12 @@ export interface InvoiceCardProps {
   invoice: Invoice
   /** Shows "Pagar antecipado" while the invoice is not paid and has something to pay. */
   onPayEarly?: () => void
+  /** Shows "Corrigir pagamento" while the payment of a paid invoice can still be corrected (UC20). */
+  onCorrectPayment?: () => void
+  /** Shows "Lançar encargos" while the invoice is not paid (UC21). */
+  onAddCharges?: () => void
+  /** The Carried Balance this invoice received from the previous one, if any. */
+  carriedBalance?: CarriedBalance | null
   className?: string
 }
 
@@ -39,10 +46,22 @@ export interface InvoiceCardProps {
  * it shows how much was paid and what is left; "Pagar antecipado" (UC17)
  * pays the invoice before the due date, in full or in part.
  */
-export function InvoiceCard({ cardName, invoice, onPayEarly, className }: InvoiceCardProps) {
+export function InvoiceCard({
+  cardName,
+  invoice,
+  onPayEarly,
+  onCorrectPayment,
+  onAddCharges,
+  carriedBalance,
+  className,
+}: InvoiceCardProps) {
   const paidEarly = invoice.state !== "paid" && invoice.paidCents > 0
   const settledEarly = paidEarly && invoice.remainingCents === 0
   const canPayEarly = !!onPayEarly && invoice.state !== "paid" && invoice.remainingCents > 0
+  const canAddCharges = !!onAddCharges && invoice.state !== "paid"
+  const correction = invoice.paymentCorrection
+  const canCorrect = !!onCorrectPayment && invoice.state === "paid" && correction.state === "editable"
+  const corrected = correction.correctedCents !== null
   return (
     <Card className={cn("w-full max-w-xl", className)}>
       <CardHeader>
@@ -58,6 +77,18 @@ export function InvoiceCard({ cardName, invoice, onPayEarly, className }: Invoic
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <Money value={invoice.total} showSign={false} size="lg" />
+        {carriedBalance && carriedBalance.amountCents > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Saldo rolado da fatura de {formatMonthOfYear(carriedBalance.fromClosingMonth)}:{" "}
+            <Money value={carriedBalance.amount} showSign={false} size="sm" />. Não conta como nova
+            despesa: o gasto já foi contado na fatura de origem.
+          </p>
+        )}
+        {invoice.chargesCents > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Encargos: <Money value={centsToReais(invoice.chargesCents)} showSign={false} size="sm" />
+          </p>
+        )}
         {paidEarly && (
           <p className="text-sm text-muted-foreground">
             Pago: <Money value={invoice.paid} showSign={false} size="sm" />
@@ -76,7 +107,20 @@ export function InvoiceCard({ cardName, invoice, onPayEarly, className }: Invoic
         )}
         {invoice.state === "paid" && invoice.paidCents > 0 && (
           <p className="text-sm text-muted-foreground">
-            Paga: <Money value={invoice.paid} showSign={false} size="sm" />
+            {corrected ? "Pago (corrigido)" : "Paga"}:{" "}
+            <Money value={invoice.paid} showSign={false} size="sm" />
+          </p>
+        )}
+        {invoice.carriedForwardCents > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Passou para a próxima fatura como saldo rolado:{" "}
+            <Money value={centsToReais(invoice.carriedForwardCents)} showSign={false} size="sm" />
+          </p>
+        )}
+        {invoice.state === "paid" && correction.state === "locked" && (
+          <p className="text-sm text-muted-foreground">
+            O pagamento desta fatura não pode mais ser corrigido: a fatura seguinte, que recebeu o
+            saldo rolado, já foi paga.
           </p>
         )}
         <dl className="grid grid-cols-2 gap-x-4 text-sm">
@@ -97,10 +141,30 @@ export function InvoiceCard({ cardName, invoice, onPayEarly, className }: Invoic
             </dd>
           </div>
         </dl>
-        {canPayEarly && (
-          <Button variant="outline" className="w-fit" onClick={onPayEarly}>
-            Pagar antecipado
-          </Button>
+        {(canPayEarly || canAddCharges || canCorrect) && (
+          <div className="flex flex-wrap gap-2">
+            {canPayEarly && (
+              <Button variant="outline" className="w-fit" onClick={onPayEarly}>
+                Pagar antecipado
+              </Button>
+            )}
+            {canAddCharges && (
+              <Button variant="outline" className="w-fit" onClick={onAddCharges}>
+                Lançar encargos
+              </Button>
+            )}
+            {canCorrect && (
+              <Button variant="outline" className="w-fit" onClick={onCorrectPayment}>
+                Corrigir pagamento
+              </Button>
+            )}
+          </div>
+        )}
+        {canCorrect && (
+          <p className="text-sm text-muted-foreground">
+            Pagou menos no banco? Corrija o valor e a diferença segue como saldo rolado na próxima
+            fatura. Dá para corrigir de novo até ela ser paga.
+          </p>
         )}
       </CardContent>
     </Card>

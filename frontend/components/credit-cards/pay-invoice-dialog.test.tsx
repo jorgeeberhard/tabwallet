@@ -22,6 +22,10 @@ const invoice: Invoice = {
   paid: 100,
   remainingCents: 20000,
   remaining: 200,
+  chargesCents: 0,
+  carriedBalanceCents: 0,
+  carriedForwardCents: 0,
+  paymentCorrection: { state: "not_due", correctedCents: null, maxCents: 0 },
 }
 
 function json(status: number, body?: unknown) {

@@ -91,6 +91,14 @@ pub(super) async fn card_facts(
         .payments(user_id)
         .await
         .map_err(CreditCardError::internal)?;
+    let mut charges = cards
+        .charges(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
+    let mut corrections = cards
+        .corrections(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
     let facts = list
         .iter()
         .filter_map(|card| {
@@ -99,6 +107,8 @@ pub(super) async fn card_facts(
                 schedule: schedules.remove(&card.id)?,
                 spending: spending.remove(&card.id).unwrap_or_default(),
                 payments: payments.remove(&card.id).unwrap_or_default(),
+                charges: charges.remove(&card.id).unwrap_or_default(),
+                corrections: corrections.remove(&card.id).unwrap_or_default(),
             })
         })
         .collect();

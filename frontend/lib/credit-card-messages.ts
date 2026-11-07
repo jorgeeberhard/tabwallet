@@ -13,6 +13,13 @@ const MESSAGES: Record<string, string> = {
     "Esta fatura já está paga e não pode mais ser alterada. Uma compra não pode ser editada, excluída nem movida para uma fatura paga, e a fatura paga não recebe pagamento antecipado.",
   amount_exceeds_remaining:
     "O valor não pode passar do que ainda falta pagar nesta fatura. Atualize a página para ver o valor restante.",
+  invoice_payment_not_due:
+    "Esta fatura ainda não venceu. O pagamento só pode ser corrigido depois do vencimento, quando o sistema debita o valor.",
+  invoice_payment_locked:
+    "O pagamento desta fatura não pode mais ser corrigido: a fatura que recebeu o saldo rolado já está paga.",
+  invoice_nothing_to_pay:
+    "Esta fatura foi paga por inteiro antes do vencimento, então não há pagamento do vencimento para corrigir.",
+  charge_not_found: "Este encargo não existe mais. Atualize a página.",
   card_purchase_not_found: "Esta compra não existe mais. Atualize a página.",
   name_length: "Digite um nome de até 60 caracteres.",
   day_range: "Escolha um dia de 1 a 31.",
@@ -22,6 +29,13 @@ const MESSAGES: Record<string, string> = {
   category_type_mismatch: "Escolha uma categoria de despesa.",
   category_inactive: "Esta categoria está desativada. Escolha outra ou reative-a.",
 }
+
+/**
+ * Charges always go to "Juros e encargos", which the person does not pick, so
+ * a problem with that Category needs its own wording.
+ */
+export const CHARGES_CATEGORY_INACTIVE =
+  'A categoria "Juros e encargos" está desativada. Reative-a em Categorias para lançar encargos.'
 
 /** The message of one field rule of a validation error, if we know it. */
 export function creditCardFieldMessage(error: unknown, field: string): string | null {

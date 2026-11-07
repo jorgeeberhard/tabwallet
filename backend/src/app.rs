@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     middleware::from_fn_with_state,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
 };
 use sqlx::PgPool;
 
@@ -85,6 +85,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/credit-cards/{id}/invoices/{closing_month}/payments",
             post(handlers::invoice_payments::pay),
+        )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}/payment",
+            put(handlers::invoice_payments::correct),
         )
         .route("/card-purchases", post(handlers::card_purchases::create))
         .route(

@@ -123,7 +123,7 @@ impl StatementItem {
                 item.created_at.unwrap_or(DateTime::<Utc>::MIN_UTC),
                 match item.payment.origin {
                     PaymentOrigin::Early(id) => id.0,
-                    PaymentOrigin::Automatic => item.payment.card_id.0,
+                    PaymentOrigin::Automatic | PaymentOrigin::Corrected => item.payment.card_id.0,
                 },
             ),
         }
@@ -355,7 +355,7 @@ impl ListTransactionsUseCase {
         Ok(ledger
             .invoice_payments(from, to)
             .into_iter()
-            .filter(|payment| payment.origin == PaymentOrigin::Automatic)
+            .filter(|payment| payment.origin.is_derived())
             .filter(|payment| {
                 filter
                     .credit_card_id
