@@ -452,7 +452,12 @@ async fn the_statement_shows_the_installment_purchase_with_its_installments() {
     let nubank = card(&ana, "Nubank", 10, 17).await;
     installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
 
-    let body: Value = ana.get("/transactions").await.json().await.unwrap();
+    let body: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
 
     assert_eq!(body["total"], json!(1));
     let item = &body["items"][0];
@@ -485,7 +490,14 @@ async fn the_statement_filters_installment_purchases_by_card_period_category_and
                 .json()
                 .await
                 .unwrap();
-            body["total"].as_i64().unwrap()
+            // Invoice payments (the automatic ones on due dates) share the
+            // statement; count only the installment purchases.
+            body["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|item| item["kind"] == json!("installment_purchase"))
+                .count()
         }
     };
 
@@ -532,7 +544,12 @@ async fn a_user_cannot_see_or_change_another_users_installment_purchases() {
     let bought = installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
     let id = bought["id"].as_str().unwrap();
 
-    let statement: Value = bia.get("/transactions").await.json().await.unwrap();
+    let statement: Value = bia
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(statement["total"], json!(0));
     let edit = bia
         .patch_json(
@@ -544,7 +561,12 @@ async fn a_user_cannot_see_or_change_another_users_installment_purchases() {
     let delete = bia.delete(&format!("/installment-purchases/{id}")).await;
     assert_eq!(delete.status(), 404);
     // And it is still there for its owner.
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(statement["total"], json!(1));
 }
 
@@ -713,7 +735,12 @@ async fn an_edit_is_validated_like_a_new_purchase() {
     );
 
     // Nothing changed.
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(amounts(&statement["items"][0]), vec![3_334, 3_333, 3_333]);
 }
 
@@ -777,7 +804,12 @@ async fn the_state_of_each_installment_follows_its_invoice() {
     installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
 
     app.set_today(2026, 2, 11); // January is paid, February closed, March open
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
 
     let states: Vec<&str> = statement["items"][0]["installments"]
         .as_array()
@@ -802,7 +834,12 @@ async fn an_installment_purchase_without_paid_installments_is_deleted_whole() {
     let response = ana.delete(&format!("/installment-purchases/{id}")).await;
 
     assert_eq!(response.status(), 204);
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(statement["total"], json!(0));
     let listed = invoices(&ana, &nubank).await;
     assert!(
@@ -848,7 +885,12 @@ async fn with_paid_installments_deleting_cancels_only_the_remaining_ones() {
             .all(|invoice| invoice["closing_month"] != json!("2026-04")),
         "{listed:?}"
     );
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(statement["total"], json!(1));
 }
 
@@ -888,6 +930,63 @@ async fn a_cancelled_purchase_still_lets_the_category_change_but_nothing_else() 
     assert_eq!(amounts(&body["installment_purchase"]), vec![2_500, 2_500]);
 }
 
+// --- invoice payments ----------------------------------------------------
+
+async fn current_balance(browser: &Session) -> i64 {
+    let body: Value = browser.get("/balance").await.json().await.unwrap();
+    body["current_balance_cents"].as_i64().unwrap()
+}
+
+#[tokio::test]
+async fn an_early_payment_reduces_what_remains_of_an_invoice_with_an_installment() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+
+    let response = ana
+        .post_json(
+            &format!("/credit-cards/{nubank}/invoices/2026-01/payments"),
+            &json!({ "amount_cents": 1_000 }),
+        )
+        .await;
+    assert_eq!(response.status(), 201, "{}", response.text().await.unwrap());
+
+    let listed = invoices(&ana, &nubank).await;
+    let january = invoice_closing(&listed, "2026-01");
+    assert_eq!(january["total_cents"], json!(3_334));
+    assert_eq!(january["paid_cents"], json!(1_000));
+    assert_eq!(january["remaining_cents"], json!(2_334));
+    // The other invoices are untouched.
+    assert_eq!(
+        invoice_closing(&listed, "2026-02")["remaining_cents"],
+        json!(3_333)
+    );
+}
+
+#[tokio::test]
+async fn the_due_date_debits_each_installment_from_the_balance_without_a_stored_payment() {
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    let opening = ana
+        .post_json("/balance/opening", &json!({ "amount_cents": 100_000 }))
+        .await;
+    assert_eq!(opening.status(), 201);
+    let nubank = card(&ana, "Nubank", 10, 17).await;
+    installment_purchase(&ana, &nubank, 10_000, 3, "2026-01-05").await;
+    // Nothing leaves the balance when the purchase is made.
+    assert_eq!(current_balance(&ana).await, 100_000);
+
+    app.set_today(2026, 1, 17); // January's invoice is due: Installment 1
+    assert_eq!(current_balance(&ana).await, 100_000 - 3_334);
+
+    app.set_today(2026, 2, 17); // February's: Installment 2
+    assert_eq!(current_balance(&ana).await, 100_000 - 3_334 - 3_333);
+
+    app.set_today(2026, 3, 17);
+    assert_eq!(current_balance(&ana).await, 100_000 - 10_000);
+}
+
 // --- the card's days -----------------------------------------------------
 
 #[tokio::test]
@@ -912,7 +1011,12 @@ async fn new_card_days_move_installments_like_they_move_single_purchases() {
         .await;
     assert_eq!(changed.status(), 200);
 
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     let moved = &statement["items"][0];
     assert_eq!(invoice_months(moved), vec!["2026-03", "2026-04", "2026-05"]);
     assert_eq!(amounts(moved), vec![3_334, 3_333, 3_333]);
@@ -939,7 +1043,12 @@ async fn new_card_days_leave_a_purchase_with_paid_installments_alone() {
         .await;
     assert_eq!(changed.status(), 200);
 
-    let statement: Value = ana.get("/transactions").await.json().await.unwrap();
+    let statement: Value = ana
+        .get("/transactions?type=expense")
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(
         invoice_months(&statement["items"][0]),
         vec!["2026-01", "2026-02", "2026-03"]
