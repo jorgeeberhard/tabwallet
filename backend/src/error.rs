@@ -20,8 +20,8 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
-        CategoryProblem, CreditCardError, InstallmentPurchaseError, InvoicePaymentError,
-        RecurringError, TransactionError,
+        CategoryProblem, ChargeError, CreditCardError, InstallmentPurchaseError,
+        InvoicePaymentError, RecurringError, TransactionError,
     },
 };
 
@@ -66,6 +66,8 @@ pub enum ApiError {
     /// The invoice is paid, so its purchases cannot be edited or deleted and it
     /// takes no payment.
     InvoicePaid,
+    /// No such Charge for this user.
+    ChargeNotFound,
     /// The invoice's due date has not come, so its payment cannot be corrected.
     InvoicePaymentNotDue,
     /// Early Payments covered the whole invoice: no due-date payment to correct.
@@ -204,6 +206,22 @@ impl From<InvoicePaymentError> for ApiError {
             InvoicePaymentError::NothingToPay => Self::InvoiceNothingToPay,
             InvoicePaymentError::Locked => Self::InvoicePaymentLocked,
             InvoicePaymentError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<ChargeError> for ApiError {
+    fn from(error: ChargeError) -> Self {
+        match error {
+            ChargeError::CardNotFound => Self::CreditCardNotFound,
+            ChargeError::InvoiceNotFound => Self::InvoiceNotFound,
+            ChargeError::NotFound => Self::ChargeNotFound,
+            ChargeError::InvoicePaid => Self::InvoicePaid,
+            ChargeError::CategoryInactive => Self::Validation(BTreeMap::from([(
+                "category_id".to_string(),
+                "category_inactive".to_string(),
+            )])),
+            ChargeError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -410,6 +428,12 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "invoice_paid",
                 "The invoice is paid and cannot be changed.",
+                None,
+            ),
+            Self::ChargeNotFound => (
+                StatusCode::NOT_FOUND,
+                "charge_not_found",
+                "There is no such charge.",
                 None,
             ),
             Self::InvoicePaymentNotDue => (

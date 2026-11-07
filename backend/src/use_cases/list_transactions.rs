@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     ids::{
-        CardPurchaseId, CategoryId, CreditCardId, InstallmentPurchaseId, InvoicePaymentId,
-        RecurringTransactionId, TransactionId, UserId,
+        CardPurchaseId, CategoryId, ChargeId, CreditCardId, InstallmentPurchaseId,
+        InvoicePaymentId, RecurringTransactionId, TransactionId, UserId,
     },
     ledger::{
         Ledger, LedgerFacts, Occurrence,
@@ -17,6 +17,7 @@ use crate::{
         card_purchases::CardPurchaseRepository,
         credit_cards::{CreditCard, CreditCardRepository},
         installment_purchases::InstallmentPurchaseRepository,
+        invoice_charges::InvoiceChargeRepository,
         invoice_payments::InvoicePaymentRepository,
         recurring::{RecurringRepository, RecurringTransaction},
         statement::{StatementKey, StatementRepository},
@@ -29,6 +30,7 @@ use super::{
     card_purchase::CardPurchaseView,
     credit_card::{card_ledger, view_of},
     installment_purchase::{InstallmentPurchaseView, views_of},
+    invoice_charge::{ChargeView, view_of as charge_view_of},
 };
 
 /// One Occurrence of a recurring Transaction (a Gasto fixo or Receita fixa) in
@@ -95,6 +97,9 @@ pub enum StatementItem {
     Transaction(Transaction),
     CardPurchase(CardPurchaseView),
     InstallmentPurchase(InstallmentPurchaseView),
+    /// A Charge (Encargo) recorded in an invoice: an expense that leaves the
+    /// balance with the invoice payment.
+    Charge(ChargeView),
     Occurrence(StatementOccurrence),
     InvoicePayment(StatementInvoicePayment),
 }
@@ -119,6 +124,7 @@ impl StatementItem {
                 view.purchase.created_at,
                 view.purchase.id.0,
             ),
+            Self::Charge(view) => (view.charge.date, view.charge.created_at, view.charge.id.0),
             Self::Occurrence(occurrence) => (
                 occurrence.date,
                 occurrence.created_at,
@@ -164,9 +170,12 @@ pub struct ListTransactionsUseCase {
     cards: CreditCardRepository,
     recurring: RecurringRepository,
     payments: InvoicePaymentRepository,
+    charges: InvoiceChargeRepository,
 }
 
 impl ListTransactionsUseCase {
+    // One repository per kind of statement entry, so the list grows with them.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         statement: StatementRepository,
         transactions: TransactionRepository,
@@ -175,6 +184,7 @@ impl ListTransactionsUseCase {
         cards: CreditCardRepository,
         recurring: RecurringRepository,
         payments: InvoicePaymentRepository,
+        charges: InvoiceChargeRepository,
     ) -> Self {
         Self {
             statement,
@@ -184,6 +194,7 @@ impl ListTransactionsUseCase {
             cards,
             recurring,
             payments,
+            charges,
         }
     }
 
@@ -273,6 +284,13 @@ impl ListTransactionsUseCase {
                 _ => None,
             })
             .collect();
+        let charge_ids: Vec<ChargeId> = keys
+            .iter()
+            .filter_map(|key| match key {
+                StatementKey::Charge(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
         let payment_ids: Vec<InvoicePaymentId> = keys
             .iter()
             .filter_map(|key| match key {
@@ -348,6 +366,22 @@ impl ListTransactionsUseCase {
                 installment_purchases.insert(view.purchase.id, view);
             }
         }
+        let mut charges: HashMap<ChargeId, ChargeView> = HashMap::new();
+        if !charge_ids.is_empty() {
+            let (_, ledger) = card_ledger(&self.cards, &self.purchases, user_id)
+                .await
+                .map_err(TransactionError::internal)?;
+            for charge in self
+                .charges
+                .find_many(user_id, &charge_ids)
+                .await
+                .map_err(TransactionError::internal)?
+            {
+                if let Some(view) = charge_view_of(&ledger, charge, today) {
+                    charges.insert(view.charge.id, view);
+                }
+            }
+        }
 
         Ok(keys
             .into_iter()
@@ -361,6 +395,7 @@ impl ListTransactionsUseCase {
                 StatementKey::InstallmentPurchase(id) => installment_purchases
                     .remove(&id)
                     .map(StatementItem::InstallmentPurchase),
+                StatementKey::Charge(id) => charges.remove(&id).map(StatementItem::Charge),
                 StatementKey::InvoicePayment(id) => {
                     payments.remove(&id).map(StatementItem::InvoicePayment)
                 }

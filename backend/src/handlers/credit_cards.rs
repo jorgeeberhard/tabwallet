@@ -12,6 +12,7 @@ use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
     installment_purchases::InvoiceInstallmentResponse,
+    invoice_charges::ChargeResponse,
     invoice_payments::InvoicePaymentResponse,
 };
 use crate::{
@@ -19,10 +20,11 @@ use crate::{
     auth::AuthUser,
     error::ApiError,
     ids::CreditCardId,
-    ledger::cards::{Invoice, InvoiceCycle, InvoiceState, Month},
+    ledger::cards::{CorrectionState, Invoice, InvoiceCycle, InvoiceState, Month},
     repositories::{
         card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         installment_purchases::InstallmentPurchaseRepository,
+        invoice_charges::InvoiceChargeRepository,
     },
     use_cases::{
         CreateCreditCardUseCase, CreditCardChanges, CreditCardView, DeactivateCreditCardUseCase,
@@ -233,26 +235,78 @@ pub struct InvoiceResponse {
     credit_card_id: CreditCardId,
     #[serde(flatten)]
     cycle: InvoiceCycleResponse,
-    /// Cents: the sum of the purchases in the invoice.
+    /// Cents: the sum of the purchases, Installments and Charges in the
+    /// invoice, plus the Carried Balance it received.
     total_cents: i64,
     /// Cents that left the balance for this invoice: the Early Payments and,
-    /// once the invoice is paid, the automatic payment of the rest.
+    /// once the invoice is paid, the due-date payment (automatic, or the amount
+    /// the user corrected it to).
     paid_cents: i64,
     /// Cents still to pay: the total less the Early Payments. Zero once the
     /// invoice is paid (the due date debits the rest by itself).
     remaining_cents: i64,
+    /// Cents of Charges (interest, penalty, IOF) recorded in the invoice; part
+    /// of `total_cents`.
+    charges_cents: i64,
+    /// Cents of Carried Balance received from the previous invoice; part of
+    /// `total_cents`. Not an expense.
+    carried_balance_cents: i64,
+    /// Cents left unpaid at the due date that moved on to the next invoice as
+    /// its Carried Balance.
+    carried_forward_cents: i64,
+    /// Whether the invoice's payment can be corrected to the amount really paid
+    /// at the bank.
+    payment_correction: PaymentCorrectionResponse,
+}
+
+/// Whether, and up to how much, the due-date payment of an invoice can be
+/// corrected (UC20).
+#[derive(Serialize)]
+pub struct PaymentCorrectionResponse {
+    /// `not_due` (the due date has not come), `nothing_to_pay` (Early Payments
+    /// covered it all), `editable` (the invoice is paid and the next one, which
+    /// receives the Carried Balance, is not) or `locked` (the next invoice is
+    /// paid too).
+    state: &'static str,
+    /// Cents the user said they paid, once they corrected the payment.
+    corrected_cents: Option<i64>,
+    /// Cents: the most the payment can be corrected to (what the Early
+    /// Payments left unpaid).
+    max_cents: i64,
 }
 
 impl From<Invoice> for InvoiceResponse {
     fn from(invoice: Invoice) -> Self {
+        let correction = invoice.payment_correction;
         Self {
             credit_card_id: invoice.card_id,
             cycle: invoice.cycle.into(),
             total_cents: invoice.total_cents,
             paid_cents: invoice.paid_cents,
             remaining_cents: invoice.remaining_cents,
+            charges_cents: invoice.charges_cents,
+            carried_balance_cents: invoice.carried_in_cents,
+            carried_forward_cents: invoice.carried_out_cents,
+            payment_correction: PaymentCorrectionResponse {
+                state: match correction.state {
+                    CorrectionState::NotDue => "not_due",
+                    CorrectionState::NothingToPay => "nothing_to_pay",
+                    CorrectionState::Editable => "editable",
+                    CorrectionState::Locked => "locked",
+                },
+                corrected_cents: correction.corrected_cents,
+                max_cents: correction.max_cents,
+            },
         }
     }
+}
+
+/// The Carried Balance an invoice received, shown as an item of it.
+#[derive(Serialize)]
+pub struct CarriedBalanceResponse {
+    amount_cents: i64,
+    /// `YYYY-MM`: the closing month of the invoice the balance came from.
+    from_closing_month: String,
 }
 
 #[derive(Serialize)]
@@ -287,8 +341,15 @@ pub struct InvoiceDetailResponse {
     /// The Installments of installment purchases in this invoice (the "3/10"
     /// lines), newest purchase first.
     installments: Vec<InvoiceInstallmentResponse>,
-    /// The Early Payments and the automatic payment of the due date (when
-    /// something is left unpaid), oldest first. None is an expense.
+    /// The Charges (interest, penalty, IOF) recorded in this invoice, newest
+    /// first. They are expenses of "Juros e encargos".
+    charges: Vec<ChargeResponse>,
+    /// The Carried Balance this invoice received from the previous one, shown
+    /// as an item of it; `null` when there is none. It is not an expense.
+    carried_balance: Option<CarriedBalanceResponse>,
+    /// The Early Payments and the payment of the due date (when something is
+    /// left unpaid): automatic, or corrected by the user. Oldest first. None is
+    /// an expense.
     payments: Vec<InvoicePaymentResponse>,
 }
 
@@ -306,11 +367,22 @@ pub async fn invoice(
         CreditCardRepository::new(state.pool.clone()),
         CardPurchaseRepository::new(state.pool.clone()),
         InstallmentPurchaseRepository::new(state.pool.clone()),
+        InvoiceChargeRepository::new(state.pool.clone()),
     )
     .execute(auth_user.id, card_id, month, today)
     .await?;
+    let carried_balance = (detail.invoice.carried_in_cents > 0).then(|| CarriedBalanceResponse {
+        amount_cents: detail.invoice.carried_in_cents,
+        from_closing_month: month.prev().to_string(),
+    });
     Ok(Json(InvoiceDetailResponse {
         invoice: detail.invoice.into(),
+        charges: detail
+            .charges
+            .into_iter()
+            .map(|view| ChargeResponse::new(view, today))
+            .collect(),
+        carried_balance,
         purchases: detail
             .purchases
             .into_iter()
