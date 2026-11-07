@@ -21,7 +21,8 @@ use crate::{
     use_cases::{
         AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
         CategoryProblem, ChargeError, CreditCardError, InstallmentAnticipationError,
-        InstallmentPurchaseError, InvoicePaymentError, RecurringError, TransactionError,
+        InstallmentPurchaseError, InvoicePaymentError, RecurringError, ReportError,
+        TransactionError,
     },
 };
 
@@ -181,6 +182,17 @@ impl From<BalanceSeriesError> for ApiError {
                 Self::Validation(BTreeMap::from([(field.to_string(), rule.to_string())]))
             }
             BalanceSeriesError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<ReportError> for ApiError {
+    fn from(error: ReportError) -> Self {
+        match error {
+            ReportError::InvalidPeriod { field, rule } => {
+                Self::Validation(BTreeMap::from([(field.to_string(), rule.to_string())]))
+            }
+            ReportError::Internal(cause) => Self::Internal(cause),
         }
     }
 }

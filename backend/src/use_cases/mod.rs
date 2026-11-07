@@ -18,6 +18,7 @@ mod list_transactions;
 mod log_in;
 mod recurring;
 mod rename_category;
+mod reports;
 mod request_password_reset;
 mod reset_password;
 mod set_category_active;
@@ -75,6 +76,10 @@ pub use recurring::{
     RecurringError, RecurringView, SkipOccurrenceUseCase, UpdateRecurringTransactionUseCase,
 };
 pub use rename_category::RenameCategoryUseCase;
+pub use reports::{
+    CategoryLine, ExpensesByCategory, GetExpensesByCategoryUseCase, GetIncomeVsExpensesUseCase,
+    IncomeVsExpenses, ReportError, ReportPeriod,
+};
 pub use request_password_reset::RequestPasswordResetUseCase;
 pub use reset_password::ResetPasswordUseCase;
 pub use set_category_active::{DeactivateCategoryUseCase, ReactivateCategoryUseCase};

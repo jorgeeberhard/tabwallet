@@ -54,6 +54,14 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::balance_series::projection),
         )
         .route(
+            "/reports/expenses-by-category",
+            get(handlers::reports::expenses_by_category),
+        )
+        .route(
+            "/reports/income-vs-expenses",
+            get(handlers::reports::income_vs_expenses),
+        )
+        .route(
             "/transactions",
             get(handlers::transactions::list).post(handlers::transactions::create),
         )

@@ -11,6 +11,8 @@
 //! module, so the rules that depend on dates stay in one place. Recurring
 //! Transactions and their Occurrences live in [`recurring`]; the balance
 //! history and the Projected Balance (series of points over time) in [`series`].
+//! The reports by Reference Month (expenses by Category, income x expenses per
+//! month) are in [`reports`].
 //! Bringing future Installments to the open invoice with a Discount
 //! (Installment Anticipation) is planned by [`Ledger::plan_anticipation`], in
 //! [`anticipation`].
@@ -18,6 +20,7 @@
 pub mod anticipation;
 pub mod cards;
 mod recurring;
+pub mod reports;
 mod series;
 
 use chrono::{Datelike, NaiveDate};
