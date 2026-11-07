@@ -14,6 +14,7 @@ use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
     installment_purchases::InstallmentPurchaseResponse,
+    invoice_payments::StatementInvoicePaymentResponse,
     recurring::OccurrenceResponse,
 };
 use crate::{
@@ -25,6 +26,7 @@ use crate::{
     repositories::categories::CategoryRepository,
     repositories::credit_cards::CreditCardRepository,
     repositories::installment_purchases::InstallmentPurchaseRepository,
+    repositories::invoice_payments::InvoicePaymentRepository,
     repositories::recurring::RecurringRepository,
     repositories::statement::StatementRepository,
     repositories::transactions::{
@@ -153,8 +155,7 @@ pub async fn create(
 }
 
 /// One entry of the statement; `kind` says what the rest of the object is
-/// (`transaction` or `card_purchase`), so invoice payments can join later with
-/// their own shape.
+/// (`transaction`, `card_purchase`, `occurrence` or `invoice_payment`).
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StatementItemResponse {
@@ -164,6 +165,9 @@ pub enum StatementItemResponse {
     InstallmentPurchase(InstallmentPurchaseResponse),
     /// An Occurrence of a Gasto fixo or Receita fixa, computed on read.
     Occurrence(OccurrenceResponse),
+    /// An Invoice Payment, early or automatic: it leaves the Current Balance
+    /// but is not an expense, and has the card instead of a Category.
+    InvoicePayment(StatementInvoicePaymentResponse),
 }
 
 #[derive(Serialize)]
@@ -184,7 +188,7 @@ pub struct ListParams {
     category_id: Option<CategoryId>,
     #[serde(rename = "type")]
     kind: Option<TransactionType>,
-    /// Only purchases made with this credit card.
+    /// Only purchases and invoice payments of this credit card.
     credit_card_id: Option<CreditCardId>,
     limit: Option<i64>,
     offset: Option<i64>,
@@ -223,9 +227,11 @@ impl ListParams {
 
 /// `GET /transactions` (protected): the user's statement, newest first.
 /// Optional query: `from` and `to` (days, inclusive), `category_id`,
-/// `type=income|expense`, `credit_card_id` (only that card's purchases),
-/// `limit` (1 to 200, default 50) and `offset`. Card purchases appear as
-/// items with `kind: "card_purchase"`, showing the card and the invoice.
+/// `type=income|expense`, `credit_card_id` (only that card's purchases and
+/// invoice payments), `limit` (1 to 200, default 50) and `offset`. Card
+/// purchases appear as items with `kind: "card_purchase"`, showing the card and
+/// the invoice; Invoice Payments as `kind: "invoice_payment"`. A `category_id`
+/// or `type` filter leaves the payments out: they have neither.
 pub async fn list(
     State(state): State<AppState>,
     auth_user: AuthUser,
@@ -241,6 +247,7 @@ pub async fn list(
         InstallmentPurchaseRepository::new(state.pool.clone()),
         CreditCardRepository::new(state.pool.clone()),
         RecurringRepository::new(state.pool.clone()),
+        InvoicePaymentRepository::new(state.pool.clone()),
     )
     .execute(auth_user.id, today, filter, limit, offset)
     .await?;
@@ -262,6 +269,9 @@ pub async fn list(
                 StatementItem::Occurrence(occurrence) => {
                     StatementItemResponse::Occurrence(OccurrenceResponse::new(occurrence, today))
                 }
+                StatementItem::InvoicePayment(payment) => StatementItemResponse::InvoicePayment(
+                    StatementInvoicePaymentResponse::new(payment, today),
+                ),
             })
             .collect(),
         total,

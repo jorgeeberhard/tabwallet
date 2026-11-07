@@ -24,6 +24,12 @@ pub struct CreditCardId(pub Uuid);
 #[sqlx(transparent)]
 pub struct CardPurchaseId(pub Uuid);
 
+/// The id of an Early Payment of an invoice (the only Invoice Payment that is
+/// stored).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct InvoicePaymentId(pub Uuid);
+
 /// The id of a category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(transparent)]

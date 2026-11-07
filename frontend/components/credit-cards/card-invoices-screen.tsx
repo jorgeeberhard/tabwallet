@@ -21,6 +21,8 @@ import {
   targetOfInvoiceInstallment,
 } from "@/components/credit-cards/installment-purchase-dialog"
 import { InvoiceInstallmentRow } from "@/components/credit-cards/invoice-installment-row"
+import { InvoicePaymentRow } from "@/components/credit-cards/invoice-payment-row"
+import { PayInvoiceDialog } from "@/components/credit-cards/pay-invoice-dialog"
 import { InvoiceCard, invoiceStateLabel } from "@/components/invoice-card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -68,6 +70,7 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
   const [installmentToCancel, setInstallmentToCancel] = useState<CancelInstallmentTarget | null>(
     null,
   )
+  const [paying, setPaying] = useState(false)
 
   const cards = useQuery({ queryKey: CREDIT_CARDS_KEY, queryFn: listCreditCards })
   const card = cards.data?.find((candidate) => candidate.id === cardId)
@@ -213,11 +216,33 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
             <Skeleton className="h-40 w-full max-w-xl" />
           ) : (
             <>
-              <InvoiceCard cardName={card.name} invoice={detail.data.invoice} />
+              <InvoiceCard
+                cardName={card.name}
+                invoice={detail.data.invoice}
+                onPayEarly={() => setPaying(true)}
+              />
               {detail.data.invoice.state === "paid" && (
                 <p className="max-w-prose text-sm text-muted-foreground">
                   Fatura paga: as compras dela não podem mais ser editadas nem excluídas.
                 </p>
+              )}
+              {detail.data.payments.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <h2 className="font-display text-lg font-bold tracking-tight">
+                    Pagamentos da fatura
+                  </h2>
+                  <Card className="gap-0 overflow-hidden py-0">
+                    <ul aria-label="Pagamentos da fatura" className="divide-y">
+                      {detail.data.payments.map((payment) => (
+                        <InvoicePaymentRow
+                          key={payment.id ?? "automatic"}
+                          payment={payment}
+                          referenceMonth={detail.data.invoice.referenceMonth}
+                        />
+                      ))}
+                    </ul>
+                  </Card>
+                </div>
               )}
               {detail.data.purchases.length === 0 && detail.data.installments.length === 0 ? (
                 <Empty className="border">
@@ -289,6 +314,15 @@ export function CardInvoicesScreen({ cardId }: CardInvoicesScreenProps) {
         purchase={installmentToCancel}
         onClose={() => setInstallmentToCancel(null)}
       />
+      {paying && card && detail.data && (
+        <PayInvoiceDialog
+          key={detail.data.invoice.closingMonth}
+          cardId={cardId}
+          cardName={card.name}
+          invoice={detail.data.invoice}
+          onClose={() => setPaying(false)}
+        />
+      )}
     </section>
   )
 }

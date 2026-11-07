@@ -10,6 +10,7 @@ mod credit_card;
 mod delete_transaction;
 mod get_current_user;
 mod installment_purchase;
+mod invoice_payment;
 mod list_categories;
 mod list_transactions;
 mod log_in;
@@ -49,9 +50,10 @@ pub use installment_purchase::{
     InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView, InvoiceInstallment,
     UpdateInstallmentPurchaseUseCase,
 };
+pub use invoice_payment::{EarlyPaymentReceipt, InvoicePaymentError, PayInvoiceUseCase};
 pub use list_categories::ListCategoriesUseCase;
 pub use list_transactions::{
-    ListTransactionsUseCase, Statement, StatementItem, StatementOccurrence,
+    ListTransactionsUseCase, Statement, StatementInvoicePayment, StatementItem, StatementOccurrence,
 };
 pub use log_in::LogInUseCase;
 pub use recurring::{

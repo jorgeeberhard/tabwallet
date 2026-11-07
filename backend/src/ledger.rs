@@ -41,7 +41,7 @@ pub fn projection_horizon(today: NaiveDate) -> NaiveDate {
 }
 
 use crate::ids::CreditCardId;
-use cards::{CardFacts, Invoice, InvoiceCycle, Month, PlannedInstallment};
+use cards::{CardFacts, Invoice, InvoiceCycle, InvoicePayment, Month, PlannedInstallment};
 
 /// Which way money moves in a [`CashFlow`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,9 +70,10 @@ pub struct LedgerFacts {
     /// negative.
     pub opening_balance_cents: Option<i64>,
     pub cash_flows: Vec<CashFlow>,
-    /// The user's credit cards with their closing and due days and their
-    /// purchases. Card purchases never enter `cash_flows`: they reach the
-    /// balance only through invoice payments (a later ticket).
+    /// The user's credit cards with their closing and due days, purchases and
+    /// Early Payments. Card purchases never enter `cash_flows`: they reach the
+    /// balance only through Invoice Payments, which the ledger derives from
+    /// these facts.
     pub cards: Vec<CardFacts>,
     /// The user's recurring Transactions. Their Occurrences are derived from
     /// these and never stored.
@@ -100,8 +101,9 @@ impl Ledger {
 
     /// The Current Balance on `today`, in cents: the Opening Balance plus
     /// incomes minus expenses dated `today` or earlier, counting the
-    /// Occurrences of recurring Transactions that have already fallen. Flows
-    /// dated after `today` are Projections and stay out until their day
+    /// Occurrences of recurring Transactions that have already fallen, minus
+    /// the Invoice Payments (early and automatic) dated `today` or earlier.
+    /// Flows dated after `today` are Projections and stay out until their day
     /// arrives. The result may be negative.
     pub fn current_balance(&self, today: NaiveDate) -> i64 {
         let flows: i64 = self
@@ -116,7 +118,44 @@ impl Ledger {
             .iter()
             .map(|occurrence| signed(occurrence.kind, occurrence.amount_cents))
             .sum();
-        self.facts.opening_balance_cents.unwrap_or(0) + flows + occurrences
+        let payments: i64 = self
+            .invoice_payments(NaiveDate::MIN, today)
+            .iter()
+            .map(|payment| payment.amount_cents)
+            .sum();
+        self.facts.opening_balance_cents.unwrap_or(0) + flows + occurrences - payments
+    }
+
+    /// The Invoice Payments of every card dated from `from` to `to`, both
+    /// inclusive, oldest first: the stored Early Payments and the automatic
+    /// payments that fall on the due dates (see [`cards::CardFacts::payments`]).
+    /// Whether one is a Projection (after today) is for the caller to say.
+    pub fn invoice_payments(&self, from: NaiveDate, to: NaiveDate) -> Vec<InvoicePayment> {
+        let mut found: Vec<InvoicePayment> = self
+            .facts
+            .cards
+            .iter()
+            .flat_map(|card| card.payments())
+            .filter(|payment| payment.date >= from && payment.date <= to)
+            .collect();
+        found.sort_by_key(|payment| (payment.date, payment.card_id.0, payment.closing_month));
+        found
+    }
+
+    /// The payments of one invoice (early and automatic), oldest first.
+    pub fn payments_of_invoice(
+        &self,
+        card_id: CreditCardId,
+        closing_month: Month,
+    ) -> Vec<InvoicePayment> {
+        self.card(card_id)
+            .map(|card| {
+                card.payments()
+                    .into_iter()
+                    .filter(|payment| payment.closing_month == closing_month)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The Occurrences of every recurring Transaction that fall on a day from

@@ -11,13 +11,20 @@
 //! - State: Open until the closing date (inclusive), Closed after it until the
 //!   due date, Paid from the due date on.
 //!
+//! Paying an invoice (UC17, ADR-0003): the user may make Early Payments, total
+//! or partial, while the invoice is Open or Closed. On the due date the ledger
+//! derives an automatic Invoice Payment of whatever is still unpaid and the
+//! invoice becomes Paid. Early Payments are stored; the automatic one never
+//! is. Neither is an expense: they leave the balance on their date and are
+//! reported as [`InvoicePayment`]s, apart from card purchases.
+//!
 //! A card keeps a history of its days ([`CardSchedule`]) so that changing them
 //! only affects invoices still open: closed and paid invoices keep the days
 //! they were closed with.
 
 use chrono::{Datelike, NaiveDate};
 
-use crate::ids::CreditCardId;
+use crate::ids::{CreditCardId, InvoicePaymentId};
 
 /// A calendar month, such as 2026-10.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -212,10 +219,47 @@ pub struct Invoice {
     pub cycle: InvoiceCycle,
     /// The sum of the purchases in it.
     pub total_cents: i64,
-    /// What is still to be paid. Until invoice payments exist (a later
-    /// ticket), the due date is what settles an invoice: from it on the
-    /// invoice is Paid and nothing remains.
+    /// What has left the balance for this invoice: the Early Payments, and
+    /// once the due date has come, the automatic payment of the rest.
+    pub paid_cents: i64,
+    /// What is still to be paid: the total less the Early Payments, never
+    /// negative. Zero once the invoice is Paid (the due date settles it); an
+    /// Open or Closed invoice paid in full early also has zero remaining but
+    /// keeps its state until the due date, so purchases may still raise it.
     pub remaining_cents: i64,
+}
+
+/// Where a payment of an invoice came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaymentOrigin {
+    /// Made by the user before the due date and stored.
+    Early(InvoicePaymentId),
+    /// Derived on the due date from what was still unpaid; never stored.
+    Automatic,
+}
+
+/// Money that left (or will leave) the balance to pay an invoice. It is not an
+/// expense: the spending was counted when the purchases were made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvoicePayment {
+    pub card_id: CreditCardId,
+    /// The invoice it pays, by its closing month.
+    pub closing_month: Month,
+    pub date: NaiveDate,
+    /// Cents, greater than zero.
+    pub amount_cents: i64,
+    pub origin: PaymentOrigin,
+}
+
+/// An Early Payment as stored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaymentFact {
+    pub id: InvoicePaymentId,
+    /// The closing month of the invoice it pays.
+    pub closing_month: Month,
+    pub date: NaiveDate,
+    /// Cents, greater than zero.
+    pub amount_cents: i64,
 }
 
 /// Card purchases of one day, added up.
@@ -277,6 +321,8 @@ pub struct CardFacts {
     pub spending: Vec<CardSpend>,
     /// The card's Installments, each already allocated to an invoice.
     pub installments: Vec<InstallmentCharge>,
+    /// The Early Payments stored for the card's invoices.
+    pub payments: Vec<PaymentFact>,
 }
 
 impl CardFacts {
@@ -334,8 +380,9 @@ impl CardFacts {
         self.cycle(self.schedule.invoice_month_for(date), today)
     }
 
-    fn invoice(&self, month: Month, today: NaiveDate) -> Invoice {
-        let cycle = self.cycle(month, today);
+    /// What the invoice closing in `month` adds up to: its single purchases
+    /// and its Installments.
+    fn total_of(&self, month: Month) -> i64 {
         let purchases: i64 = self
             .spending
             .iter()
@@ -348,28 +395,55 @@ impl CardFacts {
             .filter(|charge| charge.invoice_month == month)
             .map(|charge| charge.amount_cents)
             .sum();
-        let total_cents = purchases + installments;
-        let remaining_cents = match cycle.state {
-            InvoiceState::Paid => 0,
-            _ => total_cents,
+        purchases + installments
+    }
+
+    fn early_paid_of(&self, month: Month) -> i64 {
+        self.payments
+            .iter()
+            .filter(|payment| payment.closing_month == month)
+            .map(|payment| payment.amount_cents)
+            .sum()
+    }
+
+    /// The closing months with a purchase, an Installment or a payment,
+    /// oldest first.
+    fn active_months(&self) -> Vec<Month> {
+        let mut months: Vec<Month> = self
+            .spending
+            .iter()
+            .map(|spend| self.schedule.invoice_month_for(spend.date))
+            .chain(self.installments.iter().map(|charge| charge.invoice_month))
+            .chain(self.payments.iter().map(|payment| payment.closing_month))
+            .collect();
+        months.sort();
+        months.dedup();
+        months
+    }
+
+    fn invoice(&self, month: Month, today: NaiveDate) -> Invoice {
+        let cycle = self.cycle(month, today);
+        let total_cents = self.total_of(month);
+        let early = self.early_paid_of(month);
+        let unpaid = (total_cents - early).max(0);
+        let (paid_cents, remaining_cents) = match cycle.state {
+            // The due date debits the rest on its own.
+            InvoiceState::Paid => (early + unpaid, 0),
+            _ => (early, unpaid),
         };
         Invoice {
             card_id: self.id,
             cycle,
             total_cents,
+            paid_cents,
             remaining_cents,
         }
     }
 
-    /// The card's invoices, oldest first: every one that has purchases and the
-    /// first open one, even when still empty.
+    /// The card's invoices, oldest first: every one that has purchases or
+    /// payments and the first open one, even when still empty.
     pub fn invoices(&self, today: NaiveDate) -> Vec<Invoice> {
-        let mut months: Vec<Month> = self
-            .spending
-            .iter()
-            .map(|spend| self.schedule.invoice_month_for(spend.date))
-            .collect();
-        months.extend(self.installments.iter().map(|charge| charge.invoice_month));
+        let mut months = self.active_months();
         months.push(self.schedule.first_open_month(today));
         months.sort();
         months.dedup();
@@ -383,5 +457,41 @@ impl CardFacts {
         self.invoices(today)
             .into_iter()
             .find(|invoice| invoice.cycle.closing_month == month)
+    }
+
+    /// Every payment of the card's invoices, oldest first: the stored Early
+    /// Payments and, for each invoice, the automatic payment dated on its due
+    /// date for whatever the Early Payments left unpaid. It does not depend on
+    /// "today": an automatic payment in the future is a projection of the same
+    /// rule, and it changes as purchases are added.
+    pub fn payments(&self) -> Vec<InvoicePayment> {
+        let mut found = Vec::new();
+        for month in self.active_months() {
+            let early = self.early_paid_of(month);
+            found.extend(
+                self.payments
+                    .iter()
+                    .filter(|payment| payment.closing_month == month)
+                    .map(|payment| InvoicePayment {
+                        card_id: self.id,
+                        closing_month: month,
+                        date: payment.date,
+                        amount_cents: payment.amount_cents,
+                        origin: PaymentOrigin::Early(payment.id),
+                    }),
+            );
+            let unpaid = self.total_of(month) - early;
+            if unpaid > 0 {
+                found.push(InvoicePayment {
+                    card_id: self.id,
+                    closing_month: month,
+                    date: self.schedule.due_date(month),
+                    amount_cents: unpaid,
+                    origin: PaymentOrigin::Automatic,
+                });
+            }
+        }
+        found.sort_by_key(|payment| (payment.date, payment.closing_month));
+        found
     }
 }

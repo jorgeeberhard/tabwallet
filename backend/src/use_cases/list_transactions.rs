@@ -5,14 +5,19 @@ use uuid::Uuid;
 
 use crate::{
     ids::{
-        CardPurchaseId, CategoryId, InstallmentPurchaseId, RecurringTransactionId, TransactionId,
-        UserId,
+        CardPurchaseId, CategoryId, CreditCardId, InstallmentPurchaseId, InvoicePaymentId,
+        RecurringTransactionId, TransactionId, UserId,
     },
-    ledger::{Ledger, LedgerFacts, Occurrence, projection_horizon},
+    ledger::{
+        Ledger, LedgerFacts, Occurrence,
+        cards::{InvoiceCycle, InvoicePayment, Month, PaymentOrigin},
+        projection_horizon,
+    },
     repositories::{
         card_purchases::CardPurchaseRepository,
-        credit_cards::CreditCardRepository,
+        credit_cards::{CreditCard, CreditCardRepository},
         installment_purchases::InstallmentPurchaseRepository,
+        invoice_payments::InvoicePaymentRepository,
         recurring::{RecurringRepository, RecurringTransaction},
         statement::{StatementKey, StatementRepository},
         transactions::{Transaction, TransactionFilter, TransactionRepository, TransactionType},
@@ -67,16 +72,31 @@ impl StatementOccurrence {
     }
 }
 
+/// One Invoice Payment in the statement: an Early Payment the user made, or
+/// the automatic payment of an invoice's due date (derived on every read). It
+/// is not an expense and has no Category; it carries the card and the invoice
+/// it pays.
+#[derive(Clone, Debug)]
+pub struct StatementInvoicePayment {
+    pub payment: InvoicePayment,
+    pub credit_card_name: String,
+    pub credit_card_active: bool,
+    pub invoice: InvoiceCycle,
+    /// When an Early Payment was recorded; `None` for the automatic payment.
+    pub created_at: Option<DateTime<Utc>>,
+}
+
 /// One entry of the statement: a Transaction outside the credit card, a card
-/// purchase (with its card and invoice) or an Occurrence of a recurring
-/// Transaction. Invoice payments join as a new variant, with its own data,
-/// instead of being squeezed into `Transaction`.
+/// purchase (with its card and invoice), an Occurrence of a recurring
+/// Transaction or an Invoice Payment (early or automatic). Each kind has its
+/// own data instead of being squeezed into `Transaction`.
 #[derive(Clone, Debug)]
 pub enum StatementItem {
     Transaction(Transaction),
     CardPurchase(CardPurchaseView),
     InstallmentPurchase(InstallmentPurchaseView),
     Occurrence(StatementOccurrence),
+    InvoicePayment(StatementInvoicePayment),
 }
 
 impl StatementItem {
@@ -104,6 +124,16 @@ impl StatementItem {
                 occurrence.created_at,
                 occurrence.recurring_id.0,
             ),
+            // An automatic payment is derived, so it has no creation time: it
+            // goes last in its day, and its card keeps two of them apart.
+            Self::InvoicePayment(item) => (
+                item.payment.date,
+                item.created_at.unwrap_or(DateTime::<Utc>::MIN_UTC),
+                match item.payment.origin {
+                    PaymentOrigin::Early(id) => id.0,
+                    PaymentOrigin::Automatic => item.payment.card_id.0,
+                },
+            ),
         }
     }
 }
@@ -114,16 +144,18 @@ pub struct Statement {
     pub total: i64,
 }
 
-/// UC08: lists the user's Transactions, card purchases and the Occurrences of
-/// their recurring Transactions, newest first, optionally narrowed by period,
-/// Category, type and credit card.
+/// UC08: lists the user's Transactions, card purchases, Invoice Payments and
+/// the Occurrences of their recurring Transactions, newest first, optionally
+/// narrowed by period, Category, type and credit card.
 ///
-/// Transactions and card purchases are ordered and paged by the database
-/// (`StatementRepository`). Occurrences are computed here from the ledger,
-/// never read from the database, and merged in. Without an end date the
-/// statement reaches the projection horizon (the end of the month 12 months
-/// from now); a later `to` is cut there. A credit card filter leaves the
-/// Occurrences out: they never belong to a card.
+/// Transactions, card purchases and Early Payments are ordered and paged by the
+/// database (`StatementRepository`). Occurrences and the automatic Invoice
+/// Payments of due dates are computed here from the ledger, never read from
+/// the database, and merged in. Without an end date the statement reaches the
+/// projection horizon (the end of the month 12 months from now); a later `to`
+/// is cut there. A credit card filter leaves the Occurrences out (they never
+/// belong to a card) and keeps that card's payments. A Category or type filter
+/// leaves the payments out: they have neither.
 pub struct ListTransactionsUseCase {
     statement: StatementRepository,
     transactions: TransactionRepository,
@@ -131,6 +163,7 @@ pub struct ListTransactionsUseCase {
     installment_purchases: InstallmentPurchaseRepository,
     cards: CreditCardRepository,
     recurring: RecurringRepository,
+    payments: InvoicePaymentRepository,
 }
 
 impl ListTransactionsUseCase {
@@ -141,6 +174,7 @@ impl ListTransactionsUseCase {
         installment_purchases: InstallmentPurchaseRepository,
         cards: CreditCardRepository,
         recurring: RecurringRepository,
+        payments: InvoicePaymentRepository,
     ) -> Self {
         Self {
             statement,
@@ -149,6 +183,7 @@ impl ListTransactionsUseCase {
             installment_purchases,
             cards,
             recurring,
+            payments,
         }
     }
 
@@ -160,18 +195,23 @@ impl ListTransactionsUseCase {
         limit: i64,
         offset: i64,
     ) -> Result<Statement, TransactionError> {
-        let occurrences = if filter.credit_card_id.is_some() {
+        let mut computed: Vec<StatementItem> = if filter.credit_card_id.is_some() {
             Vec::new()
         } else {
-            self.occurrences(user_id, today, filter).await?
+            self.occurrences(user_id, today, filter)
+                .await?
+                .into_iter()
+                .map(StatementItem::Occurrence)
+                .collect()
         };
+        computed.extend(self.automatic_payments(user_id, today, filter).await?);
         let total = self
             .statement
             .count(user_id, filter)
             .await
             .map_err(TransactionError::internal)?;
 
-        if occurrences.is_empty() {
+        if computed.is_empty() {
             return Ok(Statement {
                 items: self.stored(user_id, today, filter, limit, offset).await?,
                 total,
@@ -180,13 +220,13 @@ impl ListTransactionsUseCase {
 
         // The page is the `offset..offset + limit` slice of both sorted lists
         // merged, so the first `offset + limit` of each list are enough.
-        let occurrence_count = occurrences.len() as i64;
+        let computed_count = computed.len() as i64;
         let head = (offset + limit).max(0);
         let mut items = self.stored(user_id, today, filter, head, 0).await?;
-        items.extend(occurrences.into_iter().map(StatementItem::Occurrence));
+        items.extend(computed);
         items.sort_by_key(|item| Reverse(item.sort_key()));
         Ok(Statement {
-            total: total + occurrence_count,
+            total: total + computed_count,
             items: items
                 .into_iter()
                 .skip(offset as usize)
@@ -195,8 +235,8 @@ impl ListTransactionsUseCase {
         })
     }
 
-    /// One page of what is stored (Transactions and card purchases), in the
-    /// order of the statement.
+    /// One page of what is stored (Transactions, card purchases and Early
+    /// Payments), in the order of the statement.
     async fn stored(
         &self,
         user_id: UserId,
@@ -233,6 +273,13 @@ impl ListTransactionsUseCase {
                 _ => None,
             })
             .collect();
+        let payment_ids: Vec<InvoicePaymentId> = keys
+            .iter()
+            .filter_map(|key| match key {
+                StatementKey::InvoicePayment(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
 
         let mut transactions: HashMap<TransactionId, Transaction> = self
             .transactions
@@ -245,10 +292,40 @@ impl ListTransactionsUseCase {
         let mut purchases: HashMap<CardPurchaseId, CardPurchaseView> = HashMap::new();
         let mut installment_purchases: HashMap<InstallmentPurchaseId, InstallmentPurchaseView> =
             HashMap::new();
-        if !purchase_ids.is_empty() || !installment_purchase_ids.is_empty() {
+        let mut payments: HashMap<InvoicePaymentId, StatementInvoicePayment> = HashMap::new();
+        if !purchase_ids.is_empty()
+            || !installment_purchase_ids.is_empty()
+            || !payment_ids.is_empty()
+        {
             let (_, ledger) = card_ledger(&self.cards, &self.purchases, user_id)
                 .await
                 .map_err(TransactionError::internal)?;
+            for payment in self
+                .payments
+                .find_many(user_id, &payment_ids)
+                .await
+                .map_err(TransactionError::internal)?
+            {
+                let month = Month::of(payment.closing_month);
+                if let Some(invoice) = ledger.invoice(payment.credit_card_id, month, today) {
+                    payments.insert(
+                        payment.id,
+                        StatementInvoicePayment {
+                            payment: InvoicePayment {
+                                card_id: payment.credit_card_id,
+                                closing_month: month,
+                                date: payment.date,
+                                amount_cents: payment.amount_cents,
+                                origin: PaymentOrigin::Early(payment.id),
+                            },
+                            credit_card_name: payment.credit_card_name,
+                            credit_card_active: payment.credit_card_active,
+                            invoice: invoice.cycle,
+                            created_at: Some(payment.created_at),
+                        },
+                    );
+                }
+            }
             for purchase in self
                 .purchases
                 .find_many(user_id, &purchase_ids)
@@ -284,6 +361,53 @@ impl ListTransactionsUseCase {
                 StatementKey::InstallmentPurchase(id) => installment_purchases
                     .remove(&id)
                     .map(StatementItem::InstallmentPurchase),
+                StatementKey::InvoicePayment(id) => {
+                    payments.remove(&id).map(StatementItem::InvoicePayment)
+                }
+            })
+            .collect())
+    }
+
+    /// The automatic Invoice Payments (invoices' due dates) inside the filter's
+    /// period, up to the projection horizon, for the filter's card if it names
+    /// one. Those on or before today have already left the Current Balance; the
+    /// later ones are projections. A Category or type filter excludes them.
+    async fn automatic_payments(
+        &self,
+        user_id: UserId,
+        today: NaiveDate,
+        filter: TransactionFilter,
+    ) -> Result<Vec<StatementItem>, TransactionError> {
+        if filter.category_id.is_some() || filter.kind.is_some() {
+            return Ok(Vec::new());
+        }
+        let (cards, ledger) = card_ledger(&self.cards, &self.purchases, user_id)
+            .await
+            .map_err(TransactionError::internal)?;
+        let from = filter.from.unwrap_or(NaiveDate::MIN);
+        let to = filter.to.map_or(projection_horizon(today), |to| {
+            to.min(projection_horizon(today))
+        });
+        let card_named = |id: CreditCardId| cards.iter().find(|card: &&CreditCard| card.id == id);
+        Ok(ledger
+            .invoice_payments(from, to)
+            .into_iter()
+            .filter(|payment| payment.origin == PaymentOrigin::Automatic)
+            .filter(|payment| {
+                filter
+                    .credit_card_id
+                    .is_none_or(|card_id| card_id == payment.card_id)
+            })
+            .filter_map(|payment| {
+                let card = card_named(payment.card_id)?;
+                let invoice = ledger.invoice(payment.card_id, payment.closing_month, today)?;
+                Some(StatementItem::InvoicePayment(StatementInvoicePayment {
+                    payment,
+                    credit_card_name: card.name.clone(),
+                    credit_card_active: card.active,
+                    invoice: invoice.cycle,
+                    created_at: None,
+                }))
             })
             .collect())
     }

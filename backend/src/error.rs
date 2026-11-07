@@ -20,8 +20,8 @@ use crate::{
     ids::CategoryId,
     use_cases::{
         AuthError, BalanceError, BalanceSeriesError, CardProblem, CardPurchaseError, CategoryError,
-        CategoryProblem, CreditCardError, InstallmentPurchaseError, RecurringError,
-        TransactionError,
+        CategoryProblem, CreditCardError, InstallmentPurchaseError, InvoicePaymentError,
+        RecurringError, TransactionError,
     },
 };
 
@@ -63,7 +63,8 @@ pub enum ApiError {
     CreditCardHasRemainingInvoice,
     /// No such card purchase for this user.
     CardPurchaseNotFound,
-    /// The card purchase is in a paid invoice and cannot be edited or deleted.
+    /// The invoice is paid, so its purchases cannot be edited or deleted and it
+    /// takes no payment.
     InvoicePaid,
     /// No such installment purchase for this user.
     InstallmentPurchaseNotFound,
@@ -178,6 +179,21 @@ impl From<CreditCardError> for ApiError {
             CreditCardError::NameTaken => Self::CreditCardNameTaken,
             CreditCardError::HasRemainingInvoice => Self::CreditCardHasRemainingInvoice,
             CreditCardError::Internal(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<InvoicePaymentError> for ApiError {
+    fn from(error: InvoicePaymentError) -> Self {
+        match error {
+            InvoicePaymentError::CardNotFound => Self::CreditCardNotFound,
+            InvoicePaymentError::InvoiceNotFound => Self::InvoiceNotFound,
+            InvoicePaymentError::InvoicePaid => Self::InvoicePaid,
+            InvoicePaymentError::AmountExceedsRemaining => Self::Validation(BTreeMap::from([(
+                "amount_cents".to_string(),
+                "amount_exceeds_remaining".to_string(),
+            )])),
+            InvoicePaymentError::Internal(cause) => Self::Internal(cause),
         }
     }
 }
@@ -383,7 +399,7 @@ impl IntoResponse for ApiError {
             Self::InvoicePaid => (
                 StatusCode::CONFLICT,
                 "invoice_paid",
-                "The purchase is in a paid invoice and cannot be changed.",
+                "The invoice is paid and cannot be changed.",
                 None,
             ),
             Self::InstallmentPurchaseNotFound => (

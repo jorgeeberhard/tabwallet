@@ -14,6 +14,7 @@ use crate::{
     error::ApiError,
     ledger::{BalancePoint, Granularity},
     repositories::{
+        card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
         transactions::TransactionRepository,
     },
@@ -107,6 +108,8 @@ pub async fn history(
         TransactionRepository::new(state.pool.clone()),
         OpeningBalanceRepository::new(state.pool.clone()),
         RecurringRepository::new(state.pool.clone()),
+        CreditCardRepository::new(state.pool.clone()),
+        CardPurchaseRepository::new(state.pool.clone()),
     )
     .execute(
         auth_user.id,
@@ -165,6 +168,8 @@ pub async fn projection(
         TransactionRepository::new(state.pool.clone()),
         OpeningBalanceRepository::new(state.pool.clone()),
         RecurringRepository::new(state.pool.clone()),
+        CreditCardRepository::new(state.pool.clone()),
+        CardPurchaseRepository::new(state.pool.clone()),
     )
     .execute(
         auth_user.id,

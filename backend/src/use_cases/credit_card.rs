@@ -4,7 +4,7 @@ use crate::{
     ids::{CreditCardId, UserId},
     ledger::{
         Ledger, LedgerFacts,
-        cards::{CardFacts, CardSchedule, Invoice, InvoiceCycle, Month},
+        cards::{CardFacts, CardSchedule, Invoice, InvoiceCycle, InvoicePayment, Month},
     },
     repositories::{
         card_purchases::{CardPurchase, CardPurchaseRepository},
@@ -72,13 +72,13 @@ impl CreditCardView {
     }
 }
 
-/// The ledger over all of a user's cards and their purchases, with the cards.
-/// Every invoice question starts here.
-pub(super) async fn card_ledger(
+/// What the ledger needs to know about all of a user's cards: their days,
+/// purchases and Early Payments.
+pub(super) async fn card_facts(
     cards: &CreditCardRepository,
     purchases: &CardPurchaseRepository,
     user_id: UserId,
-) -> Result<(Vec<CreditCard>, Ledger), CreditCardError> {
+) -> Result<(Vec<CreditCard>, Vec<CardFacts>), CreditCardError> {
     let list = cards
         .list(user_id)
         .await
@@ -95,6 +95,10 @@ pub(super) async fn card_ledger(
         .installment_charges(user_id)
         .await
         .map_err(CreditCardError::internal)?;
+    let mut payments = cards
+        .payments(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
     let facts = list
         .iter()
         .filter_map(|card| {
@@ -103,9 +107,21 @@ pub(super) async fn card_ledger(
                 schedule: schedules.remove(&card.id)?,
                 spending: spending.remove(&card.id).unwrap_or_default(),
                 installments: installments.remove(&card.id).unwrap_or_default(),
+                payments: payments.remove(&card.id).unwrap_or_default(),
             })
         })
         .collect();
+    Ok((list, facts))
+}
+
+/// The ledger over all of a user's cards and their purchases, with the cards.
+/// Every invoice question starts here.
+pub(super) async fn card_ledger(
+    cards: &CreditCardRepository,
+    purchases: &CardPurchaseRepository,
+    user_id: UserId,
+) -> Result<(Vec<CreditCard>, Ledger), CreditCardError> {
+    let (list, facts) = card_facts(cards, purchases, user_id).await?;
     Ok((
         list,
         Ledger::new(LedgerFacts {
@@ -255,6 +271,7 @@ impl UpdateCreditCardUseCase {
                     schedule: schedule.clone(),
                     spending: Vec::new(),
                     installments: Vec::new(),
+                    payments: Vec::new(),
                 },
                 today,
             )
@@ -372,6 +389,9 @@ pub struct InvoiceDetail {
     pub purchases: Vec<CardPurchaseView>,
     /// The Installments in the invoice, newest purchase first.
     pub installments: Vec<InvoiceInstallment>,
+    /// The payments of the invoice, oldest first: the Early Payments and, once
+    /// there is something unpaid, the automatic one on the due date.
+    pub payments: Vec<InvoicePayment>,
 }
 
 /// The invoice of a card closing in one month, with its purchases and
@@ -428,10 +448,12 @@ impl GetInvoiceUseCase {
         )
         .await
         .map_err(CreditCardError::internal)?;
+        let payments = ledger.payments_of_invoice(card_id, closing_month);
         Ok(InvoiceDetail {
             invoice,
             purchases,
             installments,
+            payments,
         })
     }
 }

@@ -82,6 +82,10 @@ pub fn build_router(state: AppState) -> Router {
             "/credit-cards/{id}/invoices/{closing_month}",
             get(handlers::credit_cards::invoice),
         )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}/payments",
+            post(handlers::invoice_payments::pay),
+        )
         .route("/card-purchases", post(handlers::card_purchases::create))
         .route(
             "/card-purchases/{id}",
