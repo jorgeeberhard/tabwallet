@@ -9,6 +9,7 @@ mod create_transaction;
 mod credit_card;
 mod delete_transaction;
 mod get_current_user;
+mod installment_purchase;
 mod invoice_payment;
 mod list_categories;
 mod list_transactions;
@@ -44,6 +45,11 @@ pub use credit_card::{
 };
 pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
+pub use installment_purchase::{
+    CancelInstallmentPurchaseUseCase, CancelOutcome, CreateInstallmentPurchaseUseCase,
+    InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView, InvoiceInstallment,
+    UpdateInstallmentPurchaseUseCase,
+};
 pub use invoice_payment::{
     CorrectInvoicePaymentUseCase, CorrectionReceipt, EarlyPaymentReceipt, InvoicePaymentError,
     PayInvoiceUseCase,

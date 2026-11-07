@@ -6,7 +6,8 @@ use sqlx::PgPool;
 use crate::{
     ids::{CreditCardId, UserId},
     ledger::cards::{
-        CardSchedule, ChargeFact, CorrectionFact, Month, PaymentFact, ScheduleVersion,
+        CardSchedule, ChargeFact, CorrectionFact, InstallmentCharge, Month, PaymentFact,
+        ScheduleVersion,
     },
 };
 
@@ -67,6 +68,13 @@ impl ScheduleRow {
 }
 
 #[derive(sqlx::FromRow)]
+struct ChargeRow {
+    credit_card_id: CreditCardId,
+    invoice_month: NaiveDate,
+    amount_cents: i64,
+}
+
+#[derive(sqlx::FromRow)]
 struct PaymentRow {
     id: crate::ids::InvoicePaymentId,
     credit_card_id: CreditCardId,
@@ -78,7 +86,7 @@ struct PaymentRow {
 /// A row with an invoice (by card and closing month) and an amount: a Charge
 /// or a correction of the due-date payment.
 #[derive(sqlx::FromRow)]
-struct ChargeRow {
+struct InvoiceAmountRow {
     credit_card_id: CreditCardId,
     closing_month: NaiveDate,
     amount_cents: i64,
@@ -247,13 +255,44 @@ impl CreditCardRepository {
         Ok(grouped)
     }
 
+    /// The user's Installments as facts for the ledger, per card: each one's
+    /// amount and the invoice (closing month) it is in. They are read here,
+    /// with the card's other facts, so that every question about a card's
+    /// invoices sees them; the installment purchases themselves are the
+    /// business of `InstallmentPurchaseRepository`.
+    pub async fn installment_charges(
+        &self,
+        user_id: UserId,
+    ) -> Result<HashMap<CreditCardId, Vec<InstallmentCharge>>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, ChargeRow>(
+            "SELECT p.credit_card_id, i.invoice_month, i.amount_cents
+             FROM installments i
+             JOIN installment_purchases p ON p.id = i.installment_purchase_id
+             WHERE i.user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut grouped: HashMap<CreditCardId, Vec<InstallmentCharge>> = HashMap::new();
+        for row in rows {
+            grouped
+                .entry(row.credit_card_id)
+                .or_default()
+                .push(InstallmentCharge {
+                    invoice_month: Month::of(row.invoice_month),
+                    amount_cents: row.amount_cents,
+                });
+        }
+        Ok(grouped)
+    }
+
     /// The Charges recorded in the invoices of every card of the user, as
     /// facts for the ledger.
     pub async fn charges(
         &self,
         user_id: UserId,
     ) -> Result<HashMap<CreditCardId, Vec<ChargeFact>>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, ChargeRow>(
+        let rows = sqlx::query_as::<_, InvoiceAmountRow>(
             "SELECT credit_card_id, closing_month, amount_cents
              FROM invoice_charges WHERE user_id = $1",
         )
@@ -279,7 +318,7 @@ impl CreditCardRepository {
         &self,
         user_id: UserId,
     ) -> Result<HashMap<CreditCardId, Vec<CorrectionFact>>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, ChargeRow>(
+        let rows = sqlx::query_as::<_, InvoiceAmountRow>(
             "SELECT credit_card_id, closing_month, amount_cents
              FROM invoice_payment_corrections WHERE user_id = $1",
         )

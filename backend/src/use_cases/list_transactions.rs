@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     ids::{
-        CardPurchaseId, CategoryId, CreditCardId, InvoicePaymentId, RecurringTransactionId,
-        TransactionId, UserId,
+        CardPurchaseId, CategoryId, CreditCardId, InstallmentPurchaseId, InvoicePaymentId,
+        RecurringTransactionId, TransactionId, UserId,
     },
     ledger::{
         Ledger, LedgerFacts, Occurrence,
@@ -16,6 +16,7 @@ use crate::{
     repositories::{
         card_purchases::CardPurchaseRepository,
         credit_cards::{CreditCard, CreditCardRepository},
+        installment_purchases::InstallmentPurchaseRepository,
         invoice_payments::InvoicePaymentRepository,
         recurring::{RecurringRepository, RecurringTransaction},
         statement::{StatementKey, StatementRepository},
@@ -27,6 +28,7 @@ use super::{
     TransactionError,
     card_purchase::CardPurchaseView,
     credit_card::{card_ledger, view_of},
+    installment_purchase::{InstallmentPurchaseView, views_of},
 };
 
 /// One Occurrence of a recurring Transaction (a Gasto fixo or Receita fixa) in
@@ -92,6 +94,7 @@ pub struct StatementInvoicePayment {
 pub enum StatementItem {
     Transaction(Transaction),
     CardPurchase(CardPurchaseView),
+    InstallmentPurchase(InstallmentPurchaseView),
     Occurrence(StatementOccurrence),
     InvoicePayment(StatementInvoicePayment),
 }
@@ -107,6 +110,11 @@ impl StatementItem {
                 (transaction.date, transaction.created_at, transaction.id.0)
             }
             Self::CardPurchase(view) => (
+                view.purchase.date,
+                view.purchase.created_at,
+                view.purchase.id.0,
+            ),
+            Self::InstallmentPurchase(view) => (
                 view.purchase.date,
                 view.purchase.created_at,
                 view.purchase.id.0,
@@ -152,6 +160,7 @@ pub struct ListTransactionsUseCase {
     statement: StatementRepository,
     transactions: TransactionRepository,
     purchases: CardPurchaseRepository,
+    installment_purchases: InstallmentPurchaseRepository,
     cards: CreditCardRepository,
     recurring: RecurringRepository,
     payments: InvoicePaymentRepository,
@@ -162,6 +171,7 @@ impl ListTransactionsUseCase {
         statement: StatementRepository,
         transactions: TransactionRepository,
         purchases: CardPurchaseRepository,
+        installment_purchases: InstallmentPurchaseRepository,
         cards: CreditCardRepository,
         recurring: RecurringRepository,
         payments: InvoicePaymentRepository,
@@ -170,6 +180,7 @@ impl ListTransactionsUseCase {
             statement,
             transactions,
             purchases,
+            installment_purchases,
             cards,
             recurring,
             payments,
@@ -255,6 +266,13 @@ impl ListTransactionsUseCase {
             })
             .collect();
 
+        let installment_purchase_ids: Vec<InstallmentPurchaseId> = keys
+            .iter()
+            .filter_map(|key| match key {
+                StatementKey::InstallmentPurchase(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
         let payment_ids: Vec<InvoicePaymentId> = keys
             .iter()
             .filter_map(|key| match key {
@@ -272,8 +290,13 @@ impl ListTransactionsUseCase {
             .map(|transaction| (transaction.id, transaction))
             .collect();
         let mut purchases: HashMap<CardPurchaseId, CardPurchaseView> = HashMap::new();
+        let mut installment_purchases: HashMap<InstallmentPurchaseId, InstallmentPurchaseView> =
+            HashMap::new();
         let mut payments: HashMap<InvoicePaymentId, StatementInvoicePayment> = HashMap::new();
-        if !purchase_ids.is_empty() || !payment_ids.is_empty() {
+        if !purchase_ids.is_empty()
+            || !installment_purchase_ids.is_empty()
+            || !payment_ids.is_empty()
+        {
             let (_, ledger) = card_ledger(&self.cards, &self.purchases, user_id)
                 .await
                 .map_err(TransactionError::internal)?;
@@ -313,6 +336,17 @@ impl ListTransactionsUseCase {
                     purchases.insert(view.purchase.id, view);
                 }
             }
+            let found = self
+                .installment_purchases
+                .find_many(user_id, &installment_purchase_ids)
+                .await
+                .map_err(TransactionError::internal)?;
+            for view in views_of(&self.installment_purchases, &ledger, user_id, found, today)
+                .await
+                .map_err(TransactionError::internal)?
+            {
+                installment_purchases.insert(view.purchase.id, view);
+            }
         }
 
         Ok(keys
@@ -324,6 +358,9 @@ impl ListTransactionsUseCase {
                 StatementKey::CardPurchase(id) => {
                     purchases.remove(&id).map(StatementItem::CardPurchase)
                 }
+                StatementKey::InstallmentPurchase(id) => installment_purchases
+                    .remove(&id)
+                    .map(StatementItem::InstallmentPurchase),
                 StatementKey::InvoicePayment(id) => {
                     payments.remove(&id).map(StatementItem::InvoicePayment)
                 }

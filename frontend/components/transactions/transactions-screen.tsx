@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
-import { CreditCardIcon, InboxIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
+import { CreditCardIcon, InboxIcon, LayersIcon, PlusIcon, TriangleAlertIcon } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -15,8 +15,14 @@ import {
   type CardPurchaseDialogMode,
 } from "@/components/credit-cards/card-purchase-dialog"
 import { CardPurchaseRow } from "@/components/credit-cards/card-purchase-row"
+import { CancelInstallmentPurchaseDialog } from "@/components/credit-cards/cancel-installment-purchase-dialog"
 import { DeleteCardPurchaseDialog } from "@/components/credit-cards/delete-card-purchase-dialog"
 import { InvoicePaymentRow } from "@/components/credit-cards/invoice-payment-row"
+import {
+  InstallmentPurchaseDialog,
+  type InstallmentPurchaseDialogMode,
+} from "@/components/credit-cards/installment-purchase-dialog"
+import { InstallmentPurchaseRow } from "@/components/credit-cards/installment-purchase-row"
 import {
   TransactionDialog,
   type TransactionDialogMode,
@@ -54,6 +60,7 @@ import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
 import {
   type CardPurchase,
   CREDIT_CARDS_KEY,
+  type InstallmentPurchase,
   listCreditCards,
 } from "@/lib/credit-cards-api"
 import { formatDate, formatMonth } from "@/lib/format"
@@ -106,6 +113,10 @@ export function TransactionsScreen() {
   const [creditCardId, setCreditCardId] = useState(ALL_CARDS)
   const [dialog, setDialog] = useState<TransactionDialogMode | null>(null)
   const [cardDialog, setCardDialog] = useState<CardPurchaseDialogMode | null>(null)
+  const [installmentDialog, setInstallmentDialog] = useState<InstallmentPurchaseDialogMode | null>(
+    null,
+  )
+  const [installmentToCancel, setInstallmentToCancel] = useState<InstallmentPurchase | null>(null)
   const [toDelete, setToDelete] = useState<Transaction | null>(null)
   const [cardPurchaseToDelete, setCardPurchaseToDelete] = useState<CardPurchase | null>(null)
   const [occurrenceToEdit, setOccurrenceToEdit] = useState<Occurrence | null>(null)
@@ -203,16 +214,20 @@ export function TransactionsScreen() {
           <h1 className="font-display text-3xl font-bold tracking-tight">Transações</h1>
           <p className="max-w-prose text-muted-foreground">
             Receitas, despesas, ocorrências dos seus gastos e receitas fixos, compras no cartão
-            de crédito e pagamentos de fatura. As compras no cartão mostram a fatura em que
-            entram e só mexem no saldo quando a fatura é paga; o pagamento de fatura (antecipado
-            ou o do vencimento) tira o valor do saldo, mas não é uma despesa. Lançamentos com
-            data futura aparecem como projeção.
+            de crédito, compras parceladas e pagamentos de fatura. As compras no cartão mostram a
+            fatura em que entram e só mexem no saldo quando a fatura é paga; o pagamento de
+            fatura (antecipado ou o do vencimento) tira o valor do saldo, mas não é uma despesa.
+            Lançamentos com data futura aparecem como projeção.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setCardDialog({ kind: "create" })}>
             <CreditCardIcon strokeWidth={1.75} />
             Nova compra no cartão
+          </Button>
+          <Button variant="outline" onClick={() => setInstallmentDialog({ kind: "create" })}>
+            <LayersIcon strokeWidth={1.75} />
+            Nova compra parcelada
           </Button>
           <Button onClick={() => setDialog({ kind: "create", type: newDialogType })}>
             <PlusIcon strokeWidth={1.75} />
@@ -377,6 +392,13 @@ export function TransactionsScreen() {
                         onEdit={(purchase) => setCardDialog({ kind: "edit", purchase })}
                         onDelete={setCardPurchaseToDelete}
                       />
+                    ) : item.kind === "installment_purchase" ? (
+                      <InstallmentPurchaseRow
+                        key={statementItemKey(item)}
+                        purchase={item}
+                        onEdit={(purchase) => setInstallmentDialog({ kind: "edit", purchase })}
+                        onCancel={setInstallmentToCancel}
+                      />
                     ) : item.kind === "invoice_payment" ? (
                       <InvoicePaymentRow
                         key={statementItemKey(item)}
@@ -441,6 +463,18 @@ export function TransactionsScreen() {
       <DeleteCardPurchaseDialog
         purchase={cardPurchaseToDelete}
         onClose={() => setCardPurchaseToDelete(null)}
+      />
+
+      {installmentDialog && (
+        <InstallmentPurchaseDialog
+          key={installmentDialog.kind === "edit" ? installmentDialog.purchase.id : "create"}
+          mode={installmentDialog}
+          onClose={() => setInstallmentDialog(null)}
+        />
+      )}
+      <CancelInstallmentPurchaseDialog
+        purchase={installmentToCancel}
+        onClose={() => setInstallmentToCancel(null)}
       />
 
       {occurrenceToEdit && (

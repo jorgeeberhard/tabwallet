@@ -11,6 +11,7 @@ use validator::Validate;
 use super::{
     card_purchases::CardPurchaseResponse,
     extract::{ValidatedJson, trimmed, trimmed_opt},
+    installment_purchases::InvoiceInstallmentResponse,
     invoice_payments::InvoicePaymentResponse,
 };
 use crate::{
@@ -19,7 +20,10 @@ use crate::{
     error::ApiError,
     ids::CreditCardId,
     ledger::cards::{Invoice, InvoiceCycle, InvoiceState, Month},
-    repositories::{card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository},
+    repositories::{
+        card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
+        installment_purchases::InstallmentPurchaseRepository,
+    },
     use_cases::{
         CreateCreditCardUseCase, CreditCardChanges, CreditCardView, DeactivateCreditCardUseCase,
         GetInvoiceUseCase, ListCreditCardsUseCase, ListInvoicesUseCase,
@@ -141,18 +145,21 @@ pub async fn update(
     Path(id): Path<String>,
     ValidatedJson(request): ValidatedJson<UpdateRequest>,
 ) -> Result<Json<CreditCardEnvelope>, ApiError> {
-    let view = UpdateCreditCardUseCase::new(CreditCardRepository::new(state.pool.clone()))
-        .execute(
-            auth_user.id,
-            parse_id(&id)?,
-            CreditCardChanges {
-                name: request.name,
-                closing_day: request.closing_day,
-                due_day: request.due_day,
-            },
-            state.clock.today(),
-        )
-        .await?;
+    let view = UpdateCreditCardUseCase::new(
+        CreditCardRepository::new(state.pool.clone()),
+        InstallmentPurchaseRepository::new(state.pool.clone()),
+    )
+    .execute(
+        auth_user.id,
+        parse_id(&id)?,
+        CreditCardChanges {
+            name: request.name,
+            closing_day: request.closing_day,
+            due_day: request.due_day,
+        },
+        state.clock.today(),
+    )
+    .await?;
     Ok(envelope(view))
 }
 
@@ -277,6 +284,9 @@ pub struct InvoiceDetailResponse {
     invoice: InvoiceResponse,
     /// Newest first.
     purchases: Vec<CardPurchaseResponse>,
+    /// The Installments of installment purchases in this invoice (the "3/10"
+    /// lines), newest purchase first.
+    installments: Vec<InvoiceInstallmentResponse>,
     /// The Early Payments and the automatic payment of the due date (when
     /// something is left unpaid), oldest first. None is an expense.
     payments: Vec<InvoicePaymentResponse>,
@@ -295,6 +305,7 @@ pub async fn invoice(
     let detail = GetInvoiceUseCase::new(
         CreditCardRepository::new(state.pool.clone()),
         CardPurchaseRepository::new(state.pool.clone()),
+        InstallmentPurchaseRepository::new(state.pool.clone()),
     )
     .execute(auth_user.id, card_id, month, today)
     .await?;
@@ -305,6 +316,7 @@ pub async fn invoice(
             .into_iter()
             .map(|view| CardPurchaseResponse::new(view, today))
             .collect(),
+        installments: detail.installments.into_iter().map(Into::into).collect(),
         payments: detail
             .payments
             .iter()

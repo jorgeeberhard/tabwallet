@@ -96,6 +96,15 @@ pub fn build_router(state: AppState) -> Router {
             patch(handlers::card_purchases::update).delete(handlers::card_purchases::delete),
         )
         .route(
+            "/installment-purchases",
+            post(handlers::installment_purchases::create),
+        )
+        .route(
+            "/installment-purchases/{id}",
+            patch(handlers::installment_purchases::update)
+                .delete(handlers::installment_purchases::delete),
+        )
+        .route(
             "/recurring-transactions",
             get(handlers::recurring::list).post(handlers::recurring::create),
         )

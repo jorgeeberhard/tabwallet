@@ -9,10 +9,14 @@ use crate::{
     repositories::{
         card_purchases::{CardPurchase, CardPurchaseRepository},
         credit_cards::{CreditCard, CreditCardRepository, WriteCardError},
+        installment_purchases::InstallmentPurchaseRepository,
     },
 };
 
-use super::card_purchase::CardPurchaseView;
+use super::{
+    card_purchase::CardPurchaseView,
+    installment_purchase::{InvoiceInstallment, invoice_installments, reallocate_for_card},
+};
 
 /// Why a credit-card use case failed. Unaware of HTTP: the handler layer
 /// decides the status code.
@@ -87,6 +91,10 @@ pub(super) async fn card_facts(
         .spending(user_id)
         .await
         .map_err(CreditCardError::internal)?;
+    let mut installments = cards
+        .installment_charges(user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
     let mut payments = cards
         .payments(user_id)
         .await
@@ -106,6 +114,7 @@ pub(super) async fn card_facts(
                 id: card.id,
                 schedule: schedules.remove(&card.id)?,
                 spending: spending.remove(&card.id).unwrap_or_default(),
+                installments: installments.remove(&card.id).unwrap_or_default(),
                 payments: payments.remove(&card.id).unwrap_or_default(),
                 charges: charges.remove(&card.id).unwrap_or_default(),
                 corrections: corrections.remove(&card.id).unwrap_or_default(),
@@ -205,11 +214,18 @@ pub struct CreditCardChanges {
 /// closed and paid invoices keep the days they had.
 pub struct UpdateCreditCardUseCase {
     cards: CreditCardRepository,
+    installment_purchases: InstallmentPurchaseRepository,
 }
 
 impl UpdateCreditCardUseCase {
-    pub fn new(cards: CreditCardRepository) -> Self {
-        Self { cards }
+    pub fn new(
+        cards: CreditCardRepository,
+        installment_purchases: InstallmentPurchaseRepository,
+    ) -> Self {
+        Self {
+            cards,
+            installment_purchases,
+        }
     }
 
     pub async fn execute(
@@ -255,6 +271,22 @@ impl UpdateCreditCardUseCase {
                 .map_err(CreditCardError::internal)?
                 .remove(&id)
                 .ok_or(CreditCardError::NotFound)?;
+            // Installments are stored with their invoice, so the new days
+            // must move them the way they move single purchases.
+            reallocate_for_card(
+                &self.installment_purchases,
+                user_id,
+                &CardFacts {
+                    id,
+                    schedule: schedule.clone(),
+                    spending: Vec::new(),
+                    installments: Vec::new(),
+                    payments: Vec::new(),
+                },
+                today,
+            )
+            .await
+            .map_err(CreditCardError::internal)?;
         }
         Ok(CreditCardView::new(card, &schedule))
     }
@@ -365,20 +397,32 @@ pub struct InvoiceDetail {
     pub invoice: Invoice,
     /// Newest first.
     pub purchases: Vec<CardPurchaseView>,
+    /// The Installments in the invoice, newest purchase first.
+    pub installments: Vec<InvoiceInstallment>,
     /// The payments of the invoice, oldest first: the Early Payments and, once
     /// there is something unpaid, the automatic one on the due date.
     pub payments: Vec<InvoicePayment>,
 }
 
-/// The invoice of a card closing in one month, with its purchases.
+/// The invoice of a card closing in one month, with its purchases and
+/// Installments.
 pub struct GetInvoiceUseCase {
     cards: CreditCardRepository,
     purchases: CardPurchaseRepository,
+    installment_purchases: InstallmentPurchaseRepository,
 }
 
 impl GetInvoiceUseCase {
-    pub fn new(cards: CreditCardRepository, purchases: CardPurchaseRepository) -> Self {
-        Self { cards, purchases }
+    pub fn new(
+        cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
+        installment_purchases: InstallmentPurchaseRepository,
+    ) -> Self {
+        Self {
+            cards,
+            purchases,
+            installment_purchases,
+        }
     }
 
     pub async fn execute(
@@ -404,10 +448,21 @@ impl GetInvoiceUseCase {
             .filter_map(|purchase| view_of(&ledger, purchase, today))
             .filter(|view| view.invoice.closing_month == closing_month)
             .collect();
+        let installments = invoice_installments(
+            &self.installment_purchases,
+            &ledger,
+            user_id,
+            card_id,
+            closing_month,
+            today,
+        )
+        .await
+        .map_err(CreditCardError::internal)?;
         let payments = ledger.payments_of_invoice(card_id, closing_month);
         Ok(InvoiceDetail {
             invoice,
             purchases,
+            installments,
             payments,
         })
     }
