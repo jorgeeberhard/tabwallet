@@ -9,6 +9,7 @@ mod create_transaction;
 mod credit_card;
 mod delete_transaction;
 mod get_current_user;
+mod installment_anticipation;
 mod installment_purchase;
 mod invoice_charge;
 mod invoice_payment;
@@ -46,6 +47,10 @@ pub use credit_card::{
 };
 pub use delete_transaction::DeleteTransactionUseCase;
 pub use get_current_user::GetCurrentUserUseCase;
+pub use installment_anticipation::{
+    AnticipableInstallments, AnticipateInstallmentsUseCase, AnticipationReceipt,
+    InstallmentAnticipationError, ListAnticipableInstallmentsUseCase,
+};
 pub use installment_purchase::{
     CancelInstallmentPurchaseUseCase, CancelOutcome, CreateInstallmentPurchaseUseCase,
     InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView, InvoiceInstallment,

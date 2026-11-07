@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { InvoiceInstallment } from "@/lib/credit-cards-api"
-import { formatDate, formatMonthOfYear } from "@/lib/format"
+import { formatBRL, formatDate, formatMonthOfYear } from "@/lib/format"
 
 interface InvoiceInstallmentRowProps {
   item: InvoiceInstallment
@@ -30,7 +30,10 @@ interface InvoiceInstallmentRowProps {
  */
 export function InvoiceInstallmentRow({ item, onEdit, onCancel }: InvoiceInstallmentRowProps) {
   const paid = item.invoice.state === "paid"
-  const cancelLabel = item.purchaseHasPaidInstallments ? "Cancelar parcelas restantes" : "Excluir"
+  // An anticipated Installment is history, like a paid one: it cannot be cancelled.
+  const history = paid || item.anticipated
+  const onlyRemaining = item.purchaseHasPaidInstallments || item.purchaseHasAnticipatedInstallments
+  const cancelLabel = onlyRemaining ? "Cancelar parcelas restantes" : "Excluir"
   const label = `${item.description} ${item.number}/${item.installmentCount}`
 
   return (
@@ -57,6 +60,18 @@ export function InvoiceInstallmentRow({ item, onEdit, onCancel }: InvoiceInstall
             Fatura de {formatMonthOfYear(item.referenceMonth)} ·{" "}
             {invoiceStateLabel(item.invoice.state).toLowerCase()}
           </Badge>
+          {item.anticipated && (
+            <Badge variant="outline">
+              Antecipada
+              {item.originalInvoiceMonth && ` de ${formatMonthOfYear(item.originalInvoiceMonth)}`}
+            </Badge>
+          )}
+          {item.discountCents > 0 && (
+            <span>
+              Desconto de {formatBRL(item.discountCents / 100)} (era{" "}
+              {formatBRL(item.originalAmountCents / 100)})
+            </span>
+          )}
         </span>
       </div>
 
@@ -74,9 +89,15 @@ export function InvoiceInstallmentRow({ item, onEdit, onCancel }: InvoiceInstall
         <Button
           variant="ghost"
           size="icon"
-          disabled={paid}
+          disabled={history}
           aria-label={`${cancelLabel} ${label}`}
-          title={paid ? "Parcelas de fatura paga não podem ser canceladas" : undefined}
+          title={
+            paid
+              ? "Parcelas de fatura paga não podem ser canceladas"
+              : item.anticipated
+                ? "Parcelas antecipadas não podem ser canceladas"
+                : undefined
+          }
           onClick={() => onCancel(item)}
         >
           <Trash2Icon strokeWidth={1.75} />
@@ -95,7 +116,11 @@ export function InvoiceInstallmentRow({ item, onEdit, onCancel }: InvoiceInstall
               <PencilIcon strokeWidth={1.75} />
               Editar
             </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" disabled={paid} onSelect={() => onCancel(item)}>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={history}
+              onSelect={() => onCancel(item)}
+            >
               <Trash2Icon strokeWidth={1.75} />
               {cancelLabel}
             </DropdownMenuItem>

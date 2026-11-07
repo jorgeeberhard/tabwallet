@@ -56,6 +56,8 @@ export interface InstallmentPurchaseTarget {
   creditCard: { id: string; name: string }
   /** Some Installment is in a paid invoice: only the Category can change. */
   hasPaidInstallments: boolean
+  /** Some Installment was anticipated (UC19): same limits as a paid one. */
+  hasAnticipatedInstallments: boolean
 }
 
 /** The purchase an invoice line belongs to, as the dialog edits it. */
@@ -69,6 +71,7 @@ export function targetOfInvoiceInstallment(item: InvoiceInstallment): Installmen
     category: item.category,
     creditCard: item.creditCard,
     hasPaidInstallments: item.purchaseHasPaidInstallments,
+    hasAnticipatedInstallments: item.purchaseHasAnticipatedInstallments,
   }
 }
 
@@ -117,7 +120,7 @@ export function splitSummary(totalCents: number | null, count: number): string |
 export function InstallmentPurchaseDialog({ mode, onClose }: InstallmentPurchaseDialogProps) {
   const queryClient = useQueryClient()
   const editing = mode.kind === "edit" ? mode.purchase : null
-  const locked = editing?.hasPaidInstallments ?? false
+  const locked = (editing?.hasPaidInstallments || editing?.hasAnticipatedInstallments) ?? false
   const [cardId, setCardId] = useState(
     editing?.creditCard.id ?? (mode.kind === "create" ? (mode.creditCardId ?? "") : ""),
   )
@@ -251,8 +254,10 @@ export function InstallmentPurchaseDialog({ mode, onClose }: InstallmentPurchase
             <Alert variant="warning">
               <InfoIcon strokeWidth={1.75} />
               <AlertDescription>
-                Esta compra já tem parcelas em fatura paga. Só a categoria pode mudar; para parar de
-                pagar, cancele as parcelas restantes.
+                {editing?.hasAnticipatedInstallments
+                  ? "Esta compra tem parcelas antecipadas, e a antecipação não pode ser desfeita. "
+                  : "Esta compra já tem parcelas em fatura paga. "}
+                Só a categoria pode mudar; para parar de pagar, cancele as parcelas restantes.
               </AlertDescription>
             </Alert>
           )}
