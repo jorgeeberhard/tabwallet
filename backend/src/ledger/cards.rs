@@ -18,6 +18,13 @@
 //! is. Neither is an expense: they leave the balance on their date and are
 //! reported as [`InvoicePayment`]s, apart from card purchases.
 //!
+//! Correcting the payment (UC20) and Charges (UC21): the user may replace the
+//! due-date payment with the amount really paid; what is left unpaid becomes
+//! the Carried Balance of the next invoice, a derived item that is not an
+//! expense and that counts in that invoice's total (and so in what it carries
+//! on in turn). Charges are expenses the user records in an invoice and are part
+//! of its total. Both are stored as facts; the amounts follow from them.
+//!
 //! A card keeps a history of its days ([`CardSchedule`]) so that changing them
 //! only affects invoices still open: closed and paid invoices keep the days
 //! they were closed with.
