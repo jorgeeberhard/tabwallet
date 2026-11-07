@@ -106,7 +106,7 @@ export function ExpensesByCategory() {
       ) : (
         <>
           <Card>
-            <CardContent className="flex flex-col gap-1 pt-6">
+            <CardContent className="flex flex-col gap-1">
               <h3 className="text-sm font-medium text-muted-foreground">
                 Total de despesas em {periodLabel}
               </h3>
