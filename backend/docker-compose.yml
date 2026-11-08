@@ -1,0 +1,15 @@
+# Local development database. Run `docker compose up -d` in this directory.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tabwallet
+      POSTGRES_PASSWORD: tabwallet
+      POSTGRES_DB: tabwallet
+    ports:
+      - "5432:5432"
+    volumes:
+      - tabwallet-pgdata:/var/lib/postgresql/data
+
+volumes:
+  tabwallet-pgdata:

@@ -1,0 +1,108 @@
+/// Gives a use case error its `internal(cause)` constructor: an unexpected
+/// failure (a repository error, say) wrapped in the `Internal` variant, whose
+/// cause is logged and never shown to the client.
+macro_rules! internal_error {
+    ($error:ident) => {
+        impl $error {
+            pub fn internal(cause: impl std::fmt::Display) -> Self {
+                Self::Internal(cause.to_string())
+            }
+        }
+    };
+}
+
+mod auth_error;
+mod balance;
+mod balance_series;
+mod budget;
+mod card_purchase;
+mod category_error;
+mod check_health;
+mod create_category;
+mod create_transaction;
+mod credit_card;
+mod delete_transaction;
+mod get_current_user;
+mod installment_anticipation;
+mod installment_purchase;
+mod invoice_charge;
+mod invoice_payment;
+mod ledger_loader;
+mod list_categories;
+mod list_transactions;
+mod log_in;
+mod recurring;
+mod rename_category;
+mod reports;
+mod request_password_reset;
+mod reset_password;
+mod set_category_active;
+mod sign_up;
+mod transaction_error;
+mod update_profile;
+mod update_transaction;
+
+pub use auth_error::{AuthError, Session};
+pub use balance::{BalanceError, BalanceReport, GetBalanceUseCase, SetOpeningBalanceUseCase};
+pub use balance_series::{
+    BalanceHistory, BalanceSeriesError, GetBalanceHistoryUseCase, GetProjectedBalanceUseCase,
+    HistoryQuery, ProjectedBalance,
+};
+pub use budget::{
+    BudgetCategory, BudgetError, BudgetReport, BudgetStatusLine, BudgetView,
+    GetBudgetStatusUseCase, ListBudgetsUseCase, RemoveBudgetUseCase, SetBudgetUseCase,
+};
+pub use card_purchase::{
+    CardProblem, CardPurchaseError, CardPurchaseView, CreateCardPurchaseUseCase,
+    DeleteCardPurchaseUseCase, UpdateCardPurchaseUseCase,
+};
+pub use category_error::CategoryError;
+pub use check_health::{CheckHealthUseCase, HealthReport};
+pub use create_category::CreateCategoryUseCase;
+pub use create_transaction::CreateTransactionUseCase;
+pub use credit_card::{
+    CreateCreditCardUseCase, CreditCardChanges, CreditCardError, CreditCardView,
+    DeactivateCreditCardUseCase, GetInvoiceUseCase, InvoiceDetail, ListCreditCardsUseCase,
+    ListInvoicesUseCase, ReactivateCreditCardUseCase, UpdateCreditCardUseCase,
+};
+pub use delete_transaction::DeleteTransactionUseCase;
+pub use get_current_user::GetCurrentUserUseCase;
+pub use installment_anticipation::{
+    AnticipableInstallments, AnticipateInstallmentsUseCase, AnticipationReceipt,
+    InstallmentAnticipationError, ListAnticipableInstallmentsUseCase,
+};
+pub use installment_purchase::{
+    CancelInstallmentPurchaseUseCase, CancelOutcome, CreateInstallmentPurchaseUseCase,
+    InstallmentPurchaseError, InstallmentPurchaseView, InstallmentView, InvoiceInstallment,
+    UpdateInstallmentPurchaseUseCase,
+};
+pub use invoice_charge::{
+    ChargeError, ChargeReceipt, ChargeView, CreateChargeUseCase, DeleteChargeUseCase,
+    NewChargeInput, UpdateChargeUseCase,
+};
+pub use invoice_payment::{
+    CorrectInvoicePaymentUseCase, CorrectionReceipt, EarlyPaymentReceipt, InvoicePaymentError,
+    PayInvoiceUseCase,
+};
+pub use list_categories::ListCategoriesUseCase;
+pub use list_transactions::{
+    ListTransactionsUseCase, Statement, StatementInvoicePayment, StatementItem, StatementOccurrence,
+};
+pub use log_in::LogInUseCase;
+pub use recurring::{
+    CreateRecurringTransactionUseCase, EditOccurrenceUseCase, EndRecurringTransactionUseCase,
+    ListRecurringTransactionsUseCase, NewRecurring, OccurrenceView, RecurringChanges,
+    RecurringError, RecurringView, SkipOccurrenceUseCase, UpdateRecurringTransactionUseCase,
+};
+pub use rename_category::RenameCategoryUseCase;
+pub use reports::{
+    CategoryLine, ExpensesByCategory, GetExpensesByCategoryUseCase, GetIncomeVsExpensesUseCase,
+    IncomeVsExpenses, ReportError, ReportPeriod,
+};
+pub use request_password_reset::RequestPasswordResetUseCase;
+pub use reset_password::ResetPasswordUseCase;
+pub use set_category_active::{DeactivateCategoryUseCase, ReactivateCategoryUseCase};
+pub use sign_up::SignUpUseCase;
+pub use transaction_error::{CategoryProblem, TransactionError};
+pub use update_profile::{ProfileChanges, UpdateProfileUseCase};
+pub use update_transaction::UpdateTransactionUseCase;
