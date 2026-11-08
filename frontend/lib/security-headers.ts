@@ -29,7 +29,9 @@ export function securityHeaders({ production }: { production: boolean }): Header
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    ...(production ? ["upgrade-insecure-requests"] : []),
+    // No `upgrade-insecure-requests`: it also upgrades the API calls of a
+    // production build served over plain HTTP on a *.localhost name, which then
+    // fail. HSTS below already makes browsers use HTTPS for the real site.
   ].join("; ")
 
   const headers: Header[] = [

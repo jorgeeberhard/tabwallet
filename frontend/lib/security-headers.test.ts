@@ -42,16 +42,20 @@ describe("securityHeaders", () => {
     expect(production).not.toContain("'unsafe-eval'")
   })
 
-  it("asks for HTTPS (HSTS and upgrading requests) only in production", () => {
+  it("asks for HTTPS (HSTS) only in production", () => {
     const production = securityHeaders({ production: true })
     const dev = securityHeaders({ production: false })
 
     expect(header(production, "Strict-Transport-Security")).toBe(
       "max-age=63072000; includeSubDomains",
     )
-    expect(header(production, "Content-Security-Policy")).toContain("upgrade-insecure-requests")
     expect(header(dev, "Strict-Transport-Security")).toBeUndefined()
-    expect(header(dev, "Content-Security-Policy")).not.toContain("upgrade-insecure-requests")
+  })
+
+  it("does not upgrade requests, which would break a local production build over HTTP", () => {
+    const csp = header(securityHeaders({ production: true }), "Content-Security-Policy")!
+
+    expect(csp).not.toContain("upgrade-insecure-requests")
   })
 
   it("turns off browser features the app does not use", () => {

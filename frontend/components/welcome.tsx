@@ -16,7 +16,7 @@ export function Welcome() {
           Você entrou como <strong className="font-semibold">{user.name || user.email}</strong>.{" "}
           <Link
             href="/profile"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            className="-my-2 inline-block py-2 font-medium text-primary underline-offset-4 hover:underline"
           >
             Editar perfil
           </Link>
