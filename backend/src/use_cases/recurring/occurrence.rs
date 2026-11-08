@@ -3,7 +3,7 @@ use chrono::NaiveDate;
 use super::{RecurringError, find};
 use crate::{
     ids::{RecurringTransactionId, UserId},
-    ledger::{Ledger, LedgerFacts, Occurrence, OccurrenceChange, first_of_month},
+    ledger::{Ledger, Occurrence, OccurrenceChange, first_of_month},
     repositories::recurring::{RecurringRepository, RecurringTransaction},
 };
 
@@ -19,12 +19,9 @@ fn occurrence_of(
     recurring: &RecurringTransaction,
     month: NaiveDate,
 ) -> Result<Occurrence, RecurringError> {
-    Ledger::new(LedgerFacts {
-        recurring: vec![recurring.definition.clone()],
-        ..LedgerFacts::default()
-    })
-    .occurrence(recurring.id, month)
-    .ok_or(RecurringError::OccurrenceNotFound)
+    Ledger::of_recurring(vec![recurring.definition.clone()])
+        .occurrence(recurring.id, month)
+        .ok_or(RecurringError::OccurrenceNotFound)
 }
 
 /// UC07: deletes one single Occurrence. Only an exception is stored; the

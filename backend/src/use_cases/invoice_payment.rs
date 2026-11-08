@@ -48,11 +48,7 @@ pub enum InvoicePaymentError {
     Internal(String),
 }
 
-impl InvoicePaymentError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(InvoicePaymentError);
 
 impl From<CreditCardError> for InvoicePaymentError {
     fn from(error: CreditCardError) -> Self {

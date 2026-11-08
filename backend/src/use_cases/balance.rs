@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use crate::{
     ids::UserId,
-    ledger::{Ledger, LedgerFacts},
+    ledger::Ledger,
     repositories::{
         card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::credit_card::card_facts;
+use super::ledger_loader::LedgerLoader;
 
 /// Why a balance use case failed. Unaware of HTTP: the handler layer decides
 /// the status code.
@@ -23,11 +23,7 @@ pub enum BalanceError {
     Internal(String),
 }
 
-impl BalanceError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(BalanceError);
 
 /// The user's balance on one day.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,11 +36,7 @@ pub struct BalanceReport {
 /// The Current Balance on `today`, with the Opening Balance
 /// it includes. Feeds the ledger with what is stored and asks it.
 pub struct GetBalanceUseCase {
-    transactions: TransactionRepository,
-    opening_balance: OpeningBalanceRepository,
-    recurring: RecurringRepository,
-    cards: CreditCardRepository,
-    purchases: CardPurchaseRepository,
+    loader: LedgerLoader,
 }
 
 impl GetBalanceUseCase {
@@ -56,11 +48,7 @@ impl GetBalanceUseCase {
         purchases: CardPurchaseRepository,
     ) -> Self {
         Self {
-            transactions,
-            opening_balance,
-            recurring,
-            cards,
-            purchases,
+            loader: LedgerLoader::new(transactions, opening_balance, recurring, cards, purchases),
         }
     }
 
@@ -69,42 +57,13 @@ impl GetBalanceUseCase {
         user_id: UserId,
         today: NaiveDate,
     ) -> Result<BalanceReport, BalanceError> {
-        // Independent reads, run together (one round trip to the database).
-        let (opening_balance_cents, cash_flows, recurring, (_, cards)) = tokio::try_join!(
-            async {
-                self.opening_balance
-                    .find(user_id)
-                    .await
-                    .map_err(BalanceError::internal)
-            },
-            async {
-                self.transactions
-                    .cash_flows(user_id)
-                    .await
-                    .map_err(BalanceError::internal)
-            },
-            async {
-                self.recurring
-                    .list(user_id)
-                    .await
-                    .map_err(BalanceError::internal)
-            },
-            async {
-                card_facts(&self.cards, &self.purchases, user_id)
-                    .await
-                    .map_err(BalanceError::internal)
-            },
-        )?;
-        let recurring = recurring
-            .into_iter()
-            .map(|recurring| recurring.definition)
-            .collect();
-        let ledger = Ledger::new(LedgerFacts {
-            opening_balance_cents,
-            cash_flows,
-            recurring,
-            cards,
-        });
+        let facts = self
+            .loader
+            .facts(user_id)
+            .await
+            .map_err(BalanceError::internal)?;
+        let opening_balance_cents = facts.opening_balance_cents;
+        let ledger = Ledger::new(facts);
         Ok(BalanceReport {
             current_balance_cents: ledger.current_balance(today),
             opening_balance_cents,

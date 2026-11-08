@@ -98,6 +98,23 @@ impl Ledger {
         }
     }
 
+    /// A ledger that knows only these recurring Transactions: enough to ask
+    /// for their Occurrences.
+    pub fn of_recurring(recurring: Vec<RecurringDefinition>) -> Self {
+        Self::new(LedgerFacts {
+            recurring,
+            ..LedgerFacts::default()
+        })
+    }
+
+    /// A ledger that knows only the cards: enough to ask about invoices.
+    pub fn of_cards(cards: Vec<CardFacts>) -> Self {
+        Self::new(LedgerFacts {
+            cards,
+            ..LedgerFacts::default()
+        })
+    }
+
     /// The Current Balance on `today`, in cents: the Opening Balance plus
     /// incomes minus expenses dated `today` or earlier, counting the
     /// Occurrences of recurring Transactions that have already fallen, minus

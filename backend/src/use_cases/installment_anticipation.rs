@@ -50,11 +50,7 @@ pub enum InstallmentAnticipationError {
     Internal(String),
 }
 
-impl InstallmentAnticipationError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(InstallmentAnticipationError);
 
 impl From<super::CreditCardError> for InstallmentAnticipationError {
     fn from(error: super::CreditCardError) -> Self {

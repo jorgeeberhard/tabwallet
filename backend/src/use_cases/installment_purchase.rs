@@ -67,11 +67,7 @@ pub enum InstallmentPurchaseError {
     Internal(String),
 }
 
-impl InstallmentPurchaseError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(InstallmentPurchaseError);
 
 impl From<super::CreditCardError> for InstallmentPurchaseError {
     fn from(error: super::CreditCardError) -> Self {

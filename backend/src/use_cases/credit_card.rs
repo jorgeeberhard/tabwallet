@@ -3,7 +3,7 @@ use chrono::NaiveDate;
 use crate::{
     ids::{CreditCardId, UserId},
     ledger::{
-        Ledger, LedgerFacts,
+        Ledger,
         cards::{
             CardChange, CardFacts, CardSchedule, Invoice, InvoiceCycle, InvoicePayment, Month,
         },
@@ -46,11 +46,7 @@ pub enum CreditCardError {
     Internal(String),
 }
 
-impl CreditCardError {
-    pub(super) fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(CreditCardError);
 
 impl From<WriteCardError> for CreditCardError {
     fn from(error: WriteCardError) -> Self {
@@ -86,7 +82,7 @@ pub(super) async fn card_facts(
     cards: &CreditCardRepository,
     purchases: &CardPurchaseRepository,
     user_id: UserId,
-) -> Result<(Vec<CreditCard>, Vec<CardFacts>), CreditCardError> {
+) -> Result<(Vec<CreditCard>, Vec<CardFacts>), sqlx::Error> {
     // Seven independent reads: run together, so a request waits for one round
     // trip to the database instead of seven.
     let (
@@ -105,8 +101,7 @@ pub(super) async fn card_facts(
         cards.payments(user_id),
         cards.charges(user_id),
         cards.corrections(user_id),
-    )
-    .map_err(CreditCardError::internal)?;
+    )?;
     let facts = list
         .iter()
         .filter_map(|card| {
@@ -131,14 +126,10 @@ pub(super) async fn card_ledger(
     purchases: &CardPurchaseRepository,
     user_id: UserId,
 ) -> Result<(Vec<CreditCard>, Ledger), CreditCardError> {
-    let (list, facts) = card_facts(cards, purchases, user_id).await?;
-    Ok((
-        list,
-        Ledger::new(LedgerFacts {
-            cards: facts,
-            ..LedgerFacts::default()
-        }),
-    ))
+    let (list, facts) = card_facts(cards, purchases, user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
+    Ok((list, Ledger::of_cards(facts)))
 }
 
 /// UC16: registers a card with its Closing Day and Due Day (1 to 31).

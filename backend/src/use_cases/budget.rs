@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use crate::{
     ids::{CategoryId, UserId},
-    ledger::{BudgetFacts, BudgetStatus, Ledger, LedgerFacts, cards::Month},
+    ledger::{BudgetFacts, BudgetStatus, Ledger, cards::Month},
     repositories::{
         budgets::{BudgetRepository, StoredBudget},
         card_purchases::CardPurchaseRepository,
@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use super::{CategoryProblem, credit_card::card_facts};
+use super::{CategoryProblem, ledger_loader::recurring_and_cards};
 
 /// Why a budget use case failed. Unaware of HTTP: the handler layer decides
 /// the status code.
@@ -30,11 +30,7 @@ pub enum BudgetError {
     Internal(String),
 }
 
-impl BudgetError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(BudgetError);
 
 /// The Category a Budget belongs to.
 #[derive(Clone, Debug)]
@@ -258,29 +254,13 @@ impl GetBudgetStatusUseCase {
                 lines: Vec::new(),
             });
         }
-        let spending = self
-            .spending
-            .facts(user_id)
-            .await
-            .map_err(BudgetError::internal)?;
-        let recurring = self
-            .recurring
-            .list(user_id)
-            .await
-            .map_err(BudgetError::internal)?
-            .into_iter()
-            .map(|recurring| recurring.definition)
-            .collect();
-        let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
-            .await
-            .map_err(BudgetError::internal)?;
+        let (spending, facts) = tokio::try_join!(
+            self.spending.facts(user_id),
+            recurring_and_cards(&self.recurring, &self.cards, &self.purchases, user_id),
+        )
+        .map_err(BudgetError::internal)?;
 
-        let ledger = Ledger::new(LedgerFacts {
-            recurring,
-            cards,
-            ..LedgerFacts::default()
-        })
-        .with_budget_facts(BudgetFacts {
+        let ledger = Ledger::new(facts).with_budget_facts(BudgetFacts {
             spending,
             budgets: stored.iter().map(|stored| stored.budget.clone()).collect(),
         });

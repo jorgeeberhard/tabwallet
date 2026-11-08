@@ -52,11 +52,7 @@ pub enum CardPurchaseError {
     Internal(String),
 }
 
-impl CardPurchaseError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(CardPurchaseError);
 
 impl From<super::CreditCardError> for CardPurchaseError {
     fn from(error: super::CreditCardError) -> Self {

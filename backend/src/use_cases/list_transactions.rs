@@ -9,7 +9,7 @@ use crate::{
         InvoicePaymentId, RecurringTransactionId, TransactionId, UserId,
     },
     ledger::{
-        Ledger, LedgerFacts, Occurrence,
+        Ledger, Occurrence,
         cards::{InvoiceCycle, InvoicePayment, Month, PaymentOrigin},
         projection_horizon,
     },
@@ -467,13 +467,12 @@ impl ListTransactionsUseCase {
         let to = filter.to.map_or(projection_horizon(today), |to| {
             to.min(projection_horizon(today))
         });
-        let ledger = Ledger::new(LedgerFacts {
-            recurring: recurring
+        let ledger = Ledger::of_recurring(
+            recurring
                 .iter()
                 .map(|recurring| recurring.definition.clone())
                 .collect(),
-            ..LedgerFacts::default()
-        });
+        );
         Ok(ledger
             .occurrences(from, to)
             .into_iter()

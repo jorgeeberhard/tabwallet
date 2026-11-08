@@ -48,11 +48,7 @@ pub enum RecurringError {
     Internal(String),
 }
 
-impl RecurringError {
-    pub fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(RecurringError);
 
 impl From<TransactionError> for RecurringError {
     fn from(error: TransactionError) -> Self {
