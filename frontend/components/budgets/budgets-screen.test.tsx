@@ -133,7 +133,7 @@ describe("BudgetsScreen", () => {
     renderScreen()
     await screen.findByRole("list", { name: "Categorias sem orçamento" })
 
-    await userEvent.click(screen.getByRole("button", { name: "Definir orçamento de Transporte" }))
+    await userEvent.click(screen.getByRole("button", { name: "Definir limite do orçamento de Transporte" }))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText(/a partir de novembro de 2026/)).toBeInTheDocument()
     await userEvent.type(within(dialog).getByLabelText("Limite por mês"), "350,50")
@@ -149,7 +149,7 @@ describe("BudgetsScreen", () => {
     renderScreen()
     await screen.findByRole("list", { name: "Categorias sem orçamento" })
 
-    await userEvent.click(screen.getByRole("button", { name: "Definir orçamento de Transporte" }))
+    await userEvent.click(screen.getByRole("button", { name: "Definir limite do orçamento de Transporte" }))
     const dialog = await screen.findByRole("dialog")
     await userEvent.click(within(dialog).getByRole("button", { name: "Salvar orçamento" }))
 
@@ -164,7 +164,7 @@ describe("BudgetsScreen", () => {
     renderScreen()
     await screen.findByRole("list", { name: "Orçamentos do mês" })
 
-    await userEvent.click(screen.getByRole("button", { name: "Alterar orçamento de Lazer" }))
+    await userEvent.click(screen.getByRole("button", { name: "Alterar limite do orçamento de Lazer" }))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByLabelText("Limite por mês")).toHaveValue("400,00")
   })

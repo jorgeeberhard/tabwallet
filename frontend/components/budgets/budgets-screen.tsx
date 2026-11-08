@@ -193,7 +193,7 @@ function BudgetsContent({ currentMonth }: { currentMonth: string }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        aria-label={`Alterar orçamento de ${line.category.name}`}
+                        aria-label={`Alterar limite do orçamento de ${line.category.name}`}
                         onClick={() => openDialog(line)}
                       >
                         Alterar limite
@@ -224,7 +224,7 @@ function BudgetsContent({ currentMonth }: { currentMonth: string }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        aria-label={`Definir orçamento de ${category.name}`}
+                        aria-label={`Definir limite do orçamento de ${category.name}`}
                         onClick={() =>
                           setDialog({
                             categoryId: category.id,
