@@ -11,14 +11,14 @@
 //! - State: Open until the closing date (inclusive), Closed after it until the
 //!   due date, Paid from the due date on.
 //!
-//! Paying an invoice (UC17, ADR-0003): the user may make Early Payments, total
+//! Paying an invoice (ADR-0003): the user may make Early Payments, total
 //! or partial, while the invoice is Open or Closed. On the due date the ledger
 //! derives an automatic Invoice Payment of whatever is still unpaid and the
 //! invoice becomes Paid. Early Payments are stored; the automatic one never
 //! is. Neither is an expense: they leave the balance on their date and are
 //! reported as [`InvoicePayment`]s, apart from card purchases.
 //!
-//! Correcting the payment (UC20) and Charges (UC21): the user may replace the
+//! Correcting the payment and Charges: the user may replace the
 //! due-date payment with the amount really paid; what is left unpaid becomes
 //! the Carried Balance of the next invoice, a derived item that is not an
 //! expense and that counts in that invoice's total (and so in what it carries
@@ -37,94 +37,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
+pub use super::month::Month;
 use crate::ids::{CreditCardId, InvoicePaymentId};
-
-/// A calendar month, such as 2026-10.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Month {
-    year: i32,
-    month: u32,
-}
-
-impl Month {
-    pub fn new(year: i32, month: u32) -> Option<Self> {
-        NaiveDate::from_ymd_opt(year, month, 1).map(|_| Self { year, month })
-    }
-
-    /// The month a date belongs to.
-    pub fn of(date: NaiveDate) -> Self {
-        Self {
-            year: date.year(),
-            month: date.month(),
-        }
-    }
-
-    /// Parses `YYYY-MM`.
-    pub fn parse(text: &str) -> Option<Self> {
-        let (year, month) = text.split_once('-')?;
-        if year.len() != 4 || month.len() != 2 {
-            return None;
-        }
-        Self::new(year.parse().ok()?, month.parse().ok()?)
-    }
-
-    pub fn first_day(self) -> NaiveDate {
-        NaiveDate::from_ymd_opt(self.year, self.month, 1).expect("a valid month")
-    }
-
-    pub fn next(self) -> Self {
-        if self.month == 12 {
-            Self {
-                year: self.year + 1,
-                month: 1,
-            }
-        } else {
-            Self {
-                year: self.year,
-                month: self.month + 1,
-            }
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        if self.month == 1 {
-            Self {
-                year: self.year - 1,
-                month: 12,
-            }
-        } else {
-            Self {
-                year: self.year,
-                month: self.month - 1,
-            }
-        }
-    }
-
-    /// The month `months` after this one.
-    pub fn plus(self, months: u32) -> Self {
-        let index = self.year * 12 + self.month as i32 - 1 + months as i32;
-        Self {
-            year: index.div_euclid(12),
-            month: index.rem_euclid(12) as u32 + 1,
-        }
-    }
-
-    /// The date of `day` in this month; in a shorter month, its last day.
-    pub fn day_or_last(self, day: u32) -> NaiveDate {
-        let last = self.next().first_day().pred_opt().expect("a valid date");
-        self.first_day()
-            .with_day(day.min(last.day()))
-            .expect("a day within the month")
-    }
-}
-
-impl std::fmt::Display for Month {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:04}-{:02}", self.year, self.month)
-    }
-}
 
 /// The closing and due days a card has from one closing month on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,6 +106,12 @@ impl CardSchedule {
 
     /// The first date after the closing date that is the Due Day: in the same
     /// month when the Due Day comes after the closing date, else in the next.
+    /// The Reference Month of everything in the invoice closing in `month`:
+    /// the month of its due date. The one place that rule lives.
+    pub fn reference_month(&self, month: Month) -> Month {
+        Month::of(self.due_date(month))
+    }
+
     pub fn due_date(&self, month: Month) -> NaiveDate {
         let closing = self.closing_date(month);
         let due_day = self.version_for(month).due_day;
@@ -247,19 +169,14 @@ pub struct InvoiceCycle {
     pub closing_month: Month,
     pub closing_date: NaiveDate,
     pub due_date: NaiveDate,
+    /// The month everything in the invoice counts in for reports and budgets:
+    /// the month of its due date ([`CardSchedule::reference_month`]).
+    pub reference_month: Month,
     pub state: InvoiceState,
 }
 
-impl InvoiceCycle {
-    /// The month everything in the invoice counts in for reports and budgets:
-    /// the month of its due date.
-    pub fn reference_month(&self) -> Month {
-        Month::of(self.due_date)
-    }
-}
-
 /// Whether the payment of an invoice can be corrected to the amount really
-/// paid at the bank (UC20).
+/// paid at the bank.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorrectionState {
     /// The due date has not come: there is no payment yet to correct.
@@ -374,7 +291,7 @@ pub struct ChargeFact {
 }
 
 /// The amount the user said they really paid of an invoice at its due date
-/// (UC20). It replaces the automatic payment.
+///. It replaces the automatic payment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CorrectionFact {
     pub closing_month: Month,
@@ -564,7 +481,7 @@ impl CardFacts {
                 .map(|(amount_cents, offset)| PlannedInstallment {
                     number: offset + 1,
                     amount_cents,
-                    cycle: self.cycle(first.plus(offset), today),
+                    cycle: self.cycle(first.plus(offset as i32), today),
                 })
                 .collect(),
         )
@@ -584,6 +501,7 @@ impl CardFacts {
             closing_month: month,
             closing_date,
             due_date,
+            reference_month: self.schedule.reference_month(month),
             state,
         }
     }

@@ -224,7 +224,7 @@ impl From<InvoiceCycle> for InvoiceCycleResponse {
             closing_month: cycle.closing_month.to_string(),
             closing_date: cycle.closing_date,
             due_date: cycle.due_date,
-            reference_month: cycle.reference_month().to_string(),
+            reference_month: cycle.reference_month.to_string(),
             state: state_name(cycle.state),
         }
     }
@@ -261,7 +261,7 @@ pub struct InvoiceResponse {
 }
 
 /// Whether, and up to how much, the due-date payment of an invoice can be
-/// corrected (UC20).
+/// corrected.
 #[derive(Serialize)]
 pub struct PaymentCorrectionResponse {
     /// `not_due` (the due date has not come), `nothing_to_pay` (Early Payments

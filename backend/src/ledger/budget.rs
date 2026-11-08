@@ -1,4 +1,4 @@
-//! Monthly Budgets and the spending they are compared with (UC12, UC13).
+//! Monthly Budgets and the spending they are compared with.
 //!
 //! A Budget is a limit for an expense Category that applies every month until
 //! the user changes it. The spending of a Category in a Reference Month is the
@@ -223,9 +223,7 @@ impl Ledger {
     /// due date of the invoice it enters. `None` for an unknown card.
     fn reference_month_of_purchase(&self, card_id: CreditCardId, date: NaiveDate) -> Option<Month> {
         let schedule = &self.card(card_id)?.schedule;
-        Some(Month::of(
-            schedule.due_date(schedule.invoice_month_for(date)),
-        ))
+        Some(schedule.reference_month(schedule.invoice_month_for(date)))
     }
 
     /// The Reference Month of everything in the invoice closing in
@@ -235,9 +233,7 @@ impl Ledger {
         card_id: CreditCardId,
         invoice_month: Month,
     ) -> Option<Month> {
-        Some(Month::of(
-            self.card(card_id)?.schedule.due_date(invoice_month),
-        ))
+        Some(self.card(card_id)?.schedule.reference_month(invoice_month))
     }
 
     /// Where every Category with a Budget in `month` stands, in the order the

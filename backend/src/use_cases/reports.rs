@@ -252,7 +252,7 @@ impl GetIncomeVsExpensesUseCase {
         let to = period.to.unwrap_or_else(|| Month::of(today));
         let from = period
             .from
-            .unwrap_or_else(|| shift_back(to, DEFAULT_SERIES_MONTHS - 1));
+            .unwrap_or_else(|| to.plus(1 - DEFAULT_SERIES_MONTHS as i32));
         let ledger = self.loader.load(user_id).await?;
         let months = ledger.income_vs_expenses(from, to, today)?;
         Ok(IncomeVsExpenses {
@@ -263,9 +263,4 @@ impl GetIncomeVsExpensesUseCase {
             months,
         })
     }
-}
-
-/// The month `months` before `month`.
-fn shift_back(month: Month, months: u32) -> Month {
-    (0..months).fold(month, |current, _| current.prev())
 }

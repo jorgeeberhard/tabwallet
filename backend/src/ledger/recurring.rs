@@ -5,33 +5,23 @@
 
 use chrono::{Datelike, NaiveDate};
 
-use super::FlowKind;
+use super::{FlowKind, month::Month};
 use crate::ids::RecurringTransactionId;
 
 /// The first day of the month `date` belongs to. Months are always handled as
 /// the date of their first day.
 pub fn first_of_month(date: NaiveDate) -> NaiveDate {
-    date.with_day(1).expect("day 1 exists in every month")
+    Month::of(date).first_day()
 }
 
 /// The first day of the month after the one `month` belongs to.
 pub fn next_month(month: NaiveDate) -> Option<NaiveDate> {
-    let month = first_of_month(month);
-    if month.month() == 12 {
-        NaiveDate::from_ymd_opt(month.year() + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd_opt(month.year(), month.month() + 1, 1)
-    }
+    Month::of(month).next().checked_first_day()
 }
 
 /// The first day of the month before the one `month` belongs to.
 pub fn previous_month(month: NaiveDate) -> Option<NaiveDate> {
-    let month = first_of_month(month);
-    if month.month() == 1 {
-        NaiveDate::from_ymd_opt(month.year() - 1, 12, 1)
-    } else {
-        NaiveDate::from_ymd_opt(month.year(), month.month() - 1, 1)
-    }
+    Month::of(month).prev().checked_first_day()
 }
 
 /// The last day of the month `month` belongs to.

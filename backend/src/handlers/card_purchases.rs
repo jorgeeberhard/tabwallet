@@ -84,7 +84,7 @@ impl CardPurchaseResponse {
                 name: purchase.credit_card_name,
                 active: purchase.credit_card_active,
             },
-            reference_month: view.invoice.reference_month().to_string(),
+            reference_month: view.invoice.reference_month.to_string(),
             invoice: view.invoice.into(),
             is_projection: purchase.date > today,
             created_at: purchase.created_at,

@@ -1,4 +1,4 @@
-//! Charges (Encargos, UC21): interest, penalty and IOF the bank charged on an
+//! Charges (Encargos): interest, penalty and IOF the bank charged on an
 //! invoice, recorded by the user. An expense of "Juros e encargos" linked to
 //! the invoice; the system never calculates it.
 
@@ -77,7 +77,7 @@ impl ChargeResponse {
                 charge.credit_card_name,
                 charge.credit_card_active,
             ),
-            reference_month: view.invoice.reference_month().to_string(),
+            reference_month: view.invoice.reference_month.to_string(),
             invoice: view.invoice.into(),
             is_projection: charge.date > today,
             created_at: charge.created_at,

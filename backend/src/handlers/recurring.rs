@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 use validator::Validate;
@@ -18,6 +18,7 @@ use crate::{
     auth::AuthUser,
     error::ApiError,
     ids::{CategoryId, RecurringTransactionId},
+    ledger::month::Month,
     repositories::{
         categories::CategoryRepository, recurring::RecurringRepository,
         transactions::TransactionType,
@@ -29,39 +30,23 @@ use crate::{
     },
 };
 
-/// A month as `YYYY-MM`; in Rust it is the date of the month's first day.
+/// A month as `YYYY-MM` in a request body; in Rust it is the date of the
+/// month's first day.
 #[derive(Clone, Copy, Debug)]
 pub struct YearMonth(NaiveDate);
-
-impl YearMonth {
-    fn parse(text: &str) -> Option<Self> {
-        let well_formed = text.len() == 7
-            && text.char_indices().all(|(index, c)| {
-                if index == 4 {
-                    c == '-'
-                } else {
-                    c.is_ascii_digit()
-                }
-            });
-        if !well_formed {
-            return None;
-        }
-        NaiveDate::parse_from_str(&format!("{text}-01"), "%Y-%m-%d")
-            .ok()
-            .map(Self)
-    }
-}
 
 impl<'de> Deserialize<'de> for YearMonth {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        Self::parse(&text).ok_or_else(|| serde::de::Error::custom("expected a month, YYYY-MM"))
+        Month::parse(&text)
+            .map(|month| Self(month.first_day()))
+            .ok_or_else(|| serde::de::Error::custom("expected a month, YYYY-MM"))
     }
 }
 
 /// `YYYY-MM` for a date in the month.
 fn month_text(date: NaiveDate) -> String {
-    format!("{:04}-{:02}", date.year(), date.month())
+    Month::of(date).to_string()
 }
 
 /// The Category of a recurring Transaction, as shown with it.
@@ -209,8 +194,8 @@ fn parse_id(raw: &str) -> Result<RecurringTransactionId, ApiError> {
 
 /// A malformed month is an Occurrence that does not exist.
 fn parse_month(raw: &str) -> Result<NaiveDate, ApiError> {
-    YearMonth::parse(raw)
-        .map(|month| month.0)
+    Month::parse(raw)
+        .map(Month::first_day)
         .ok_or(ApiError::OccurrenceNotFound)
 }
 
