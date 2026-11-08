@@ -88,7 +88,7 @@ Dia do mês em que a Fatura de um Cartão de crédito fecha. Compras feitas até
 Dia do mês em que a Fatura fechada deve ser paga.
 
 **Fatura** (`Invoice`):
-Conjunto das Compras no cartão e Parcelas de um Cartão de crédito em um ciclo de fechamento. Só afeta o Saldo atual por meio de Pagamentos de fatura. Passa por três estados: **Aberta** (recebe compras), **Fechada** (após o Dia de fechamento) e **Paga** (valor restante zerado). Compras e Parcelas de uma Fatura Paga não podem ser editadas nem excluídas.
+Conjunto das Compras no cartão e Parcelas de um Cartão de crédito em um ciclo de fechamento. Só afeta o Saldo atual por meio de Pagamentos de fatura. Passa por três estados: **Aberta** (recebe compras), **Fechada** (após o Dia de fechamento) e **Paga** (a partir do Dia de vencimento, quando o Pagamento de fatura quita o que faltava). O estado vem só das datas: uma Fatura paga por inteiro antes do vencimento fica com valor restante zero, mas continua Aberta ou Fechada até o Dia de vencimento. Compras e Parcelas de uma Fatura Paga não podem ser editadas nem excluídas.
 _Avoid_: extrato, conta do cartão
 
 **Compra no cartão** (`CardPurchase`):
@@ -104,7 +104,7 @@ Fração de uma Compra parcelada, alocada a uma Fatura. O valor é dividido igua
 _Avoid_: prestação
 
 **Pagamento de fatura** (`InvoicePayment`):
-Saída do Saldo atual que quita uma Fatura, total ou parcialmente. No Dia de vencimento, o sistema registra sozinho um Pagamento de fatura com o valor ainda não pago. Não é uma Despesa categorizada, para não contar o gasto duas vezes nos relatórios. O usuário pode editá-lo para o valor realmente pago; a diferença vira Saldo rolado na próxima Fatura, e a Fatura original passa a Paga. Ele continua editável até a Fatura que recebeu o Saldo rolado ficar Paga.
+Saída do Saldo atual que quita uma Fatura, total ou parcialmente. No Dia de vencimento, o sistema registra sozinho um Pagamento de fatura com o valor ainda não pago. Não é uma Despesa categorizada, para não contar o gasto duas vezes nos relatórios. O usuário pode editá-lo para o valor realmente pago; a diferença vira Saldo rolado na próxima Fatura, e a Fatura original passa a Paga. Ele continua editável até a Fatura que recebeu o Saldo rolado ficar Paga. Uma Fatura nunca pode ficar com total menor do que os Pagamentos antecipados já feitos nela: editar, excluir, cancelar, realocar (novos dias do cartão), antecipar ou corrigir o pagamento anterior de um jeito que causasse isso é recusado.
 _Avoid_: quitação
 
 **Saldo rolado** (`CarriedBalance`):
