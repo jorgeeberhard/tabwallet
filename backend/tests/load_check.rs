@@ -180,23 +180,33 @@ async fn seed(app: &TestApp, transactions: usize) -> Seeded {
             json!({ "name": name, "closing_day": closing_day, "due_day": due_day })
         })
         .collect();
-    let cards: Vec<String> = post_all(&session, "/credit-cards", cards)
+    // Requests finish in any order; sort by name so every run seeds the same.
+    let mut cards: Vec<(String, String)> = post_all(&session, "/credit-cards", cards)
         .await
         .iter()
-        .map(|body| body["credit_card"]["id"].as_str().unwrap().to_string())
+        .map(|body| {
+            let card = &body["credit_card"];
+            (
+                card["name"].as_str().unwrap().to_string(),
+                card["id"].as_str().unwrap().to_string(),
+            )
+        })
         .collect();
+    cards.sort();
+    let cards: Vec<String> = cards.into_iter().map(|(_, id)| id).collect();
 
     // A paid invoice takes no new purchase, so the history is built the way a
     // real user builds it: "today" moves through the 1st, 11th and 21st of every
-    // month and each step launches purchases dated in the last 10 days. With the
-    // closing days above, those always fall in unpaid invoices.
+    // month and each step launches purchases dated up to 7 days back (so that in
+    // February they still fall after the closing day 20). With the closing days
+    // above, those always fall in unpaid invoices, whatever card takes them.
     let mut card_purchases = 0;
     let mut installment_purchases = 0;
     for step in 0..HISTORY_MONTHS * 3 {
         let first_of_month = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap() + Months::new(step / 3);
         let step_today = first_of_month + Days::new(10 * u64::from(step % 3));
         app.set_today(step_today.year(), step_today.month(), step_today.day());
-        let recent_day = |random: &mut Lcg| (step_today - Days::new(random.next(10))).to_string();
+        let recent_day = |random: &mut Lcg| (step_today - Days::new(random.next(8))).to_string();
         let month_index = step;
 
         let purchases = (0..CARD_PURCHASES_PER_STEP)
