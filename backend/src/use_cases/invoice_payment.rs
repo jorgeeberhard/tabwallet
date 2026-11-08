@@ -2,7 +2,10 @@ use chrono::NaiveDate;
 
 use crate::{
     ids::{CreditCardId, UserId},
-    ledger::cards::{CorrectionState, Invoice, InvoicePayment, InvoiceState, Month, PaymentOrigin},
+    ledger::cards::{
+        CardChange, CorrectionFact, CorrectionState, Invoice, InvoicePayment, InvoiceState, Month,
+        PaymentOrigin,
+    },
     repositories::{
         card_purchases::CardPurchaseRepository,
         credit_cards::CreditCardRepository,
@@ -24,6 +27,10 @@ pub enum InvoicePaymentError {
     /// The invoice is Paid: its due date has come and nothing can be paid.
     #[error("the invoice is paid")]
     InvoicePaid,
+    /// The corrected payment would leave the next invoice with a total below
+    /// what was already paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     /// The amount is more than the invoice still has to pay.
     #[error("the amount is more than the invoice's remaining amount")]
     AmountExceedsRemaining,
@@ -117,6 +124,16 @@ impl CorrectInvoicePaymentUseCase {
         }
         if amount_cents > invoice.payment_correction.max_cents {
             return Err(InvoicePaymentError::AmountExceedsRemaining);
+        }
+        let change = CardChange {
+            correction: Some(CorrectionFact {
+                closing_month,
+                amount_cents,
+            }),
+            ..CardChange::default()
+        };
+        if ledger.overpaid_by(card_id, &change).is_some() {
+            return Err(InvoicePaymentError::WouldBeOverpaid);
         }
         self.payments
             .set_correction(user_id, card_id, closing_month, amount_cents)

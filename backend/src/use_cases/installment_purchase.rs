@@ -6,7 +6,10 @@ use crate::{
     ids::{InstallmentPurchaseId, UserId},
     ledger::{
         Ledger,
-        cards::{CardFacts, InvoiceCycle, InvoiceState, PlannedInstallment},
+        cards::{
+            CardChange, CardFacts, InstallmentCharge, InvoiceCycle, InvoiceState, Month,
+            PlannedInstallment,
+        },
     },
     repositories::{
         card_purchases::CardPurchaseRepository,
@@ -44,6 +47,10 @@ pub enum InstallmentPurchaseError {
     /// The date would put the first Installment in a paid invoice.
     #[error("the date falls in a paid invoice")]
     DateInPaidInvoice,
+    /// The change would leave an invoice with a total below what was already
+    /// paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     /// Some Installment is already in a paid invoice, so only the Category
     /// can change.
     #[error("some installments are already in a paid invoice")]
@@ -191,12 +198,13 @@ pub(super) async fn invoice_installments(
 /// whose Installments are all still unpaid are planned again with the card's
 /// days as they are now (the same rule as when they were launched); one with
 /// a paid Installment is history and stays as it is.
-pub(super) async fn reallocate_for_card(
+pub(super) async fn plan_reallocation(
     repository: &InstallmentPurchaseRepository,
     user_id: UserId,
     card: &CardFacts,
     today: NaiveDate,
-) -> Result<(), InstallmentPurchaseError> {
+) -> Result<Reallocation, InstallmentPurchaseError> {
+    let mut reallocation = Reallocation::default();
     let purchases = repository
         .list_for_card(user_id, card.id)
         .await
@@ -258,23 +266,101 @@ pub(super) async fn reallocate_for_card(
                 .into_iter()
                 .map(|(id, cycle)| (id, cycle.closing_month))
                 .collect();
-            repository
-                .move_installments(user_id, &moves)
-                .await
-                .map_err(InstallmentPurchaseError::internal)?;
+            for (id, month) in &moves {
+                if let Some(installment) = own.iter().find(|installment| installment.id == *id) {
+                    reallocation.removed.push(charge_of(installment));
+                    reallocation.added.push(InstallmentCharge {
+                        invoice_month: *month,
+                        amount_cents: installment.amount_cents,
+                    });
+                }
+            }
+            reallocation.moves.extend(moves);
             continue;
         }
-        repository
-            .update(
-                user_id,
-                purchase.id,
-                InstallmentPurchaseChanges::default(),
-                Some(&allocations_of(&plan)),
-            )
-            .await
-            .map_err(InstallmentPurchaseError::internal)?;
+        reallocation
+            .removed
+            .extend(own.iter().map(|installment| charge_of(installment)));
+        reallocation
+            .added
+            .extend(plan.iter().map(|planned| InstallmentCharge {
+                invoice_month: planned.cycle.closing_month,
+                amount_cents: planned.amount_cents,
+            }));
+        reallocation
+            .replacements
+            .push((purchase.id, allocations_of(&plan)));
     }
-    Ok(())
+    Ok(reallocation)
+}
+
+/// What new card days do to the card's Installments, worked out but not yet
+/// stored.
+#[derive(Default)]
+pub(super) struct Reallocation {
+    /// Installments that move to another invoice, amount unchanged.
+    moves: Vec<(crate::ids::InstallmentId, Month)>,
+    /// Purchases planned again, with the rows to store.
+    replacements: Vec<(InstallmentPurchaseId, Vec<Allocation>)>,
+    /// What the card's Installments weigh on its invoices before and after.
+    pub(super) removed: Vec<InstallmentCharge>,
+    pub(super) added: Vec<InstallmentCharge>,
+}
+
+impl Reallocation {
+    /// Stores what [`plan_reallocation`] worked out.
+    pub(super) async fn apply(
+        &self,
+        repository: &InstallmentPurchaseRepository,
+        user_id: UserId,
+    ) -> Result<(), InstallmentPurchaseError> {
+        if !self.moves.is_empty() {
+            repository
+                .move_installments(user_id, &self.moves)
+                .await
+                .map_err(InstallmentPurchaseError::internal)?;
+        }
+        for (purchase_id, allocations) in &self.replacements {
+            repository
+                .update(
+                    user_id,
+                    *purchase_id,
+                    InstallmentPurchaseChanges::default(),
+                    Some(allocations),
+                )
+                .await
+                .map_err(InstallmentPurchaseError::internal)?;
+        }
+        Ok(())
+    }
+}
+
+/// What an Installment weighs on the invoice it is in.
+fn charge_of(installment: &Installment) -> InstallmentCharge {
+    InstallmentCharge {
+        invoice_month: installment.invoice_month(),
+        amount_cents: installment.amount_cents,
+    }
+}
+
+/// Refuses a change that takes `removed` out of the card's Installments and
+/// puts `added` in when it would leave an invoice with less than was paid on
+/// it early.
+fn ensure_not_overpaid(
+    ledger: &Ledger,
+    card_id: crate::ids::CreditCardId,
+    removed: Vec<InstallmentCharge>,
+    added: Vec<InstallmentCharge>,
+) -> Result<(), InstallmentPurchaseError> {
+    let change = CardChange {
+        installments_removed: removed,
+        installments_added: added,
+        ..CardChange::default()
+    };
+    match ledger.overpaid_by(card_id, &change) {
+        Some(_) => Err(InstallmentPurchaseError::WouldBeOverpaid),
+        None => Ok(()),
+    }
 }
 
 /// The views of these purchases (same order); one whose card is unknown to
@@ -536,6 +622,20 @@ impl UpdateInstallmentPurchaseUseCase {
                     .unwrap_or(current.installment_count as u32),
                 today,
             )?;
+            ensure_not_overpaid(
+                &ledger,
+                current.credit_card_id,
+                view.installments
+                    .iter()
+                    .map(|view| charge_of(&view.installment))
+                    .collect(),
+                plan.iter()
+                    .map(|planned| InstallmentCharge {
+                        invoice_month: planned.cycle.closing_month,
+                        amount_cents: planned.amount_cents,
+                    })
+                    .collect(),
+            )?;
             Some(allocations_of(&plan))
         };
         let updated = self
@@ -608,6 +708,12 @@ impl CancelInstallmentPurchaseUseCase {
         .await?;
         // Paid and anticipated Installments stay; the others are cancelled.
         let remaining = view.cancellable_ids();
+        let cancelled_charges: Vec<InstallmentCharge> = view
+            .installments
+            .iter()
+            .filter(|installment| remaining.contains(&installment.installment.id))
+            .map(|installment| charge_of(&installment.installment))
+            .collect();
         if remaining.is_empty() {
             let anticipated_and_unpaid = view.installments.iter().any(|installment| {
                 installment.installment.is_anticipated()
@@ -619,6 +725,12 @@ impl CancelInstallmentPurchaseUseCase {
                 InstallmentPurchaseError::AllPaid
             });
         }
+        ensure_not_overpaid(
+            &ledger,
+            view.purchase.credit_card_id,
+            cancelled_charges,
+            Vec::new(),
+        )?;
         if !view.has_paid_installments() && !view.has_anticipated_installments() {
             return match self.installment_purchases.delete(user_id, id).await {
                 Ok(true) => Ok(CancelOutcome::Deleted),

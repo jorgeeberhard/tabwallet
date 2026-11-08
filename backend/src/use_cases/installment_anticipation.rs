@@ -4,7 +4,7 @@ use crate::{
     ids::{CreditCardId, InstallmentId, UserId},
     ledger::{
         anticipation::{AnticipationError, InstallmentToAnticipate},
-        cards::{Invoice, InvoiceCycle},
+        cards::{CardChange, InstallmentCharge, Invoice, InvoiceCycle},
     },
     repositories::{
         card_purchases::CardPurchaseRepository,
@@ -38,6 +38,10 @@ pub enum InstallmentAnticipationError {
     /// (it is in the open, a closed or a paid invoice, or was anticipated).
     #[error("some installments cannot be anticipated")]
     NotAnticipable,
+    /// The invoice an Installment leaves would be left with a total below what
+    /// was already paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     /// The Discount is not positive or would leave an Installment without a
     /// cent.
     #[error("the discount is invalid")]
@@ -280,6 +284,29 @@ impl AnticipateInstallmentsUseCase {
                     InstallmentAnticipationError::DiscountTooLarge
                 }
             })?;
+
+        let change = CardChange {
+            installments_removed: plan
+                .installments
+                .iter()
+                .map(|share| InstallmentCharge {
+                    invoice_month: share.from_month,
+                    amount_cents: share.original_cents,
+                })
+                .collect(),
+            installments_added: plan
+                .installments
+                .iter()
+                .map(|share| InstallmentCharge {
+                    invoice_month: plan.invoice.closing_month,
+                    amount_cents: share.amount_cents,
+                })
+                .collect(),
+            ..CardChange::default()
+        };
+        if ledger.overpaid_by(card_id, &change).is_some() {
+            return Err(InstallmentAnticipationError::WouldBeOverpaid);
+        }
 
         let rows: Vec<AnticipationRow> = plan
             .installments

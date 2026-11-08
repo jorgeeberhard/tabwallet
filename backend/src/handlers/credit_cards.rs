@@ -149,6 +149,7 @@ pub async fn update(
 ) -> Result<Json<CreditCardEnvelope>, ApiError> {
     let view = UpdateCreditCardUseCase::new(
         CreditCardRepository::new(state.pool.clone()),
+        CardPurchaseRepository::new(state.pool.clone()),
         InstallmentPurchaseRepository::new(state.pool.clone()),
     )
     .execute(

@@ -74,6 +74,9 @@ pub enum ApiError {
     /// The invoice is paid, so its purchases cannot be edited or deleted and it
     /// takes no payment.
     InvoicePaid,
+    /// The change would leave an invoice with a total below what was already
+    /// paid on it early.
+    InvoiceWouldBeOverpaid,
     /// No such Charge for this user.
     ChargeNotFound,
     /// The invoice's due date has not come, so its payment cannot be corrected.
@@ -231,6 +234,7 @@ impl From<CreditCardError> for ApiError {
             CreditCardError::InvoiceNotFound => Self::InvoiceNotFound,
             CreditCardError::NameTaken => Self::CreditCardNameTaken,
             CreditCardError::HasRemainingInvoice => Self::CreditCardHasRemainingInvoice,
+            CreditCardError::WouldBeOverpaid => Self::InvoiceWouldBeOverpaid,
             CreditCardError::Internal(cause) => Self::Internal(cause),
         }
     }
@@ -242,6 +246,7 @@ impl From<InvoicePaymentError> for ApiError {
             InvoicePaymentError::CardNotFound => Self::CreditCardNotFound,
             InvoicePaymentError::InvoiceNotFound => Self::InvoiceNotFound,
             InvoicePaymentError::InvoicePaid => Self::InvoicePaid,
+            InvoicePaymentError::WouldBeOverpaid => Self::InvoiceWouldBeOverpaid,
             InvoicePaymentError::AmountExceedsRemaining => Self::Validation(BTreeMap::from([(
                 "amount_cents".to_string(),
                 "amount_exceeds_remaining".to_string(),
@@ -261,6 +266,7 @@ impl From<ChargeError> for ApiError {
             ChargeError::InvoiceNotFound => Self::InvoiceNotFound,
             ChargeError::NotFound => Self::ChargeNotFound,
             ChargeError::InvoicePaid => Self::InvoicePaid,
+            ChargeError::WouldBeOverpaid => Self::InvoiceWouldBeOverpaid,
             ChargeError::CategoryInactive => Self::Validation(BTreeMap::from([(
                 "category_id".to_string(),
                 "category_inactive".to_string(),
@@ -293,6 +299,7 @@ impl From<CardPurchaseError> for ApiError {
                 },
             ),
             CardPurchaseError::InvoicePaid => Self::InvoicePaid,
+            CardPurchaseError::WouldBeOverpaid => Self::InvoiceWouldBeOverpaid,
             CardPurchaseError::DateInPaidInvoice => field("date", "invoice_paid"),
             CardPurchaseError::Internal(cause) => Self::Internal(cause),
         }
@@ -328,6 +335,7 @@ impl From<InstallmentPurchaseError> for ApiError {
             // purchase in a paid invoice.
             InstallmentPurchaseError::AllPaid => Self::InvoicePaid,
             InstallmentPurchaseError::InstallmentsAnticipated => Self::InstallmentsAnticipated,
+            InstallmentPurchaseError::WouldBeOverpaid => Self::InvoiceWouldBeOverpaid,
             InstallmentPurchaseError::Internal(cause) => Self::Internal(cause),
         }
     }
@@ -348,6 +356,7 @@ impl From<InstallmentAnticipationError> for ApiError {
                 field("installment_ids", "installment_not_found")
             }
             InstallmentAnticipationError::NotAnticipable => Self::InstallmentsNotAnticipable,
+            InstallmentAnticipationError::WouldBeOverpaid => Self::InvoiceWouldBeOverpaid,
             InstallmentAnticipationError::DiscountTooLarge => {
                 field("discount_cents", "discount_exceeds_total")
             }
@@ -512,6 +521,12 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 "invoice_paid",
                 "The invoice is paid and cannot be changed.",
+                None,
+            ),
+            Self::InvoiceWouldBeOverpaid => (
+                StatusCode::CONFLICT,
+                "invoice_would_be_overpaid",
+                "The change would leave an invoice with less than was already paid on it.",
                 None,
             ),
             Self::ChargeNotFound => (

@@ -292,6 +292,19 @@ impl Ledger {
             .plan_anticipation(chosen, discount_cents, today)
     }
 
+    /// The first invoice of the card that `change` would leave with less in it
+    /// than was paid on it early (and that is not already in that state), if
+    /// any. A use case asks this before storing a change that lowers a total,
+    /// and refuses the change when it gets an answer.
+    pub fn overpaid_by(&self, card_id: CreditCardId, change: &cards::CardChange) -> Option<Month> {
+        let card = self.card(card_id)?;
+        let before = card.overpaid_invoices();
+        card.after(change)
+            .overpaid_invoices()
+            .into_iter()
+            .find(|month| !before.contains(month))
+    }
+
     /// Whether any invoice of the card still has something to pay on `today`.
     /// A card in this state cannot be deactivated.
     pub fn has_remaining_invoice(&self, card_id: CreditCardId, today: NaiveDate) -> bool {

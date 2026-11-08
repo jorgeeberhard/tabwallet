@@ -25,6 +25,12 @@
 //! on in turn). Charges are expenses the user records in an invoice and are part
 //! of its total. Both are stored as facts; the amounts follow from them.
 //!
+//! An invoice never comes to less than what was paid on it early. A use case
+//! that is about to lower a total (editing or deleting a purchase, an
+//! Installment or a Charge, new card days, an anticipation, a corrected
+//! payment) asks [`CardFacts::after`] and [`CardFacts::overpaid_invoices`]
+//! beforehand and refuses the change that would break it.
+//!
 //! A card keeps a history of its days ([`CardSchedule`]) so that changing them
 //! only affects invoices still open: closed and paid invoices keep the days
 //! they were closed with.
@@ -154,6 +160,23 @@ impl CardSchedule {
             .rev()
             .find(|version| version.effective_from <= month)
             .unwrap_or(&self.versions[0])
+    }
+
+    /// The schedule after new days start at the invoice closing in `from`,
+    /// replacing any version that already starts there or later.
+    pub fn with_days_from(&self, from: Month, closing_day: u32, due_day: u32) -> Self {
+        let mut versions: Vec<ScheduleVersion> = self
+            .versions
+            .iter()
+            .filter(|version| version.effective_from < from)
+            .copied()
+            .collect();
+        versions.push(ScheduleVersion {
+            effective_from: from,
+            closing_day,
+            due_day,
+        });
+        Self { versions }
     }
 
     /// The days the card has from now on: the latest version.
@@ -402,6 +425,23 @@ pub fn split_installments(total_cents: i64, count: u32) -> Option<Vec<i64>> {
     )
 }
 
+/// A change to the facts of one card that a use case is about to store, so
+/// the ledger can say beforehand what it would do to the invoices. Each field
+/// is something taken away or added; the rest stays as it is.
+#[derive(Clone, Debug, Default)]
+pub struct CardChange {
+    /// The days the card would have.
+    pub schedule: Option<CardSchedule>,
+    pub spend_removed: Vec<CardSpend>,
+    pub spend_added: Vec<CardSpend>,
+    pub installments_removed: Vec<InstallmentCharge>,
+    pub installments_added: Vec<InstallmentCharge>,
+    pub charges_removed: Vec<ChargeFact>,
+    pub charges_added: Vec<ChargeFact>,
+    /// The due-date payment of an invoice, as corrected.
+    pub correction: Option<CorrectionFact>,
+}
+
 /// What is stored about one card that the ledger needs.
 #[derive(Clone, Debug)]
 pub struct CardFacts {
@@ -431,12 +471,23 @@ struct Settlement {
     /// The total less the Early Payments, never negative: what the due date
     /// would debit if the user did not correct the payment.
     unpaid_cents: i64,
+    /// The Early Payments came to more than the total.
+    overpaid: bool,
     /// What the user said they paid (at most `unpaid_cents`), if corrected.
     corrected_cents: Option<i64>,
     /// What leaves the balance on the due date.
     due_payment_cents: i64,
     /// What moves to the next invoice: `unpaid_cents` less `due_payment_cents`.
     carried_out_cents: i64,
+}
+
+/// Takes out of `facts` one element equal to each of `removed`.
+fn remove_each<T: PartialEq>(facts: &mut Vec<T>, removed: &[T]) {
+    for gone in removed {
+        if let Some(index) = facts.iter().position(|fact| fact == gone) {
+            facts.remove(index);
+        }
+    }
 }
 
 impl Settlement {
@@ -450,6 +501,48 @@ impl CardFacts {
     /// it has anything in it.
     pub fn cycle_of(&self, month: Month, today: NaiveDate) -> InvoiceCycle {
         self.cycle(month, today)
+    }
+
+    /// The facts as they would be with `change` stored.
+    pub fn after(&self, change: &CardChange) -> CardFacts {
+        let mut facts = self.clone();
+        if let Some(schedule) = &change.schedule {
+            facts.schedule = schedule.clone();
+        }
+        for removed in &change.spend_removed {
+            if let Some(spend) = facts
+                .spending
+                .iter_mut()
+                .find(|spend| spend.date == removed.date)
+            {
+                spend.amount_cents -= removed.amount_cents;
+            }
+        }
+        facts.spending.retain(|spend| spend.amount_cents > 0);
+        facts.spending.extend(change.spend_added.iter().copied());
+        remove_each(&mut facts.installments, &change.installments_removed);
+        facts
+            .installments
+            .extend(change.installments_added.iter().copied());
+        remove_each(&mut facts.charges, &change.charges_removed);
+        facts.charges.extend(change.charges_added.iter().copied());
+        if let Some(correction) = change.correction {
+            facts
+                .corrections
+                .retain(|other| other.closing_month != correction.closing_month);
+            facts.corrections.push(correction);
+        }
+        facts
+    }
+
+    /// The invoices whose Early Payments come to more than their total. None
+    /// should exist: a change that would create one is refused.
+    pub fn overpaid_invoices(&self) -> BTreeSet<Month> {
+        self.settlements(None)
+            .into_iter()
+            .filter(|settlement| settlement.overpaid)
+            .map(|settlement| settlement.month)
+            .collect()
     }
 
     /// Splits a purchase of `total_cents` made on `date` in `count`
@@ -566,8 +659,8 @@ impl CardFacts {
             let purchases_cents = self.total_of(month);
             let charges_cents = self.charges_of(month);
             let early_cents = self.early_paid_of(month);
-            let unpaid_cents =
-                (purchases_cents + charges_cents + carried_in_cents - early_cents).max(0);
+            let balance = purchases_cents + charges_cents + carried_in_cents - early_cents;
+            let unpaid_cents = balance.max(0);
             let corrected_cents = self
                 .corrections
                 .iter()
@@ -586,6 +679,7 @@ impl CardFacts {
                 carried_in_cents,
                 early_cents,
                 unpaid_cents,
+                overpaid: balance < 0,
                 corrected_cents,
                 due_payment_cents,
                 carried_out_cents,
