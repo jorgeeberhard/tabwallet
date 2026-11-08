@@ -66,7 +66,7 @@ fn view_in(stored: &StoredBudget, month: Month) -> Option<BudgetView> {
     })
 }
 
-/// UC12: defines or changes the Budget of an expense Category. The new limit
+/// Defines or changes the Budget of an expense Category. The new limit
 /// applies from the month of `today` on; earlier months keep the limit they
 /// had.
 pub struct SetBudgetUseCase {
@@ -148,7 +148,7 @@ impl ListBudgetsUseCase {
     }
 }
 
-/// UC12: removes the Budget of a Category from the month of `today` on.
+/// Removes the Budget of a Category from the month of `today` on.
 /// Earlier months keep the limit they had.
 pub struct RemoveBudgetUseCase {
     budgets: BudgetRepository,
@@ -210,7 +210,7 @@ impl BudgetReport {
     }
 }
 
-/// UC13: the spending of each Category with a Budget in a Reference Month
+/// The spending of each Category with a Budget in a Reference Month
 /// against its limit. The Budget Alert is not stored: it is derived here on
 /// every read, from the expenses (Projections included) at that moment.
 pub struct GetBudgetStatusUseCase {

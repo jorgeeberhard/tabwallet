@@ -1,4 +1,4 @@
-//! Paying an invoice (UC17) and how payments are shown: an Early Payment made
+//! Paying an invoice and how payments are shown: an Early Payment made
 //! by the user, the automatic payment of the due date, and the statement item
 //! that carries both.
 
@@ -133,7 +133,7 @@ pub struct CorrectResponse {
 
 /// `PUT /credit-cards/{id}/invoices/{closing_month}/payment` (protected):
 /// corrects the payment of a Paid invoice to the amount really paid at the
-/// bank (UC20). The difference from what was unpaid becomes the Carried
+/// bank. The difference from what was unpaid becomes the Carried
 /// Balance of the next invoice. It can be repeated until that invoice is Paid.
 /// `409 invoice_payment_not_due` before the due date, `409
 /// invoice_nothing_to_pay` when Early Payments covered it all, `409

@@ -56,7 +56,7 @@ export interface InstallmentPurchaseTarget {
   creditCard: { id: string; name: string }
   /** Some Installment is in a paid invoice: only the Category can change. */
   hasPaidInstallments: boolean
-  /** Some Installment was anticipated (UC19): same limits as a paid one. */
+  /** Some Installment was anticipated: same limits as a paid one. */
   hasAnticipatedInstallments: boolean
 }
 

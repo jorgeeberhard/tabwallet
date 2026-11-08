@@ -44,7 +44,7 @@ export function parseAmountToCents(text: string): number | null {
 
 /**
  * Like `parseAmountToCents`, but zero is valid: for an amount that may be
- * nothing, such as what was really paid of an invoice (UC20). Never negative.
+ * nothing, such as what was really paid of an invoice. Never negative.
  */
 export function parseAmountOrZeroToCents(text: string): number | null {
   return parseMagnitude(text)

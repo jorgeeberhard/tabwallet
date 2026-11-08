@@ -102,7 +102,7 @@ pub(super) fn view_of(
     Some(ChargeView { charge, invoice })
 }
 
-/// UC21: records the interest, penalty and IOF the bank charged on an invoice.
+/// Records the interest, penalty and IOF the bank charged on an invoice.
 /// It is an expense of the user's "Juros e encargos" Category, linked to the
 /// invoice, with a positive amount and a date. It joins the invoice total (so
 /// it is paid through the invoice payment) and counts in the month of the
@@ -253,7 +253,7 @@ fn fact_of(charge: &InvoiceCharge, amount_cents: i64) -> ChargeFact {
     }
 }
 
-/// UC21: edits the amount, date and description of a Charge, unless its
+/// Edits the amount, date and description of a Charge, unless its
 /// invoice is Paid.
 pub struct UpdateChargeUseCase {
     charges: InvoiceChargeRepository,
@@ -305,7 +305,7 @@ impl UpdateChargeUseCase {
     }
 }
 
-/// UC21: removes a Charge, unless its invoice is Paid.
+/// Removes a Charge, unless its invoice is Paid.
 pub struct DeleteChargeUseCase {
     charges: InvoiceChargeRepository,
     cards: CreditCardRepository,

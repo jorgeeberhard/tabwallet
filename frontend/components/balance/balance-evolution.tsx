@@ -49,7 +49,7 @@ function dateLabel(isoDay: string, granularity: Granularity): string {
 }
 
 /**
- * UC10: how the balance evolved up to today and where it is expected to go in
+ * How the balance evolved up to today and where it is expected to go in
  * the next 12 months, by day or by month. The solid line is the Current
  * Balance of the past; the dashed one is the Projected Balance (Projections
  * and Occurrences of fixed transactions; purchases not yet recorded are not

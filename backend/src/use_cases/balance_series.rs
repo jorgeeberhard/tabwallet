@@ -1,4 +1,4 @@
-//! The balance over time (UC10): the history of the Current Balance up to
+//! The balance over time: the history of the Current Balance up to
 //! today and the Projected Balance up to the 12-month horizon. Each use case
 //! feeds the ledger with what is stored and asks it for a series.
 
@@ -131,7 +131,7 @@ pub struct BalanceHistory {
     pub points: Vec<BalancePoint>,
 }
 
-/// UC10 (part): the Current Balance at the end of each day or month of a
+/// The Current Balance at the end of each day or month of a
 /// period that ends today at the latest.
 pub struct GetBalanceHistoryUseCase {
     loader: FactsLoader,
@@ -205,7 +205,7 @@ pub struct ProjectedBalance {
     pub points: Vec<BalancePoint>,
 }
 
-/// UC10 (part): the Projected Balance from today up to a date at most 12
+/// The Projected Balance from today up to a date at most 12
 /// months ahead. Defaults to the horizon itself.
 pub struct GetProjectedBalanceUseCase {
     loader: FactsLoader,

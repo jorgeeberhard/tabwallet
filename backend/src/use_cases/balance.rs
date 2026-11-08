@@ -37,7 +37,7 @@ pub struct BalanceReport {
     pub opening_balance_cents: Option<i64>,
 }
 
-/// UC10 (partial): the Current Balance on `today`, with the Opening Balance
+/// The Current Balance on `today`, with the Opening Balance
 /// it includes. Feeds the ledger with what is stored and asks it.
 pub struct GetBalanceUseCase {
     transactions: TransactionRepository,

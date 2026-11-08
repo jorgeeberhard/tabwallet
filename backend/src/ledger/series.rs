@@ -1,5 +1,5 @@
 //! Balance over time: the history of the Current Balance up to today and the
-//! Projected Balance up to the horizon (UC10).
+//! Projected Balance up to the horizon.
 //!
 //! Both are series of points, one per day or per month, and both come from the
 //! same running total of dated cash flows. They differ in what they promise:

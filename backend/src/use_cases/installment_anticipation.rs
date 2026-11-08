@@ -118,7 +118,7 @@ pub struct AnticipableInstallments {
 }
 
 /// The Installments of a card that sit in invoices after the open one: the
-/// ones UC19 lets the user bring to the open invoice.
+/// ones the user can bring to the open invoice.
 pub struct ListAnticipableInstallmentsUseCase {
     cards: CreditCardRepository,
     purchases: CardPurchaseRepository,
@@ -190,7 +190,7 @@ pub struct AnticipationReceipt {
     pub installments: Vec<InvoiceInstallment>,
 }
 
-/// UC19: brings Installments of invoices after the open one into the open
+/// Brings Installments of invoices after the open one into the open
 /// invoice of the same card, with an optional Discount split in proportion
 /// between them. It is irreversible: nothing is done without `confirmed`, and
 /// there is no use case that undoes it. The anticipated Installments count in

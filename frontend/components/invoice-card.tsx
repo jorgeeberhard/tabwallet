@@ -30,9 +30,9 @@ export interface InvoiceCardProps {
   invoice: Invoice
   /** Shows "Pagar antecipado" while the invoice is not paid and has something to pay. */
   onPayEarly?: () => void
-  /** Shows "Corrigir pagamento" while the payment of a paid invoice can still be corrected (UC20). */
+  /** Shows "Corrigir pagamento" while the payment of a paid invoice can still be corrected. */
   onCorrectPayment?: () => void
-  /** Shows "Lançar encargos" while the invoice is not paid (UC21). */
+  /** Shows "Lançar encargos" while the invoice is not paid. */
   onAddCharges?: () => void
   /** The Carried Balance this invoice received from the previous one, if any. */
   carriedBalance?: CarriedBalance | null
@@ -43,7 +43,7 @@ export interface InvoiceCardProps {
  * One credit-card invoice (Design System `InvoiceCard`): card, month, total,
  * state, closing and due dates. The month is the one of the due date, where
  * the invoice's purchases count (the Reference Month). Once something was paid
- * it shows how much was paid and what is left; "Pagar antecipado" (UC17)
+ * it shows how much was paid and what is left; "Pagar antecipado"
  * pays the invoice before the due date, in full or in part.
  */
 export function InvoiceCard({

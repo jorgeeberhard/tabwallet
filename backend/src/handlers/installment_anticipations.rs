@@ -1,4 +1,4 @@
-//! Installment Anticipation with a Discount (UC19): bringing Installments of
+//! Installment Anticipation with a Discount: bringing Installments of
 //! invoices after the open one into the open invoice of the same card.
 
 use axum::{

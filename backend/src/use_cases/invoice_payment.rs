@@ -76,7 +76,7 @@ pub struct CorrectionReceipt {
     pub invoice: Invoice,
 }
 
-/// UC20: corrects the payment of an invoice to the amount really paid at the
+/// Corrects the payment of an invoice to the amount really paid at the
 /// bank. The invoice must be Paid (its due date has come) and the one after
 /// it, which receives what is left unpaid as a Carried Balance, must not be
 /// Paid yet. The amount is zero up to what the Early Payments left unpaid;
@@ -156,7 +156,7 @@ impl CorrectInvoicePaymentUseCase {
     }
 }
 
-/// UC17: pays an Open or Closed invoice before its due date, in full or in
+/// Pays an Open or Closed invoice before its due date, in full or in
 /// part, for at most what it still has to pay. The payment is dated today (an
 /// Early Payment is never in the future) and leaves the Current Balance at
 /// once; it is not an expense. Purchases added later only raise the remaining
