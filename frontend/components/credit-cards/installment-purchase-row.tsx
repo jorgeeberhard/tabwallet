@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { InstallmentPurchase } from "@/lib/credit-cards-api"
-import { formatBRL, formatDate, formatMonthOfYear } from "@/lib/format"
+import { formatBRLCents, formatDate, formatMonthOfYear } from "@/lib/format"
 
 interface InstallmentPurchaseRowProps {
   purchase: InstallmentPurchase
@@ -163,7 +163,7 @@ export function InstallmentPurchaseRow({
                 <Badge variant="outline">
                   Antecipada
                   {installment.discountCents > 0 &&
-                    ` · desconto de ${formatBRL(installment.discountCents / 100)}`}
+                    ` · desconto de ${formatBRLCents(installment.discountCents)}`}
                 </Badge>
               )}
             </li>

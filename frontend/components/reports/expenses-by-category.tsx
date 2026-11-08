@@ -16,12 +16,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   type PeriodChoice,
   describePeriod,
-  monthOf,
   periodProblem,
   resolvePeriod,
 } from "@/lib/report-periods"
 import { REPORTS_KEY, getExpensesByCategory } from "@/lib/reports-api"
 import { useToday } from "@/lib/use-today"
+import { monthOf } from "@/lib/year-month"
 
 /**
  * UC11 (a): what each Category spent in a period, by Reference Month. The

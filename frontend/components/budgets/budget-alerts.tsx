@@ -7,7 +7,7 @@ import Link from "next/link"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { budgetStatusKey, type BudgetStatusLine, getBudgetStatus } from "@/lib/budgets-api"
-import { formatBRL, formatMonthOfYear } from "@/lib/format"
+import { formatBRLCents, formatMonthOfYear } from "@/lib/format"
 
 /** How many alerts the home page spells out before summing up the rest. */
 const MAX_VISIBLE_ALERTS = 3
@@ -29,7 +29,7 @@ function exceededLines(lines: BudgetStatusLine[]): BudgetStatusLine[] {
 }
 
 /**
- * UC13: the budget alerts on the home page, one message per category that
+ * The budget alerts on the home page, one message per category that
  * spent more than its limit this month (projections included). Shows nothing
  * while there is no alert or while the status is loading; the alert is only
  * inside the app, never by e-mail or push.
@@ -48,10 +48,10 @@ export function BudgetAlerts() {
         <Alert key={line.category.id} variant="destructive">
           <TriangleAlertIcon strokeWidth={1.75} />
           <AlertTitle>
-            Você passou {formatBRL(-line.remainingCents / 100)} do limite de {line.category.name}.
+            Você passou {formatBRLCents(-line.remainingCents)} do limite de {line.category.name}.
           </AlertTitle>
           <AlertDescription>
-            Gasto de {formatBRL(line.spent)} em {formatBRL(line.limit)} de limite em{" "}
+            Gasto de {formatBRLCents(line.spentCents)} em {formatBRLCents(line.limitCents)} de limite em{" "}
             {formatMonthOfYear(status.data.month)}.
           </AlertDescription>
         </Alert>

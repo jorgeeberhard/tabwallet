@@ -45,3 +45,8 @@ export function formatMonthOfYear(yearMonth: string): string {
 export function formatBRL(reais: number): string {
   return brl.format(Math.abs(reais)).replace(/\s/g, " ")
 }
+
+/** Like [`formatBRL`], for an amount in cents (what the API sends). */
+export function formatBRLCents(cents: number): string {
+  return formatBRL(cents / 100)
+}

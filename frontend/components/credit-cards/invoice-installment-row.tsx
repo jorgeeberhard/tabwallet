@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { InvoiceInstallment } from "@/lib/credit-cards-api"
-import { formatBRL, formatDate, formatMonthOfYear } from "@/lib/format"
+import { formatBRLCents, formatDate, formatMonthOfYear } from "@/lib/format"
 
 interface InvoiceInstallmentRowProps {
   item: InvoiceInstallment
@@ -68,8 +68,8 @@ export function InvoiceInstallmentRow({ item, onEdit, onCancel }: InvoiceInstall
           )}
           {item.discountCents > 0 && (
             <span>
-              Desconto de {formatBRL(item.discountCents / 100)} (era{" "}
-              {formatBRL(item.originalAmountCents / 100)})
+              Desconto de {formatBRLCents(item.discountCents)} (era{" "}
+              {formatBRLCents(item.originalAmountCents)})
             </span>
           )}
         </span>

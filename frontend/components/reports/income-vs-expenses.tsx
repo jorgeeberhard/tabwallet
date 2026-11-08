@@ -15,12 +15,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   type PeriodChoice,
   describePeriod,
-  monthOf,
   periodProblem,
   resolvePeriod,
 } from "@/lib/report-periods"
 import { REPORTS_KEY, getIncomeVsExpenses } from "@/lib/reports-api"
 import { useToday } from "@/lib/use-today"
+import { monthOf } from "@/lib/year-month"
 
 /**
  * UC11 (b): income and expenses of each month, in series, by Reference Month.

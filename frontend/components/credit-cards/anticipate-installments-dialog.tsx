@@ -34,7 +34,7 @@ import { parseAmountToCents } from "@/lib/amount"
 import { BALANCE_KEY } from "@/lib/balance-api"
 import { creditCardFailure, creditCardFieldMessage } from "@/lib/credit-card-messages"
 import { CREDIT_CARDS_KEY, INVOICES_KEY, type InvoiceInstallment } from "@/lib/credit-cards-api"
-import { formatBRL, formatMonthOfYear } from "@/lib/format"
+import { formatBRL, formatBRLCents, formatMonthOfYear } from "@/lib/format"
 import {
   ANTICIPABLE_KEY,
   anticipableKey,
@@ -66,7 +66,7 @@ function plural(count: number, one: string, many: string) {
 }
 
 /**
- * UC19: brings Installments of invoices after the open one to the open
+ * Brings Installments of invoices after the open one to the open
  * invoice, with an optional Discount. The person chooses the Installments and
  * types the Discount, then a confirmation warns that the operation cannot be
  * undone; only then is it sent (the API requires the confirmation too).
@@ -267,16 +267,16 @@ export function AnticipateInstallmentsDialog({
                   <dt className="text-muted-foreground">
                     {summary.count} {plural(summary.count, "parcela escolhida", "parcelas escolhidas")}
                   </dt>
-                  <dd className="text-right tabular-nums">{formatBRL(summary.originalCents / 100)}</dd>
+                  <dd className="text-right tabular-nums">{formatBRLCents(summary.originalCents)}</dd>
                   <dt className="text-muted-foreground">Desconto</dt>
                   <dd className="text-right tabular-nums">
-                    {summary.discountCents > 0 ? `− ${formatBRL(summary.discountCents / 100)}` : formatBRL(0)}
+                    {summary.discountCents > 0 ? `− ${formatBRLCents(summary.discountCents)}` : formatBRL(0)}
                   </dd>
                   <dt className="font-medium">
                     Total na fatura{openMonth && ` de ${openMonth}`}
                   </dt>
                   <dd className="text-right font-semibold tabular-nums" data-testid="anticipation-total">
-                    {formatBRL(Math.max(summary.totalCents, 0) / 100)}
+                    {formatBRLCents(Math.max(summary.totalCents, 0))}
                   </dd>
                 </dl>
               </>
@@ -309,10 +309,10 @@ export function AnticipateInstallmentsDialog({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {summary.count} {plural(summary.count, "parcela de", "parcelas de")} {cardName} (
-              {formatBRL(summary.originalCents / 100)}
-              {summary.discountCents > 0 && ` com desconto de ${formatBRL(summary.discountCents / 100)}`})
+              {formatBRLCents(summary.originalCents)}
+              {summary.discountCents > 0 && ` com desconto de ${formatBRLCents(summary.discountCents)}`})
               {" "}vão para a fatura de {openMonth}, que ficará{" "}
-              {formatBRL(Math.max(summary.totalCents, 0) / 100)} mais alta.
+              {formatBRLCents(Math.max(summary.totalCents, 0))} mais alta.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Alert variant="warning">

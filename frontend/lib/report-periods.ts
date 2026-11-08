@@ -1,4 +1,5 @@
 import { formatMonthOfYear } from "@/lib/format"
+import { shiftMonth } from "@/lib/year-month"
 
 /**
  * Pure helpers for the period a report covers: whole months (`YYYY-MM`), as
@@ -7,20 +8,6 @@ import { formatMonthOfYear } from "@/lib/format"
 
 /** The longest period the API accepts, in months. Keep in sync with the back-end. */
 export const MAX_REPORT_MONTHS = 36
-
-/** The month a calendar day (`YYYY-MM-DD`) belongs to, as `YYYY-MM`. */
-export function monthOf(isoDay: string): string {
-  return isoDay.slice(0, 7)
-}
-
-/** `yearMonth` moved by whole months (negative goes back), as `YYYY-MM`. */
-export function shiftMonth(yearMonth: string, months: number): string {
-  const [year, month] = yearMonth.split("-").map(Number)
-  const index = year * 12 + (month - 1) + months
-  const shiftedYear = Math.floor(index / 12)
-  const shiftedMonth = (index % 12) + 1
-  return `${String(shiftedYear).padStart(4, "0")}-${String(shiftedMonth).padStart(2, "0")}`
-}
 
 /** How many months the period has, both ends counted; zero or less if it is upside down. */
 export function monthsBetween(from: string, to: string): number {
