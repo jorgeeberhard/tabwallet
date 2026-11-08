@@ -74,6 +74,21 @@ describe("LoginForm", () => {
     expect(router.replace).not.toHaveBeenCalled()
   })
 
+  it("tells the person to wait when there were too many attempts", async () => {
+    fetchMock.mockReturnValue(
+      answer(429, { error: { code: "too_many_requests", message: "Too many attempts." } }),
+    )
+    render(<LoginForm />)
+
+    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
+    await userEvent.type(screen.getByLabelText("Senha"), "wrong password")
+    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.",
+    )
+  })
+
   it("asks to check the connection when the API cannot be reached", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"))
     render(<LoginForm />)
