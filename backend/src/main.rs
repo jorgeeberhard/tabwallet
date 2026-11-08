@@ -41,6 +41,7 @@ async fn main() {
         auth,
         email: email.sender,
         app_url: email.app_url,
+        rate_limits: Default::default(),
     };
     axum::serve(listener, build_router(state))
         .await

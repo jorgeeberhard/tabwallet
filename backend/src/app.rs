@@ -10,8 +10,10 @@ use sqlx::PgPool;
 use crate::{
     auth::{Auth, require_auth},
     clock::Clock,
+    csrf::require_same_origin,
     email::EmailSender,
     handlers,
+    rate_limit::RateLimits,
 };
 
 /// Shared state handed to every handler.
@@ -24,6 +26,8 @@ pub struct AppState {
     pub email: Arc<dyn EmailSender>,
     /// Public address of the front-end, for the links in e-mails.
     pub app_url: String,
+    /// Attempt limits for login and password-reset requests.
+    pub rate_limits: RateLimits,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -167,5 +171,7 @@ pub fn build_router(state: AppState) -> Router {
             post(handlers::password_reset::confirm),
         )
         .merge(protected)
+        // Outermost: refuse cross-site writes before any route (even login).
+        .layer(from_fn_with_state(state.clone(), require_same_origin))
         .with_state(state)
 }
