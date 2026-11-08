@@ -48,7 +48,14 @@ A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}`.
 | `POST /auth/logout` | Expira o cookie. `204`, mesmo sem sessão. |
 | `GET /auth/me` | Rota protegida: devolve o usuário da sessão. |
 
-A senha é guardada com Argon2id. A sessão é um JWT (7 dias) no cookie `tabwallet_session`: `HttpOnly`, `SameSite=Lax`, `Path=/` e `Secure` conforme `COOKIE_SECURE`. O front-end acessa a API pela mesma origem (rewrite do Next), o que evita CORS e CSRF entre sites.
+A senha é guardada com Argon2id. A sessão é um JWT (7 dias) no cookie `tabwallet_session`: `HttpOnly`, `SameSite=Lax`, `Path=/` e `Secure` conforme `COOKIE_SECURE`. O front-end acessa a API pela mesma origem (rewrite do Next), o que evita CORS.
+
+### Proteções (requisitos não funcionais)
+
+- **CSRF.** Três camadas: o cookie é `SameSite=Lax` (o navegador não o envia em POST, PUT, PATCH ou DELETE vindos de outro site); não há CORS, então outro site não consegue chamar a API por script; e `src/csrf.rs` recusa com `403 forbidden_origin` qualquer requisição que altera dados (tudo que não é GET, HEAD ou OPTIONS) cujo `Origin` (ou, sem ele, `Referer`) não seja o endereço do front-end (`APP_URL`). Requisições sem nenhum dos dois (curl, testes) passam. Com `APP_URL` apontando para `localhost`, qualquer nome local (`127.0.0.1`, `*.localhost`) é aceito; em produção só a origem exata. **`APP_URL` precisa ser exatamente o endereço pelo qual as pessoas abrem o front-end.**
+- **Limite de tentativas.** Login: 5 senhas erradas em 15 minutos por e-mail (vale também para e-mail sem conta, para não revelar quais existem); depois disso, `429 too_many_requests` com `Retry-After`, até para a senha certa, e um login certo zera a contagem. Pedidos de recuperação de senha: 3 por hora por e-mail, contados mesmo sem conta, sem enviar e-mail além do limite. As contagens ficam na memória da instância (`src/rate_limit.rs`).
+- **SQL injection.** Todas as consultas usam parâmetros do `sqlx` (`.bind`); nenhum texto de usuário é concatenado em SQL (o `sqlx` 0.9 nem aceita SQL montado em tempo de execução sem `AssertSqlSafe`, usado só em testes).
+- **XSS.** A API só devolve JSON e o e-mail de recuperação é texto puro.
 
 Erros têm sempre a forma `{"error": {"code", "message", "fields"?}}`; o front-end usa o `code` estável (`email_taken`, `invalid_credentials`, `unauthenticated`, `validation_failed`, `invalid_request`).
 
@@ -349,6 +356,22 @@ deixava um contêiner por binário de teste para trás. O registro e o `target` 
 cargo ficam em volumes nomeados (`tabwallet-cargo-registry` e
 `tabwallet-cargo-target`), então as execuções seguintes são rápidas. Execuções
 simultâneas dividem o mesmo `target`, então uma espera a outra compilar.
+
+Outros scripts, com o mesmo princípio (Docker, banco descartável removido ao terminar):
+
+- `backend/scripts/fmt.sh`: aplica o `cargo fmt` (o `check.sh` só verifica o formato).
+- `backend/scripts/dev-api.sh [porta]`: sobe a API (`cargo run`) com um PostgreSQL descartável, em `127.0.0.1:<porta>` (padrão 8080), para usar o front-end sem Rust nativo. `APP_ENV=development` e `COOKIE_SECURE=false`; os dados somem ao encerrar.
+- `backend/scripts/load-check.sh`: teste de carga do requisito de desempenho (veja abaixo).
+
+## Teste de carga (desempenho)
+
+```bash
+backend/scripts/load-check.sh                              # usuário realista, limite de 300 ms
+LOAD_CHECK_TRANSACTIONS=10000 backend/scripts/load-check.sh # usuário maior
+LOAD_CHECK_P95_MS=200 backend/scripts/load-check.sh         # limite mais rígido
+```
+
+O teste `tests/load_check.rs` (marcado `#[ignore]`, por isso fora do `cargo test` e do CI) cria um usuário com 2.000 Transações em dois anos, 6 Transações fixas, 4 cartões com 432 compras e 72 compras parceladas (montadas mês a mês, movendo o "hoje", como uma pessoa faria) e 6 Orçamentos. Depois chama os endpoints principais (extrato, saldo, histórico e projeção, cartões e faturas, orçamentos, relatórios e login) e imprime p50, p95 e máximo por endpoint, primeiro com um cliente e depois com 8 clientes ao mesmo tempo, sem pausa entre as requisições. Falha se algum p95 passar do limite. O script usa build de release, a API e o PostgreSQL numa rede Docker própria (banco ao lado da API, como numa hospedagem na mesma região) e chama a API por HTTP local: não inclui TLS nem o proxy do Next.js. Os números medidos estão em [`docs/nao-funcionais.md`](../docs/nao-funcionais.md).
 
 ## CI
 

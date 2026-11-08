@@ -93,6 +93,33 @@ impl Session {
         .await
     }
 
+    /// A POST with one extra request header, e.g. `Origin` or `Referer`.
+    pub async fn post_json_with_header(
+        &self,
+        path: &str,
+        body: &Value,
+        name: &str,
+        value: &str,
+    ) -> Response {
+        self.send(
+            self.client
+                .post(format!("{}{}", self.address, path))
+                .header(name, value)
+                .json(body),
+        )
+        .await
+    }
+
+    /// A GET with one extra request header.
+    pub async fn get_with_header(&self, path: &str, name: &str, value: &str) -> Response {
+        self.send(
+            self.client
+                .get(format!("{}{}", self.address, path))
+                .header(name, value),
+        )
+        .await
+    }
+
     pub async fn put_json(&self, path: &str, body: &Value) -> Response {
         self.send(
             self.client
@@ -208,6 +235,7 @@ impl TestApp {
             auth: Auth::new(TEST_JWT_SECRET, false).unwrap(),
             email: Arc::new(emails.clone()),
             app_url: TEST_APP_URL.to_string(),
+            rate_limits: Default::default(),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = format!("http://{}", listener.local_addr().unwrap());

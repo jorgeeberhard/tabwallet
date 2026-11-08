@@ -9,6 +9,7 @@ const MESSAGES: Record<string, string> = {
   required: "Preencha este campo.",
   name_length: "Use um nome com até 100 caracteres.",
   invalid_current_password: "A senha atual não confere. Confira e tente de novo.",
+  too_many_requests: "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.",
   invalid_reset_token:
     "Este link de redefinição é inválido, expirou ou já foi usado. Peça um novo link.",
 }

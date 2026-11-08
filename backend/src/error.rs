@@ -40,6 +40,13 @@ pub enum ApiError {
     InvalidResetToken,
     /// No valid session.
     Unauthenticated,
+    /// A state-changing request that says it comes from another site.
+    ForbiddenOrigin,
+    /// Too many attempts of a sensitive operation; try again after this many
+    /// seconds.
+    TooManyRequests {
+        retry_after_secs: u64,
+    },
     /// No such category for this user.
     CategoryNotFound,
     /// An active category of the same type already has this name.
@@ -371,6 +378,7 @@ impl IntoResponse for ApiError {
         // Extra top-level members of the `error` object, for the few errors
         // whose client needs more than the code.
         let mut extra = None;
+        let mut retry_after = None;
         let (status, code, message, fields) = match self {
             Self::InvalidRequest => (
                 StatusCode::BAD_REQUEST,
@@ -416,6 +424,21 @@ impl IntoResponse for ApiError {
                 "Sign in to continue.",
                 None,
             ),
+            Self::ForbiddenOrigin => (
+                StatusCode::FORBIDDEN,
+                "forbidden_origin",
+                "The request does not come from the application.",
+                None,
+            ),
+            Self::TooManyRequests { retry_after_secs } => {
+                retry_after = Some(retry_after_secs);
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "too_many_requests",
+                    "Too many attempts. Try again later.",
+                    None,
+                )
+            }
             Self::CategoryNotFound => (
                 StatusCode::NOT_FOUND,
                 "category_not_found",
@@ -580,6 +603,12 @@ impl IntoResponse for ApiError {
         if let Some((key, value)) = extra {
             error[key] = value;
         }
-        (status, Json(json!({ "error": error }))).into_response()
+        let mut response = (status, Json(json!({ "error": error }))).into_response();
+        if let Some(seconds) = retry_after {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, seconds.into());
+        }
+        response
     }
 }

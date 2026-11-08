@@ -69,27 +69,36 @@ impl GetBalanceUseCase {
         user_id: UserId,
         today: NaiveDate,
     ) -> Result<BalanceReport, BalanceError> {
-        let opening_balance_cents = self
-            .opening_balance
-            .find(user_id)
-            .await
-            .map_err(BalanceError::internal)?;
-        let cash_flows = self
-            .transactions
-            .cash_flows(user_id)
-            .await
-            .map_err(BalanceError::internal)?;
-        let recurring = self
-            .recurring
-            .list(user_id)
-            .await
-            .map_err(BalanceError::internal)?
+        // Independent reads, run together (one round trip to the database).
+        let (opening_balance_cents, cash_flows, recurring, (_, cards)) = tokio::try_join!(
+            async {
+                self.opening_balance
+                    .find(user_id)
+                    .await
+                    .map_err(BalanceError::internal)
+            },
+            async {
+                self.transactions
+                    .cash_flows(user_id)
+                    .await
+                    .map_err(BalanceError::internal)
+            },
+            async {
+                self.recurring
+                    .list(user_id)
+                    .await
+                    .map_err(BalanceError::internal)
+            },
+            async {
+                card_facts(&self.cards, &self.purchases, user_id)
+                    .await
+                    .map_err(BalanceError::internal)
+            },
+        )?;
+        let recurring = recurring
             .into_iter()
             .map(|recurring| recurring.definition)
             .collect();
-        let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
-            .await
-            .map_err(BalanceError::internal)?;
         let ledger = Ledger::new(LedgerFacts {
             opening_balance_cents,
             cash_flows,

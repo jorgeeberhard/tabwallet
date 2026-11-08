@@ -39,6 +39,16 @@ pub async fn request(
     State(state): State<AppState>,
     ValidatedJson(request): ValidatedJson<RequestResetRequest>,
 ) -> Result<StatusCode, ApiError> {
+    // Every request counts, for any address, so the limit reveals nothing and
+    // nobody can flood a mailbox with reset e-mails.
+    let key = request.email.to_lowercase();
+    let now = state.clock.now();
+    state
+        .rate_limits
+        .password_reset
+        .check(&key, now)
+        .map_err(|retry_after_secs| ApiError::TooManyRequests { retry_after_secs })?;
+    state.rate_limits.password_reset.record(&key, now);
     RequestPasswordResetUseCase::new(
         UserRepository::new(state.pool.clone()),
         PasswordResetRepository::new(state.pool.clone()),

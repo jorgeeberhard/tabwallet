@@ -58,7 +58,7 @@ export function BudgetAlerts() {
       ))}
       <p className="text-sm text-muted-foreground">
         {hidden > 0 && `E mais ${hidden} ${hidden === 1 ? "categoria" : "categorias"} acima do limite. `}
-        <Link href="/orcamentos" className="font-semibold underline underline-offset-4">
+        <Link href="/orcamentos" className="-my-2 inline-block py-2 font-semibold underline underline-offset-4">
           Ver orçamentos
         </Link>
       </p>

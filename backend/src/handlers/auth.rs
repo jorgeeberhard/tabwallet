@@ -11,7 +11,7 @@ use crate::{
     error::ApiError,
     ids::UserId,
     repositories::users::{User, UserRepository},
-    use_cases::{GetCurrentUserUseCase, LogInUseCase, SignUpUseCase},
+    use_cases::{AuthError, GetCurrentUserUseCase, LogInUseCase, SignUpUseCase},
 };
 
 pub const MIN_PASSWORD_LEN: u64 = 8;
@@ -71,7 +71,24 @@ pub async fn log_in(
         UserRepository::new(state.pool.clone()),
         state.auth.tokens().clone(),
     );
-    let session = use_case.execute(&request.email, &request.password).await?;
+    // Wrong passwords are counted per e-mail address; the limit applies to
+    // unknown addresses too, so it does not reveal which have an account.
+    let key = request.email.to_lowercase();
+    let now = state.clock.now();
+    state
+        .rate_limits
+        .login
+        .check(&key, now)
+        .map_err(|retry_after_secs| ApiError::TooManyRequests { retry_after_secs })?;
+    let session = match use_case.execute(&request.email, &request.password).await {
+        Ok(session) => session,
+        Err(AuthError::InvalidCredentials) => {
+            state.rate_limits.login.record(&key, now);
+            return Err(AuthError::InvalidCredentials.into());
+        }
+        Err(error) => return Err(error.into()),
+    };
+    state.rate_limits.login.clear(&key);
     Ok((
         jar.add(state.auth.session_cookie(session.token)),
         Json(UserEnvelope {

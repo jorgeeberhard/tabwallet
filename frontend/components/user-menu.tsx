@@ -16,10 +16,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { getCurrentUser, logOut } from "@/lib/api"
+import { useHydrated } from "@/lib/use-hydrated"
 
 /** Shared by the header and the home page so the user is fetched once. */
 export function useCurrentUser() {
-  return useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser })
+  const query = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser })
+  // The account menu in the header may fetch the user before the page below it
+  // hydrates; showing the data only after hydration keeps both renders equal.
+  const hydrated = useHydrated()
+  return { data: hydrated ? query.data : undefined }
 }
 
 /** Account menu with the signed-in e-mail and the logout action. */
