@@ -299,10 +299,14 @@ impl UpdateCreditCardUseCase {
                 .ok_or(CreditCardError::NotFound)?;
         }
         if let Some((from, closing_day, due_day, reallocation)) = new_days {
-            self.cards
-                .change_days(id, from, closing_day, due_day)
+            if !self
+                .cards
+                .change_days(user_id, id, from, closing_day, due_day)
                 .await
-                .map_err(CreditCardError::internal)?;
+                .map_err(CreditCardError::internal)?
+            {
+                return Err(CreditCardError::NotFound);
+            }
             reallocation
                 .apply(&self.installment_purchases, user_id)
                 .await

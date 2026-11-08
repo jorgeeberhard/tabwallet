@@ -91,7 +91,8 @@ impl BudgetRepository {
             "INSERT INTO budget_limits (user_id, category_id, effective_month, limit_cents)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (category_id, effective_month)
-             DO UPDATE SET limit_cents = EXCLUDED.limit_cents, updated_at = now()",
+             DO UPDATE SET limit_cents = EXCLUDED.limit_cents, updated_at = now()
+             WHERE budget_limits.user_id = EXCLUDED.user_id",
         )
         .bind(user_id)
         .bind(category_id)

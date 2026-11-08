@@ -128,3 +128,35 @@ async fn a_card_without_invoices_can_be_deactivated_and_reactivated() {
     let body: Value = on.json().await.unwrap();
     assert_eq!(body["credit_card"]["active"], json!(true));
 }
+
+#[tokio::test]
+async fn changing_the_days_of_a_card_only_touches_the_card_of_that_user() {
+    use tabwallet_backend::{
+        ids::{CreditCardId, UserId},
+        ledger::cards::Month,
+        repositories::credit_cards::CreditCardRepository,
+    };
+
+    let app = TestApp::spawn().await;
+    let ana = signed_up(&app, "ana@example.com").await;
+    signed_up(&app, "bia@example.com").await;
+    let card = create_card(&ana, "Nubank", 10, 17).await;
+    let card_id = CreditCardId(card["id"].as_str().unwrap().parse().unwrap());
+    let bia_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM users WHERE email = $1")
+        .bind("bia@example.com")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let cards = CreditCardRepository::new(app.pool.clone());
+
+    // Another user's id changes nothing, whatever card id it names.
+    let changed = cards
+        .change_days(UserId(bia_id), card_id, Month::new(2026, 1).unwrap(), 25, 5)
+        .await
+        .unwrap();
+
+    assert!(!changed);
+    let list: Value = ana.get("/credit-cards").await.json().await.unwrap();
+    assert_eq!(list["credit_cards"][0]["closing_day"], json!(10));
+    assert_eq!(list["credit_cards"][0]["due_day"], json!(17));
+}

@@ -67,6 +67,8 @@ pub struct TestApp {
     client: reqwest::Client,
     clock: TestClock,
     emails: RecordingEmailSender,
+    /// The API's database, for tests that call a repository directly.
+    pub pool: PgPool,
 }
 
 /// A browser-like client: it remembers the session cookie the API sets and
@@ -229,7 +231,7 @@ impl TestApp {
         );
         let emails = RecordingEmailSender::default();
         let state = AppState {
-            pool,
+            pool: pool.clone(),
             clock: Arc::new(clock.clone()),
             // Plain HTTP in tests, so the cookie cannot be `Secure`.
             auth: Auth::new(TEST_JWT_SECRET, false).unwrap(),
@@ -247,6 +249,7 @@ impl TestApp {
             client: reqwest::Client::new(),
             clock,
             emails,
+            pool,
         }
     }
 
