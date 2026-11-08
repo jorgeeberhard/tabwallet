@@ -66,7 +66,7 @@ export interface Anticipation {
 }
 
 /**
- * UC19: brings the chosen Installments to the open invoice. It cannot be
+ * Brings the chosen Installments to the open invoice. It cannot be
  * undone, so the API only does it with `confirm: true`; the dialog that calls
  * this has already shown the warning and asked.
  */

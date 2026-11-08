@@ -3,8 +3,10 @@ use chrono::NaiveDate;
 use crate::{
     ids::{CreditCardId, UserId},
     ledger::{
-        Ledger, LedgerFacts,
-        cards::{CardFacts, CardSchedule, Invoice, InvoiceCycle, InvoicePayment, Month},
+        Ledger,
+        cards::{
+            CardChange, CardFacts, CardSchedule, Invoice, InvoiceCycle, InvoicePayment, Month,
+        },
     },
     repositories::{
         card_purchases::{CardPurchase, CardPurchaseRepository},
@@ -16,7 +18,7 @@ use crate::{
 
 use super::{
     card_purchase::CardPurchaseView,
-    installment_purchase::{InvoiceInstallment, invoice_installments, reallocate_for_card},
+    installment_purchase::{InvoiceInstallment, invoice_installments, plan_reallocation},
     invoice_charge::{ChargeView, view_of as charge_view_of},
 };
 
@@ -36,15 +38,15 @@ pub enum CreditCardError {
     /// An invoice still has an amount to pay, so the card stays active.
     #[error("the credit card still has an invoice with an amount to pay")]
     HasRemainingInvoice,
+    /// The change would leave an invoice with a total below what was already
+    /// paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     #[error("unexpected failure: {0}")]
     Internal(String),
 }
 
-impl CreditCardError {
-    pub(super) fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(CreditCardError);
 
 impl From<WriteCardError> for CreditCardError {
     fn from(error: WriteCardError) -> Self {
@@ -80,7 +82,7 @@ pub(super) async fn card_facts(
     cards: &CreditCardRepository,
     purchases: &CardPurchaseRepository,
     user_id: UserId,
-) -> Result<(Vec<CreditCard>, Vec<CardFacts>), CreditCardError> {
+) -> Result<(Vec<CreditCard>, Vec<CardFacts>), sqlx::Error> {
     // Seven independent reads: run together, so a request waits for one round
     // trip to the database instead of seven.
     let (
@@ -99,8 +101,7 @@ pub(super) async fn card_facts(
         cards.payments(user_id),
         cards.charges(user_id),
         cards.corrections(user_id),
-    )
-    .map_err(CreditCardError::internal)?;
+    )?;
     let facts = list
         .iter()
         .filter_map(|card| {
@@ -125,14 +126,10 @@ pub(super) async fn card_ledger(
     purchases: &CardPurchaseRepository,
     user_id: UserId,
 ) -> Result<(Vec<CreditCard>, Ledger), CreditCardError> {
-    let (list, facts) = card_facts(cards, purchases, user_id).await?;
-    Ok((
-        list,
-        Ledger::new(LedgerFacts {
-            cards: facts,
-            ..LedgerFacts::default()
-        }),
-    ))
+    let (list, facts) = card_facts(cards, purchases, user_id)
+        .await
+        .map_err(CreditCardError::internal)?;
+    Ok((list, Ledger::of_cards(facts)))
 }
 
 /// UC16: registers a card with its Closing Day and Due Day (1 to 31).
@@ -208,16 +205,19 @@ pub struct CreditCardChanges {
 /// closed and paid invoices keep the days they had.
 pub struct UpdateCreditCardUseCase {
     cards: CreditCardRepository,
+    purchases: CardPurchaseRepository,
     installment_purchases: InstallmentPurchaseRepository,
 }
 
 impl UpdateCreditCardUseCase {
     pub fn new(
         cards: CreditCardRepository,
+        purchases: CardPurchaseRepository,
         installment_purchases: InstallmentPurchaseRepository,
     ) -> Self {
         Self {
             cards,
+            purchases,
             installment_purchases,
         }
     }
@@ -242,37 +242,22 @@ impl UpdateCreditCardUseCase {
             .map_err(CreditCardError::internal)?
             .remove(&id)
             .ok_or(CreditCardError::NotFound)?;
-        if let Some(name) = changes.name {
-            card = self
-                .cards
-                .rename(user_id, id, &name)
-                .await?
-                .ok_or(CreditCardError::NotFound)?;
-        }
         let latest = *schedule.latest();
         let closing_day = changes.closing_day.unwrap_or(latest.closing_day);
         let due_day = changes.due_day.unwrap_or(latest.due_day);
-        if (closing_day, due_day) != (latest.closing_day, latest.due_day) {
+        let new_days = if (closing_day, due_day) != (latest.closing_day, latest.due_day) {
             let from = schedule.change_takes_effect_from(closing_day, today);
-            self.cards
-                .change_days(id, from, closing_day, due_day)
-                .await
-                .map_err(CreditCardError::internal)?;
-            schedule = self
-                .cards
-                .schedules(user_id)
-                .await
-                .map_err(CreditCardError::internal)?
-                .remove(&id)
-                .ok_or(CreditCardError::NotFound)?;
+            let new_schedule = schedule.with_days_from(from, closing_day, due_day);
             // Installments are stored with their invoice, so the new days
-            // must move them the way they move single purchases.
-            reallocate_for_card(
+            // must move them the way they move single purchases. Nothing is
+            // stored until we know no invoice would be left with less than
+            // was paid on it.
+            let reallocation = plan_reallocation(
                 &self.installment_purchases,
                 user_id,
                 &CardFacts {
                     id,
-                    schedule: schedule.clone(),
+                    schedule: new_schedule.clone(),
                     spending: Vec::new(),
                     installments: Vec::new(),
                     payments: Vec::new(),
@@ -283,6 +268,47 @@ impl UpdateCreditCardUseCase {
             )
             .await
             .map_err(CreditCardError::internal)?;
+            let (_, ledger) = card_ledger(&self.cards, &self.purchases, user_id).await?;
+            let change = CardChange {
+                schedule: Some(new_schedule),
+                installments_removed: reallocation.removed.clone(),
+                installments_added: reallocation.added.clone(),
+                ..CardChange::default()
+            };
+            if ledger.overpaid_by(id, &change).is_some() {
+                return Err(CreditCardError::WouldBeOverpaid);
+            }
+            Some((from, closing_day, due_day, reallocation))
+        } else {
+            None
+        };
+        if let Some(name) = changes.name {
+            card = self
+                .cards
+                .rename(user_id, id, &name)
+                .await?
+                .ok_or(CreditCardError::NotFound)?;
+        }
+        if let Some((from, closing_day, due_day, reallocation)) = new_days {
+            if !self
+                .cards
+                .change_days(user_id, id, from, closing_day, due_day)
+                .await
+                .map_err(CreditCardError::internal)?
+            {
+                return Err(CreditCardError::NotFound);
+            }
+            reallocation
+                .apply(&self.installment_purchases, user_id)
+                .await
+                .map_err(CreditCardError::internal)?;
+            schedule = self
+                .cards
+                .schedules(user_id)
+                .await
+                .map_err(CreditCardError::internal)?
+                .remove(&id)
+                .ok_or(CreditCardError::NotFound)?;
         }
         Ok(CreditCardView::new(card, &schedule))
     }

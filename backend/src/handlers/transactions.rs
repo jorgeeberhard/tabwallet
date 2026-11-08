@@ -7,12 +7,11 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     card_purchases::CardPurchaseResponse,
-    extract::{ValidatedJson, trimmed, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed, trimmed_opt},
     installment_purchases::InstallmentPurchaseResponse,
     invoice_charges::ChargeResponse,
     invoice_payments::StatementInvoicePaymentResponse,
@@ -300,13 +299,6 @@ pub struct UpdateRequest {
     #[validate(length(min = 1, max = MAX_DESCRIPTION_LEN, code = "description_length"))]
     description: Option<String>,
     category_id: Option<CategoryId>,
-}
-
-/// A malformed id is a transaction that does not exist.
-fn parse_id(raw: &str) -> Result<TransactionId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(TransactionId)
-        .map_err(|_| ApiError::TransactionNotFound)
 }
 
 /// `PATCH /transactions/{id}` (protected): edits amount, date, description

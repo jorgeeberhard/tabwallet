@@ -1,4 +1,4 @@
-//! Installment Anticipation with a Discount (UC19): bringing Installments of
+//! Installment Anticipation with a Discount: bringing Installments of
 //! invoices after the open one into the open invoice of the same card.
 
 use axum::{
@@ -6,12 +6,11 @@ use axum::{
     extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     credit_cards::{InvoiceCycleResponse, InvoiceResponse},
-    extract::ValidatedJson,
+    extract::{ValidatedJson, parse_id},
     installment_purchases::InvoiceInstallmentResponse,
     transactions::MAX_AMOUNT_CENTS,
 };
@@ -26,13 +25,6 @@ use crate::{
     },
     use_cases::{AnticipateInstallmentsUseCase, ListAnticipableInstallmentsUseCase},
 };
-
-/// A malformed id is a card that does not exist.
-fn parse_card_id(raw: &str) -> Result<CreditCardId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)
-}
 
 #[derive(Serialize)]
 pub struct AnticipableResponse {
@@ -56,7 +48,7 @@ pub async fn list_anticipable(
         CardPurchaseRepository::new(state.pool.clone()),
         InstallmentPurchaseRepository::new(state.pool.clone()),
     )
-    .execute(auth_user.id, parse_card_id(&id)?, state.clock.today())
+    .execute(auth_user.id, parse_id(&id)?, state.clock.today())
     .await?;
     Ok(Json(AnticipableResponse {
         open_invoice: found.open_invoice.into(),
@@ -119,7 +111,7 @@ pub async fn anticipate(
     Path(id): Path<String>,
     ValidatedJson(request): ValidatedJson<AnticipateRequest>,
 ) -> Result<Json<AnticipationEnvelope>, ApiError> {
-    let card_id = parse_card_id(&id)?;
+    let card_id = parse_id(&id)?;
     let receipt = AnticipateInstallmentsUseCase::new(
         CreditCardRepository::new(state.pool.clone()),
         CardPurchaseRepository::new(state.pool.clone()),

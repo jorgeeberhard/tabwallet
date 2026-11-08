@@ -57,7 +57,7 @@ const fieldName = {
 } as const
 
 /**
- * UC21: records the interest, penalty and IOF the bank charged on an invoice,
+ * Records the interest, penalty and IOF the bank charged on an invoice,
  * or edits one already recorded. The system never calculates interest: it only
  * keeps the amount the person informs. A charge goes to the "Juros e encargos"
  * Category, joins the invoice total (so it is paid with the invoice) and counts

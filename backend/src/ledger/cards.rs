@@ -11,19 +11,25 @@
 //! - State: Open until the closing date (inclusive), Closed after it until the
 //!   due date, Paid from the due date on.
 //!
-//! Paying an invoice (UC17, ADR-0003): the user may make Early Payments, total
+//! Paying an invoice (ADR-0003): the user may make Early Payments, total
 //! or partial, while the invoice is Open or Closed. On the due date the ledger
 //! derives an automatic Invoice Payment of whatever is still unpaid and the
 //! invoice becomes Paid. Early Payments are stored; the automatic one never
 //! is. Neither is an expense: they leave the balance on their date and are
 //! reported as [`InvoicePayment`]s, apart from card purchases.
 //!
-//! Correcting the payment (UC20) and Charges (UC21): the user may replace the
+//! Correcting the payment and Charges: the user may replace the
 //! due-date payment with the amount really paid; what is left unpaid becomes
 //! the Carried Balance of the next invoice, a derived item that is not an
 //! expense and that counts in that invoice's total (and so in what it carries
 //! on in turn). Charges are expenses the user records in an invoice and are part
 //! of its total. Both are stored as facts; the amounts follow from them.
+//!
+//! An invoice never comes to less than what was paid on it early. A use case
+//! that is about to lower a total (editing or deleting a purchase, an
+//! Installment or a Charge, new card days, an anticipation, a corrected
+//! payment) asks [`CardFacts::after`] and [`CardFacts::overpaid_invoices`]
+//! beforehand and refuses the change that would break it.
 //!
 //! A card keeps a history of its days ([`CardSchedule`]) so that changing them
 //! only affects invoices still open: closed and paid invoices keep the days
@@ -31,94 +37,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
+pub use super::month::Month;
 use crate::ids::{CreditCardId, InvoicePaymentId};
-
-/// A calendar month, such as 2026-10.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Month {
-    year: i32,
-    month: u32,
-}
-
-impl Month {
-    pub fn new(year: i32, month: u32) -> Option<Self> {
-        NaiveDate::from_ymd_opt(year, month, 1).map(|_| Self { year, month })
-    }
-
-    /// The month a date belongs to.
-    pub fn of(date: NaiveDate) -> Self {
-        Self {
-            year: date.year(),
-            month: date.month(),
-        }
-    }
-
-    /// Parses `YYYY-MM`.
-    pub fn parse(text: &str) -> Option<Self> {
-        let (year, month) = text.split_once('-')?;
-        if year.len() != 4 || month.len() != 2 {
-            return None;
-        }
-        Self::new(year.parse().ok()?, month.parse().ok()?)
-    }
-
-    pub fn first_day(self) -> NaiveDate {
-        NaiveDate::from_ymd_opt(self.year, self.month, 1).expect("a valid month")
-    }
-
-    pub fn next(self) -> Self {
-        if self.month == 12 {
-            Self {
-                year: self.year + 1,
-                month: 1,
-            }
-        } else {
-            Self {
-                year: self.year,
-                month: self.month + 1,
-            }
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        if self.month == 1 {
-            Self {
-                year: self.year - 1,
-                month: 12,
-            }
-        } else {
-            Self {
-                year: self.year,
-                month: self.month - 1,
-            }
-        }
-    }
-
-    /// The month `months` after this one.
-    pub fn plus(self, months: u32) -> Self {
-        let index = self.year * 12 + self.month as i32 - 1 + months as i32;
-        Self {
-            year: index.div_euclid(12),
-            month: index.rem_euclid(12) as u32 + 1,
-        }
-    }
-
-    /// The date of `day` in this month; in a shorter month, its last day.
-    pub fn day_or_last(self, day: u32) -> NaiveDate {
-        let last = self.next().first_day().pred_opt().expect("a valid date");
-        self.first_day()
-            .with_day(day.min(last.day()))
-            .expect("a day within the month")
-    }
-}
-
-impl std::fmt::Display for Month {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:04}-{:02}", self.year, self.month)
-    }
-}
 
 /// The closing and due days a card has from one closing month on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -156,6 +78,23 @@ impl CardSchedule {
             .unwrap_or(&self.versions[0])
     }
 
+    /// The schedule after new days start at the invoice closing in `from`,
+    /// replacing any version that already starts there or later.
+    pub fn with_days_from(&self, from: Month, closing_day: u32, due_day: u32) -> Self {
+        let mut versions: Vec<ScheduleVersion> = self
+            .versions
+            .iter()
+            .filter(|version| version.effective_from < from)
+            .copied()
+            .collect();
+        versions.push(ScheduleVersion {
+            effective_from: from,
+            closing_day,
+            due_day,
+        });
+        Self { versions }
+    }
+
     /// The days the card has from now on: the latest version.
     pub fn latest(&self) -> &ScheduleVersion {
         self.versions.last().expect("a schedule is never empty")
@@ -167,6 +106,12 @@ impl CardSchedule {
 
     /// The first date after the closing date that is the Due Day: in the same
     /// month when the Due Day comes after the closing date, else in the next.
+    /// The Reference Month of everything in the invoice closing in `month`:
+    /// the month of its due date. The one place that rule lives.
+    pub fn reference_month(&self, month: Month) -> Month {
+        Month::of(self.due_date(month))
+    }
+
     pub fn due_date(&self, month: Month) -> NaiveDate {
         let closing = self.closing_date(month);
         let due_day = self.version_for(month).due_day;
@@ -218,25 +163,31 @@ pub enum InvoiceState {
     Paid,
 }
 
+impl InvoiceState {
+    /// The stable name the API uses for the state.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Paid => "paid",
+        }
+    }
+}
+
 /// The dates and state of one invoice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvoiceCycle {
     pub closing_month: Month,
     pub closing_date: NaiveDate,
     pub due_date: NaiveDate,
+    /// The month everything in the invoice counts in for reports and budgets:
+    /// the month of its due date ([`CardSchedule::reference_month`]).
+    pub reference_month: Month,
     pub state: InvoiceState,
 }
 
-impl InvoiceCycle {
-    /// The month everything in the invoice counts in for reports and budgets:
-    /// the month of its due date.
-    pub fn reference_month(&self) -> Month {
-        Month::of(self.due_date)
-    }
-}
-
 /// Whether the payment of an invoice can be corrected to the amount really
-/// paid at the bank (UC20).
+/// paid at the bank.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CorrectionState {
     /// The due date has not come: there is no payment yet to correct.
@@ -249,6 +200,18 @@ pub enum CorrectionState {
     /// The invoice is Paid and the next one is not: the payment can be
     /// corrected, again and again.
     Editable,
+}
+
+impl CorrectionState {
+    /// The stable name the API uses for the state.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotDue => "not_due",
+            Self::NothingToPay => "nothing_to_pay",
+            Self::Locked => "locked",
+            Self::Editable => "editable",
+        }
+    }
 }
 
 /// The state of an invoice's payment correction and its numbers.
@@ -351,7 +314,7 @@ pub struct ChargeFact {
 }
 
 /// The amount the user said they really paid of an invoice at its due date
-/// (UC20). It replaces the automatic payment.
+///. It replaces the automatic payment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CorrectionFact {
     pub closing_month: Month,
@@ -402,6 +365,23 @@ pub fn split_installments(total_cents: i64, count: u32) -> Option<Vec<i64>> {
     )
 }
 
+/// A change to the facts of one card that a use case is about to store, so
+/// the ledger can say beforehand what it would do to the invoices. Each field
+/// is something taken away or added; the rest stays as it is.
+#[derive(Clone, Debug, Default)]
+pub struct CardChange {
+    /// The days the card would have.
+    pub schedule: Option<CardSchedule>,
+    pub spend_removed: Vec<CardSpend>,
+    pub spend_added: Vec<CardSpend>,
+    pub installments_removed: Vec<InstallmentCharge>,
+    pub installments_added: Vec<InstallmentCharge>,
+    pub charges_removed: Vec<ChargeFact>,
+    pub charges_added: Vec<ChargeFact>,
+    /// The due-date payment of an invoice, as corrected.
+    pub correction: Option<CorrectionFact>,
+}
+
 /// What is stored about one card that the ledger needs.
 #[derive(Clone, Debug)]
 pub struct CardFacts {
@@ -431,12 +411,23 @@ struct Settlement {
     /// The total less the Early Payments, never negative: what the due date
     /// would debit if the user did not correct the payment.
     unpaid_cents: i64,
+    /// The Early Payments came to more than the total.
+    overpaid: bool,
     /// What the user said they paid (at most `unpaid_cents`), if corrected.
     corrected_cents: Option<i64>,
     /// What leaves the balance on the due date.
     due_payment_cents: i64,
     /// What moves to the next invoice: `unpaid_cents` less `due_payment_cents`.
     carried_out_cents: i64,
+}
+
+/// Takes out of `facts` one element equal to each of `removed`.
+fn remove_each<T: PartialEq>(facts: &mut Vec<T>, removed: &[T]) {
+    for gone in removed {
+        if let Some(index) = facts.iter().position(|fact| fact == gone) {
+            facts.remove(index);
+        }
+    }
 }
 
 impl Settlement {
@@ -450,6 +441,48 @@ impl CardFacts {
     /// it has anything in it.
     pub fn cycle_of(&self, month: Month, today: NaiveDate) -> InvoiceCycle {
         self.cycle(month, today)
+    }
+
+    /// The facts as they would be with `change` stored.
+    pub fn after(&self, change: &CardChange) -> CardFacts {
+        let mut facts = self.clone();
+        if let Some(schedule) = &change.schedule {
+            facts.schedule = schedule.clone();
+        }
+        for removed in &change.spend_removed {
+            if let Some(spend) = facts
+                .spending
+                .iter_mut()
+                .find(|spend| spend.date == removed.date)
+            {
+                spend.amount_cents -= removed.amount_cents;
+            }
+        }
+        facts.spending.retain(|spend| spend.amount_cents > 0);
+        facts.spending.extend(change.spend_added.iter().copied());
+        remove_each(&mut facts.installments, &change.installments_removed);
+        facts
+            .installments
+            .extend(change.installments_added.iter().copied());
+        remove_each(&mut facts.charges, &change.charges_removed);
+        facts.charges.extend(change.charges_added.iter().copied());
+        if let Some(correction) = change.correction {
+            facts
+                .corrections
+                .retain(|other| other.closing_month != correction.closing_month);
+            facts.corrections.push(correction);
+        }
+        facts
+    }
+
+    /// The invoices whose Early Payments come to more than their total. None
+    /// should exist: a change that would create one is refused.
+    pub fn overpaid_invoices(&self) -> BTreeSet<Month> {
+        self.settlements(None)
+            .into_iter()
+            .filter(|settlement| settlement.overpaid)
+            .map(|settlement| settlement.month)
+            .collect()
     }
 
     /// Splits a purchase of `total_cents` made on `date` in `count`
@@ -471,7 +504,7 @@ impl CardFacts {
                 .map(|(amount_cents, offset)| PlannedInstallment {
                     number: offset + 1,
                     amount_cents,
-                    cycle: self.cycle(first.plus(offset), today),
+                    cycle: self.cycle(first.plus(offset as i32), today),
                 })
                 .collect(),
         )
@@ -491,6 +524,7 @@ impl CardFacts {
             closing_month: month,
             closing_date,
             due_date,
+            reference_month: self.schedule.reference_month(month),
             state,
         }
     }
@@ -566,8 +600,8 @@ impl CardFacts {
             let purchases_cents = self.total_of(month);
             let charges_cents = self.charges_of(month);
             let early_cents = self.early_paid_of(month);
-            let unpaid_cents =
-                (purchases_cents + charges_cents + carried_in_cents - early_cents).max(0);
+            let balance = purchases_cents + charges_cents + carried_in_cents - early_cents;
+            let unpaid_cents = balance.max(0);
             let corrected_cents = self
                 .corrections
                 .iter()
@@ -586,6 +620,7 @@ impl CardFacts {
                 carried_in_cents,
                 early_cents,
                 unpaid_cents,
+                overpaid: balance < 0,
                 corrected_cents,
                 due_payment_cents,
                 carried_out_cents,

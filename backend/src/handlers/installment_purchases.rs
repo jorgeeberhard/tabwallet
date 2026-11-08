@@ -5,13 +5,12 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     card_purchases::PurchaseCard,
     credit_cards::InvoiceCycleResponse,
-    extract::{ValidatedJson, trimmed, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed, trimmed_opt},
     transactions::{MAX_AMOUNT_CENTS, MAX_DESCRIPTION_LEN, TransactionCategory},
 };
 use crate::{
@@ -55,7 +54,7 @@ pub struct InstallmentResponse {
     /// month of the invoice's due date.
     reference_month: String,
     /// It was brought to the open invoice by an Installment Anticipation
-    /// (UC19), which cannot be undone.
+    ///, which cannot be undone.
     anticipated: bool,
     /// The day it was anticipated, `YYYY-MM-DD`; `null` if it was not.
     anticipated_on: Option<NaiveDate>,
@@ -73,7 +72,7 @@ impl From<InstallmentView> for InstallmentResponse {
             id: view.installment.id,
             number: view.installment.number,
             amount_cents: view.installment.amount_cents,
-            reference_month: view.invoice.reference_month().to_string(),
+            reference_month: view.invoice.reference_month.to_string(),
             anticipated: view.installment.is_anticipated(),
             anticipated_on: view.installment.anticipated_on,
             discount_cents: view.installment.discount_cents,
@@ -107,7 +106,7 @@ pub struct InstallmentPurchaseResponse {
     /// Some Installment is in a paid invoice: only the Category can change
     /// and the remaining Installments can be cancelled.
     has_paid_installments: bool,
-    /// Some Installment was anticipated (UC19), which cannot be undone: like
+    /// Some Installment was anticipated, which cannot be undone: like
     /// with paid ones, only the Category can change and the remaining
     /// Installments can be cancelled.
     has_anticipated_installments: bool,
@@ -215,7 +214,7 @@ impl From<InvoiceInstallment> for InvoiceInstallmentResponse {
                 purchase.credit_card_name,
                 purchase.credit_card_active,
             ),
-            reference_month: item.installment.invoice.reference_month().to_string(),
+            reference_month: item.installment.invoice.reference_month.to_string(),
             anticipated: item.installment.installment.is_anticipated(),
             discount_cents: item.installment.installment.discount_cents,
             original_amount_cents: item.installment.installment.original_amount_cents(),
@@ -309,13 +308,6 @@ pub struct UpdateRequest {
     #[validate(length(min = 1, max = MAX_DESCRIPTION_LEN, code = "description_length"))]
     description: Option<String>,
     category_id: Option<CategoryId>,
-}
-
-/// A malformed id is a purchase that does not exist.
-fn parse_id(raw: &str) -> Result<InstallmentPurchaseId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(InstallmentPurchaseId)
-        .map_err(|_| ApiError::InstallmentPurchaseNotFound)
 }
 
 /// `PATCH /installment-purchases/{id}` (protected): edits total, number of

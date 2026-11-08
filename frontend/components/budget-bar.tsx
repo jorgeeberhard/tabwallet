@@ -3,32 +3,31 @@ import { TriangleAlertIcon } from "lucide-react"
 
 import { Money } from "@/components/money"
 import { Progress } from "@/components/ui/progress"
-import { formatBRL } from "@/lib/format"
+import { centsToReais } from "@/lib/amount"
+import { formatBRLCents } from "@/lib/format"
 
 export type BudgetBarState = "ok" | "warning" | "exceeded"
 
 /** From which share of the limit the bar warns (Design System default). */
 export const DEFAULT_WARN_AT = 0.8
 
-const cents = (reais: number) => Math.round(reais * 100)
-
 /**
  * `exceeded` only when the spending is above the limit (exactly at the limit
- * is not); `warning` from `warnAt` of it; `ok` below. Amounts in reais.
+ * is not); `warning` from `warnAt` of it; `ok` below. Amounts in cents.
  */
 export function budgetBarState(
-  spent: number,
-  limit: number,
+  spentCents: number,
+  limitCents: number,
   warnAt: number = DEFAULT_WARN_AT,
 ): BudgetBarState {
-  if (cents(spent) > cents(limit)) return "exceeded"
-  if (cents(spent) >= cents(limit) * warnAt) return "warning"
+  if (spentCents > limitCents) return "exceeded"
+  if (spentCents >= limitCents * warnAt) return "warning"
   return "ok"
 }
 
 /** The share of the limit already spent, as a whole percent rounded down. */
-export function budgetPercent(spent: number, limit: number): number {
-  return Math.floor((cents(spent) * 100) / cents(limit))
+export function budgetPercent(spentCents: number, limitCents: number): number {
+  return Math.floor((spentCents * 100) / limitCents)
 }
 
 const INDICATOR = {
@@ -45,10 +44,10 @@ const TEXT = {
 
 export interface BudgetBarProps {
   category: string
-  /** Spent in the month, in reais. */
-  spent: number
-  /** The monthly limit, in reais. */
-  limit: number
+  /** Spent in the month, in cents. */
+  spentCents: number
+  /** The monthly limit, in cents. */
+  limitCents: number
   warnAt?: number
   /**
    * The category is deactivated: its budget is kept but raises no alert, so
@@ -60,23 +59,23 @@ export interface BudgetBarProps {
 
 /**
  * The month's spending in one category against its limit (Design System
- * `BudgetBar`, UC12 and UC13). The state is always written next to the bar,
- * never only coloured: "41% usado", "92% do limite" with an alert icon, or
- * "Limite excedido em R$ 120,00".
+ * `BudgetBar`). The state is always written next to the bar, never only
+ * coloured: "41% usado", "92% do limite" with an alert icon, or "Limite
+ * excedido em R$ 120,00".
  */
 export function BudgetBar({
   category,
-  spent,
-  limit,
+  spentCents,
+  limitCents,
   warnAt = DEFAULT_WARN_AT,
   paused = false,
   className,
 }: BudgetBarProps) {
-  const state = budgetBarState(spent, limit, warnAt)
-  const percent = budgetPercent(spent, limit)
+  const state = budgetBarState(spentCents, limitCents, warnAt)
+  const percent = budgetPercent(spentCents, limitCents)
   const label =
     state === "exceeded"
-      ? `Limite excedido em ${formatBRL((cents(spent) - cents(limit)) / 100)}`
+      ? `Limite excedido em ${formatBRLCents(spentCents - limitCents)}`
       : state === "warning"
         ? `${percent}% do limite`
         : `${percent}% usado`
@@ -86,9 +85,9 @@ export function BudgetBar({
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className="font-medium">{category}</span>
         <span className="flex items-baseline gap-1 text-sm text-muted-foreground">
-          <Money value={spent} showSign={false} kind="neutral" size="sm" />
+          <Money value={centsToReais(spentCents)} showSign={false} kind="neutral" size="sm" />
           de
-          <Money value={limit} showSign={false} kind="neutral" size="sm" />
+          <Money value={centsToReais(limitCents)} showSign={false} kind="neutral" size="sm" />
         </span>
       </div>
       <Progress

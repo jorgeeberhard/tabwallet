@@ -2,23 +2,14 @@ import { describe, expect, it } from "vitest"
 
 import {
   describePeriod,
-  monthOf,
   monthOptions,
   monthsBetween,
   periodProblem,
   presetRange,
   resolvePeriod,
-  shiftMonth,
 } from "@/lib/report-periods"
 
 describe("report periods", () => {
-  it("reads the month of a day and moves months across years", () => {
-    expect(monthOf("2026-01-15")).toBe("2026-01")
-    expect(shiftMonth("2026-01", -1)).toBe("2025-12")
-    expect(shiftMonth("2026-11", 3)).toBe("2027-02")
-    expect(shiftMonth("2026-03", -14)).toBe("2025-01")
-  })
-
   it("counts both ends of a period", () => {
     expect(monthsBetween("2026-01", "2026-01")).toBe(1)
     expect(monthsBetween("2025-11", "2026-02")).toBe(4)

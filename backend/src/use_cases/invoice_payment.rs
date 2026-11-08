@@ -2,7 +2,10 @@ use chrono::NaiveDate;
 
 use crate::{
     ids::{CreditCardId, UserId},
-    ledger::cards::{CorrectionState, Invoice, InvoicePayment, InvoiceState, Month, PaymentOrigin},
+    ledger::cards::{
+        CardChange, CorrectionFact, CorrectionState, Invoice, InvoicePayment, InvoiceState, Month,
+        PaymentOrigin,
+    },
     repositories::{
         card_purchases::CardPurchaseRepository,
         credit_cards::CreditCardRepository,
@@ -24,6 +27,10 @@ pub enum InvoicePaymentError {
     /// The invoice is Paid: its due date has come and nothing can be paid.
     #[error("the invoice is paid")]
     InvoicePaid,
+    /// The corrected payment would leave the next invoice with a total below
+    /// what was already paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     /// The amount is more than the invoice still has to pay.
     #[error("the amount is more than the invoice's remaining amount")]
     AmountExceedsRemaining,
@@ -41,11 +48,7 @@ pub enum InvoicePaymentError {
     Internal(String),
 }
 
-impl InvoicePaymentError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(InvoicePaymentError);
 
 impl From<CreditCardError> for InvoicePaymentError {
     fn from(error: CreditCardError) -> Self {
@@ -69,7 +72,7 @@ pub struct CorrectionReceipt {
     pub invoice: Invoice,
 }
 
-/// UC20: corrects the payment of an invoice to the amount really paid at the
+/// Corrects the payment of an invoice to the amount really paid at the
 /// bank. The invoice must be Paid (its due date has come) and the one after
 /// it, which receives what is left unpaid as a Carried Balance, must not be
 /// Paid yet. The amount is zero up to what the Early Payments left unpaid;
@@ -118,6 +121,16 @@ impl CorrectInvoicePaymentUseCase {
         if amount_cents > invoice.payment_correction.max_cents {
             return Err(InvoicePaymentError::AmountExceedsRemaining);
         }
+        let change = CardChange {
+            correction: Some(CorrectionFact {
+                closing_month,
+                amount_cents,
+            }),
+            ..CardChange::default()
+        };
+        if ledger.overpaid_by(card_id, &change).is_some() {
+            return Err(InvoicePaymentError::WouldBeOverpaid);
+        }
         self.payments
             .set_correction(user_id, card_id, closing_month, amount_cents)
             .await
@@ -139,7 +152,7 @@ impl CorrectInvoicePaymentUseCase {
     }
 }
 
-/// UC17: pays an Open or Closed invoice before its due date, in full or in
+/// Pays an Open or Closed invoice before its due date, in full or in
 /// part, for at most what it still has to pay. The payment is dated today (an
 /// Early Payment is never in the future) and leaves the Current Balance at
 /// once; it is not an expense. Purchases added later only raise the remaining

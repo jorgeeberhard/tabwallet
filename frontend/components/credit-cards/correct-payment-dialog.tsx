@@ -38,7 +38,7 @@ interface CorrectPaymentDialogProps {
 }
 
 /**
- * UC20: corrects the payment of a paid invoice to the amount really paid at
+ * Corrects the payment of a paid invoice to the amount really paid at
  * the bank. The amount starts as what is paid now and cannot be more than the
  * invoice owed at the due date. Whatever is left unpaid becomes the Carried
  * Balance of the next invoice, which this dialog shows before saving. Mount it

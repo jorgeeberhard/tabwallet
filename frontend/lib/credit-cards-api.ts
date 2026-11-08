@@ -117,7 +117,7 @@ function toCycle(payload: InvoiceCyclePayload): InvoiceCycle {
 
 /**
  * Whether the payment of an invoice can be corrected to the amount really paid
- * at the bank (UC20): `not_due` before the due date, `nothing_to_pay` when
+ * at the bank: `not_due` before the due date, `nothing_to_pay` when
  * early payments covered it all, `editable` until the next invoice (the one
  * that receives the Carried Balance) is paid, and `locked` after that.
  */
@@ -387,7 +387,7 @@ export interface Installment {
   invoice: InvoiceCycle
   /** `YYYY-MM`: the month of the invoice's due date. */
   referenceMonth: string
-  /** It was brought to the open invoice by an Installment Anticipation (UC19): irreversible. */
+  /** It was brought to the open invoice by an Installment Anticipation: irreversible. */
   anticipated: boolean
   /** Cents of the Discount it received when anticipated; zero otherwise. */
   discountCents: number
@@ -606,7 +606,7 @@ export async function getInvoice(cardId: string, closingMonth: string): Promise<
 }
 
 /**
- * UC20: corrects the payment of a paid invoice to the amount really paid at
+ * Corrects the payment of a paid invoice to the amount really paid at
  * the bank. What is left unpaid becomes the Carried Balance of the next
  * invoice; the correction can be repeated until that invoice is paid.
  */
@@ -628,7 +628,7 @@ export interface ChargeInput {
   description?: string
 }
 
-/** UC21: records the interest, penalty and IOF the bank charged on an invoice. */
+/** Records the interest, penalty and IOF the bank charged on an invoice. */
 export async function createCharge(
   cardId: string,
   closingMonth: string,
@@ -665,7 +665,7 @@ export async function deleteCharge(id: string): Promise<void> {
 }
 
 /**
- * UC17: pays an Open or Closed invoice early, in full or in part, for at most
+ * Pays an Open or Closed invoice early, in full or in part, for at most
  * what it still has to pay. The payment is dated today by the API.
  */
 export async function payInvoice(

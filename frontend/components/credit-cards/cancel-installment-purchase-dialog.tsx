@@ -28,7 +28,7 @@ export interface CancelInstallmentTarget {
   description: string
   /** Some Installment is in a paid invoice: only the remaining ones are cancelled. */
   hasPaidInstallments: boolean
-  /** Some Installment was anticipated (UC19): it stays, like a paid one. */
+  /** Some Installment was anticipated: it stays, like a paid one. */
   hasAnticipatedInstallments: boolean
 }
 

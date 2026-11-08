@@ -18,8 +18,9 @@ use crate::{
     ledger::{cards::Month, reports::MonthTotals},
     repositories::{
         card_purchases::CardPurchaseRepository, categories::CategoryRepository,
-        credit_cards::CreditCardRepository, recurring::RecurringRepository,
-        spending::SpendingRepository, transactions::TransactionRepository,
+        credit_cards::CreditCardRepository, opening_balance::OpeningBalanceRepository,
+        recurring::RecurringRepository, spending::SpendingRepository,
+        transactions::TransactionRepository,
     },
     use_cases::{
         CategoryLine, ExpensesByCategory, GetExpensesByCategoryUseCase, GetIncomeVsExpensesUseCase,
@@ -64,6 +65,7 @@ fn use_case_repositories(
     CardPurchaseRepository,
     RecurringRepository,
     TransactionRepository,
+    OpeningBalanceRepository,
     SpendingRepository,
 ) {
     (
@@ -72,6 +74,7 @@ fn use_case_repositories(
         CardPurchaseRepository::new(state.pool.clone()),
         RecurringRepository::new(state.pool.clone()),
         TransactionRepository::new(state.pool.clone()),
+        OpeningBalanceRepository::new(state.pool.clone()),
         SpendingRepository::new(state.pool.clone()),
     )
 }
@@ -135,7 +138,7 @@ pub async fn expenses_by_category(
 ) -> Result<Json<ExpensesByCategoryResponse>, ApiError> {
     let Query(params) = params.map_err(|_| ApiError::InvalidRequest)?;
     let period = params.parse()?;
-    let (categories, cards, purchases, recurring, transactions, spending) =
+    let (categories, cards, purchases, recurring, transactions, opening_balance, spending) =
         use_case_repositories(&state);
     let report = GetExpensesByCategoryUseCase::new(
         categories,
@@ -143,6 +146,7 @@ pub async fn expenses_by_category(
         purchases,
         recurring,
         transactions,
+        opening_balance,
         spending,
     )
     .execute(auth_user.id, state.clock.today(), period)
@@ -212,7 +216,7 @@ pub async fn income_vs_expenses(
 ) -> Result<Json<IncomeVsExpensesResponse>, ApiError> {
     let Query(params) = params.map_err(|_| ApiError::InvalidRequest)?;
     let period = params.parse()?;
-    let (categories, cards, purchases, recurring, transactions, spending) =
+    let (categories, cards, purchases, recurring, transactions, opening_balance, spending) =
         use_case_repositories(&state);
     let report = GetIncomeVsExpensesUseCase::new(
         categories,
@@ -220,6 +224,7 @@ pub async fn income_vs_expenses(
         purchases,
         recurring,
         transactions,
+        opening_balance,
         spending,
     )
     .execute(auth_user.id, state.clock.today(), period)

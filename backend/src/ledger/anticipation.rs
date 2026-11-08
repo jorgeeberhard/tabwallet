@@ -1,4 +1,4 @@
-//! Installment Anticipation with a Discount (UC19, ADR-0003).
+//! Installment Anticipation with a Discount (ADR-0003).
 //!
 //! The user brings Installments of a card that sit in invoices after the open
 //! one into the open invoice, optionally with a Discount. This module only

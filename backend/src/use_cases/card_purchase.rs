@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use crate::{
     ids::{CardPurchaseId, UserId},
-    ledger::cards::{InvoiceCycle, InvoiceState},
+    ledger::cards::{CardChange, CardSpend, InvoiceCycle, InvoiceState},
     repositories::{
         card_purchases::{
             CardPurchase, CardPurchaseChanges, CardPurchaseRepository, NewCardPurchase,
@@ -44,15 +44,15 @@ pub enum CardPurchaseError {
     /// The date would put the purchase in a paid invoice.
     #[error("the date falls in a paid invoice")]
     DateInPaidInvoice,
+    /// The change would leave an invoice with a total below what was already
+    /// paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     #[error("unexpected failure: {0}")]
     Internal(String),
 }
 
-impl CardPurchaseError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(CardPurchaseError);
 
 impl From<super::CreditCardError> for CardPurchaseError {
     fn from(error: super::CreditCardError) -> Self {
@@ -200,6 +200,23 @@ impl UpdateCardPurchaseUseCase {
         {
             return Err(CardPurchaseError::DateInPaidInvoice);
         }
+        let change = CardChange {
+            spend_removed: vec![CardSpend {
+                date: current.date,
+                amount_cents: current.amount_cents,
+            }],
+            spend_added: vec![CardSpend {
+                date: changes.date.unwrap_or(current.date),
+                amount_cents: changes.amount_cents.unwrap_or(current.amount_cents),
+            }],
+            ..CardChange::default()
+        };
+        if ledger
+            .overpaid_by(current.credit_card_id, &change)
+            .is_some()
+        {
+            return Err(CardPurchaseError::WouldBeOverpaid);
+        }
         let updated = self
             .purchases
             .update(user_id, id, changes)
@@ -245,6 +262,19 @@ impl DeleteCardPurchaseUseCase {
         let view = view_of(&ledger, current, today).ok_or(CardPurchaseError::NotFound)?;
         if view.invoice.state == InvoiceState::Paid {
             return Err(CardPurchaseError::InvoicePaid);
+        }
+        let change = CardChange {
+            spend_removed: vec![CardSpend {
+                date: view.purchase.date,
+                amount_cents: view.purchase.amount_cents,
+            }],
+            ..CardChange::default()
+        };
+        if ledger
+            .overpaid_by(view.purchase.credit_card_id, &change)
+            .is_some()
+        {
+            return Err(CardPurchaseError::WouldBeOverpaid);
         }
         match self.purchases.delete(user_id, id).await {
             Ok(true) => Ok(()),

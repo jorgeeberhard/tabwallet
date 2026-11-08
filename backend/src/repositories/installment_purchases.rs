@@ -289,10 +289,12 @@ impl InstallmentPurchaseRepository {
         }
         if let Some(allocations) = allocations {
             sqlx::query(
-                "DELETE FROM installments WHERE installment_purchase_id = $1 AND number > $2",
+                "DELETE FROM installments
+                 WHERE installment_purchase_id = $1 AND number > $2 AND user_id = $3",
             )
             .bind(id)
             .bind(allocations.len() as i32)
+            .bind(user_id)
             .execute(&mut *tx)
             .await?;
             upsert_installments(&mut tx, user_id, id, allocations).await?;
@@ -388,11 +390,15 @@ impl InstallmentPurchaseRepository {
             return Ok(None);
         }
         let ids: Vec<uuid::Uuid> = installment_ids.iter().map(|id| id.0).collect();
-        sqlx::query("DELETE FROM installments WHERE installment_purchase_id = $1 AND id = ANY($2)")
-            .bind(id)
-            .bind(ids)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "DELETE FROM installments
+             WHERE installment_purchase_id = $1 AND id = ANY($2) AND user_id = $3",
+        )
+        .bind(id)
+        .bind(ids)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         self.find(user_id, id).await
     }
@@ -429,7 +435,8 @@ async fn upsert_installments(
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (installment_purchase_id, number)
              DO UPDATE SET amount_cents = EXCLUDED.amount_cents,
-                           invoice_month = EXCLUDED.invoice_month",
+                           invoice_month = EXCLUDED.invoice_month
+             WHERE installments.user_id = EXCLUDED.user_id",
         )
         .bind(user_id)
         .bind(purchase_id)

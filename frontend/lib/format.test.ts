@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatBRL, formatDate, formatMonth } from "@/lib/format"
+import { formatBRL, formatBRLCents, formatDate, formatMonth } from "@/lib/format"
 
 const NBSP = " "
 
@@ -20,5 +20,10 @@ describe("formatBRL", () => {
 
   it("formats the absolute value: the sign belongs to the caller", () => {
     expect(formatBRL(-45.9)).toBe(`R$${NBSP}45,90`)
+  })
+
+  it("formats an amount in cents as the same text", () => {
+    expect(formatBRLCents(118040)).toBe(`R$${NBSP}1.180,40`)
+    expect(formatBRLCents(-5)).toBe(`R$${NBSP}0,05`)
   })
 })

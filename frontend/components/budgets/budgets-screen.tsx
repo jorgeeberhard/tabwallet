@@ -24,7 +24,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { budgetFailure } from "@/lib/budget-messages"
-import { MONTHS_AHEAD, monthOf, shiftMonth } from "@/lib/budget-month"
+import { MONTHS_AHEAD } from "@/lib/budget-month"
 import {
   BUDGETS_KEY,
   type BudgetStatusLine,
@@ -35,6 +35,7 @@ import {
 import { CATEGORIES_KEY, listCategories } from "@/lib/categories-api"
 import { formatMonthOfYear } from "@/lib/format"
 import { useToday } from "@/lib/use-today"
+import { monthOf, shiftMonth } from "@/lib/year-month"
 
 /** Most critical first: alerts, then the closest to the limit. */
 function byUrgency(a: BudgetStatusLine, b: BudgetStatusLine): number {
@@ -42,7 +43,7 @@ function byUrgency(a: BudgetStatusLine, b: BudgetStatusLine): number {
   return b.percentUsed - a.percentUsed
 }
 
-/** UC12 and UC13: the monthly limit of each expense category against what was spent. */
+/** The monthly limit of each expense category against what was spent. */
 export function BudgetsScreen() {
   const today = useToday()
   if (today === null) {
@@ -186,8 +187,8 @@ function BudgetsContent({ currentMonth }: { currentMonth: string }) {
                   <li key={line.category.id} className="flex flex-col gap-3 px-4 py-4">
                     <BudgetBar
                       category={line.category.name}
-                      spent={line.spent}
-                      limit={line.limit}
+                      spentCents={line.spentCents}
+                      limitCents={line.limitCents}
                     />
                     <div className="flex gap-2">
                       <Button
@@ -260,8 +261,8 @@ function BudgetsContent({ currentMonth }: { currentMonth: string }) {
                       </div>
                       <BudgetBar
                         category={line.category.name}
-                        spent={line.spent}
-                        limit={line.limit}
+                        spentCents={line.spentCents}
+                        limitCents={line.limitCents}
                         paused
                       />
                       <div className="flex gap-2">

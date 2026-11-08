@@ -339,32 +339,43 @@ impl CreditCardRepository {
     }
 
     /// Starts new closing and due days at the invoice closing in `from`,
-    /// replacing any version that already starts there or later.
+    /// replacing any version that already starts there or later. `false`
+    /// (and nothing changed) if the card is not the user's.
     pub async fn change_days(
         &self,
+        user_id: UserId,
         id: CreditCardId,
         from: Month,
         closing_day: u32,
         due_day: u32,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<bool, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         sqlx::query(
-            "DELETE FROM credit_card_schedules WHERE credit_card_id = $1 AND effective_from >= $2",
+            "DELETE FROM credit_card_schedules
+             WHERE credit_card_id = $1 AND effective_from >= $2
+               AND credit_card_id IN (SELECT id FROM credit_cards WHERE user_id = $3)",
         )
         .bind(id)
         .bind(from.first_day())
+        .bind(user_id)
         .execute(&mut *tx)
         .await?;
-        sqlx::query(
+        let inserted = sqlx::query(
             "INSERT INTO credit_card_schedules (credit_card_id, effective_from, closing_day, due_day)
-             VALUES ($1, $2, $3, $4)",
+             SELECT id, $2, $3, $4 FROM credit_cards WHERE user_id = $5 AND id = $1",
         )
         .bind(id)
         .bind(from.first_day())
         .bind(closing_day as i16)
         .bind(due_day as i16)
+        .bind(user_id)
         .execute(&mut *tx)
         .await?;
-        tx.commit().await
+        if inserted.rows_affected() == 0 {
+            tx.rollback().await?;
+            return Ok(false);
+        }
+        tx.commit().await?;
+        Ok(true)
     }
 }

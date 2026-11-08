@@ -61,10 +61,11 @@ impl InvoicePaymentRepository {
             .await?;
         let paid: i64 = sqlx::query_scalar(
             "SELECT COALESCE(sum(amount_cents), 0)::bigint FROM invoice_payments
-             WHERE credit_card_id = $1 AND closing_month = $2",
+             WHERE credit_card_id = $1 AND closing_month = $2 AND user_id = $3",
         )
         .bind(card_id)
         .bind(closing_month.first_day())
+        .bind(user_id)
         .fetch_one(&mut *tx)
         .await?;
         if paid + amount_cents > invoice_total_cents {
@@ -105,7 +106,7 @@ impl InvoicePaymentRepository {
         sqlx::query(
             "INSERT INTO invoice_payment_corrections
                  (credit_card_id, closing_month, user_id, amount_cents)
-             VALUES ($1, $2, $3, $4)
+             SELECT id, $2, $3, $4 FROM credit_cards WHERE user_id = $3 AND id = $1
              ON CONFLICT (credit_card_id, closing_month)
              DO UPDATE SET amount_cents = EXCLUDED.amount_cents, updated_at = now()",
         )

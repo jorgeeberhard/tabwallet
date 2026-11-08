@@ -28,11 +28,7 @@ pub enum TransactionError {
     Internal(String),
 }
 
-impl TransactionError {
-    pub fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(TransactionError);
 
 /// Checks that the user's Category can take a Transaction of this type: it
 /// exists for this user, has the same type and is active.

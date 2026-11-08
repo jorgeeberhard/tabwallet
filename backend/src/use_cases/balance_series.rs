@@ -1,4 +1,4 @@
-//! The balance over time (UC10): the history of the Current Balance up to
+//! The balance over time: the history of the Current Balance up to
 //! today and the Projected Balance up to the 12-month horizon. Each use case
 //! feeds the ledger with what is stored and asks it for a series.
 
@@ -6,10 +6,7 @@ use chrono::{Days, Months, NaiveDate};
 
 use crate::{
     ids::UserId,
-    ledger::{
-        BalancePoint, Granularity, Ledger, LedgerFacts, SeriesError, first_of_month,
-        projection_horizon,
-    },
+    ledger::{BalancePoint, Granularity, Ledger, SeriesError, first_of_month, projection_horizon},
     repositories::{
         card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         opening_balance::OpeningBalanceRepository, recurring::RecurringRepository,
@@ -17,7 +14,7 @@ use crate::{
     },
 };
 
-use super::credit_card::card_facts;
+use super::ledger_loader::LedgerLoader;
 
 /// How many days a daily history shows when the caller gives no start.
 pub const DEFAULT_HISTORY_DAYS: u64 = 30;
@@ -39,11 +36,7 @@ pub enum BalanceSeriesError {
     Internal(String),
 }
 
-impl BalanceSeriesError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(BalanceSeriesError);
 
 impl From<SeriesError> for BalanceSeriesError {
     fn from(error: SeriesError) -> Self {
@@ -58,56 +51,13 @@ impl From<SeriesError> for BalanceSeriesError {
     }
 }
 
-/// Reads the facts the ledger needs to draw a balance series.
-struct FactsLoader {
-    transactions: TransactionRepository,
-    opening_balance: OpeningBalanceRepository,
-    recurring: RecurringRepository,
-    cards: CreditCardRepository,
-    purchases: CardPurchaseRepository,
-}
-
-impl FactsLoader {
-    async fn ledger(&self, user_id: UserId) -> Result<Ledger, BalanceSeriesError> {
-        // Independent reads, run together (one round trip to the database).
-        // Card purchases reach the balance only through Invoice Payments, which
-        // the ledger derives from the cards' purchases and Early Payments.
-        let (opening_balance_cents, cash_flows, recurring, (_, cards)) = tokio::try_join!(
-            async {
-                self.opening_balance
-                    .find(user_id)
-                    .await
-                    .map_err(BalanceSeriesError::internal)
-            },
-            async {
-                self.transactions
-                    .cash_flows(user_id)
-                    .await
-                    .map_err(BalanceSeriesError::internal)
-            },
-            async {
-                self.recurring
-                    .list(user_id)
-                    .await
-                    .map_err(BalanceSeriesError::internal)
-            },
-            async {
-                card_facts(&self.cards, &self.purchases, user_id)
-                    .await
-                    .map_err(BalanceSeriesError::internal)
-            },
-        )?;
-        let recurring = recurring
-            .into_iter()
-            .map(|recurring| recurring.definition)
-            .collect();
-        Ok(Ledger::new(LedgerFacts {
-            opening_balance_cents,
-            cash_flows,
-            recurring,
-            cards,
-        }))
-    }
+/// The ledger over everything stored about the user.
+async fn ledger_of(loader: &LedgerLoader, user_id: UserId) -> Result<Ledger, BalanceSeriesError> {
+    loader
+        .facts(user_id)
+        .await
+        .map(Ledger::new)
+        .map_err(BalanceSeriesError::internal)
 }
 
 /// What the user asked of the history. Everything but the granularity is
@@ -131,10 +81,10 @@ pub struct BalanceHistory {
     pub points: Vec<BalancePoint>,
 }
 
-/// UC10 (part): the Current Balance at the end of each day or month of a
+/// The Current Balance at the end of each day or month of a
 /// period that ends today at the latest.
 pub struct GetBalanceHistoryUseCase {
-    loader: FactsLoader,
+    loader: LedgerLoader,
 }
 
 impl GetBalanceHistoryUseCase {
@@ -146,13 +96,7 @@ impl GetBalanceHistoryUseCase {
         purchases: CardPurchaseRepository,
     ) -> Self {
         Self {
-            loader: FactsLoader {
-                transactions,
-                opening_balance,
-                recurring,
-                cards,
-                purchases,
-            },
+            loader: LedgerLoader::new(transactions, opening_balance, recurring, cards, purchases),
         }
     }
 
@@ -166,7 +110,7 @@ impl GetBalanceHistoryUseCase {
         let from = query
             .from
             .unwrap_or_else(|| default_history_start(to, query.granularity));
-        let points = self.loader.ledger(user_id).await?.balance_history(
+        let points = ledger_of(&self.loader, user_id).await?.balance_history(
             from,
             to,
             query.granularity,
@@ -205,10 +149,10 @@ pub struct ProjectedBalance {
     pub points: Vec<BalancePoint>,
 }
 
-/// UC10 (part): the Projected Balance from today up to a date at most 12
+/// The Projected Balance from today up to a date at most 12
 /// months ahead. Defaults to the horizon itself.
 pub struct GetProjectedBalanceUseCase {
-    loader: FactsLoader,
+    loader: LedgerLoader,
 }
 
 impl GetProjectedBalanceUseCase {
@@ -220,13 +164,7 @@ impl GetProjectedBalanceUseCase {
         purchases: CardPurchaseRepository,
     ) -> Self {
         Self {
-            loader: FactsLoader {
-                transactions,
-                opening_balance,
-                recurring,
-                cards,
-                purchases,
-            },
+            loader: LedgerLoader::new(transactions, opening_balance, recurring, cards, purchases),
         }
     }
 
@@ -238,7 +176,7 @@ impl GetProjectedBalanceUseCase {
         to: Option<NaiveDate>,
     ) -> Result<ProjectedBalance, BalanceSeriesError> {
         let to = to.unwrap_or_else(|| projection_horizon(today));
-        let ledger = self.loader.ledger(user_id).await?;
+        let ledger = ledger_of(&self.loader, user_id).await?;
         let points = ledger.projected_balance(to, granularity, today)?;
         Ok(ProjectedBalance {
             granularity,

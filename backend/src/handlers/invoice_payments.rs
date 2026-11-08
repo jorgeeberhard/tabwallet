@@ -1,4 +1,4 @@
-//! Paying an invoice (UC17) and how payments are shown: an Early Payment made
+//! Paying an invoice and how payments are shown: an Early Payment made
 //! by the user, the automatic payment of the due date, and the statement item
 //! that carries both.
 
@@ -9,12 +9,11 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     credit_cards::{InvoiceCycleResponse, InvoiceResponse},
-    extract::ValidatedJson,
+    extract::{ValidatedJson, parse_id},
     transactions::MAX_AMOUNT_CENTS,
 };
 use crate::{
@@ -133,7 +132,7 @@ pub struct CorrectResponse {
 
 /// `PUT /credit-cards/{id}/invoices/{closing_month}/payment` (protected):
 /// corrects the payment of a Paid invoice to the amount really paid at the
-/// bank (UC20). The difference from what was unpaid becomes the Carried
+/// bank. The difference from what was unpaid becomes the Carried
 /// Balance of the next invoice. It can be repeated until that invoice is Paid.
 /// `409 invoice_payment_not_due` before the due date, `409
 /// invoice_nothing_to_pay` when Early Payments covered it all, `409
@@ -145,9 +144,7 @@ pub async fn correct(
     Path((id, closing_month)): Path<(String, String)>,
     ValidatedJson(request): ValidatedJson<CorrectRequest>,
 ) -> Result<Json<CorrectResponse>, ApiError> {
-    let card_id = Uuid::parse_str(&id)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)?;
+    let card_id: CreditCardId = parse_id(&id)?;
     let month = Month::parse(&closing_month).ok_or(ApiError::InvoiceNotFound)?;
     let today = state.clock.today();
     let receipt = CorrectInvoicePaymentUseCase::new(
@@ -180,9 +177,7 @@ pub async fn pay(
     Path((id, closing_month)): Path<(String, String)>,
     ValidatedJson(request): ValidatedJson<PayRequest>,
 ) -> Result<(StatusCode, Json<PayResponse>), ApiError> {
-    let card_id = Uuid::parse_str(&id)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)?;
+    let card_id: CreditCardId = parse_id(&id)?;
     let month = Month::parse(&closing_month).ok_or(ApiError::InvoiceNotFound)?;
     let today = state.clock.today();
     let receipt = PayInvoiceUseCase::new(

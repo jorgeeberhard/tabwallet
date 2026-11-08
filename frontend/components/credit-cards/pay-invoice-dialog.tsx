@@ -33,7 +33,7 @@ interface PayInvoiceDialogProps {
 }
 
 /**
- * UC17: pays an Open or Closed invoice before the due date, in full or in
+ * Pays an Open or Closed invoice before the due date, in full or in
  * part. The amount starts as everything that is still to pay and cannot be
  * more than that. The payment leaves the Current Balance at once; whatever is
  * left is debited on its own on the due date. Mount it only while it is open.

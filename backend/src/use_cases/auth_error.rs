@@ -26,8 +26,4 @@ pub enum AuthError {
     Internal(String),
 }
 
-impl AuthError {
-    pub fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(AuthError);

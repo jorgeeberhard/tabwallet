@@ -11,6 +11,8 @@ const MESSAGES: Record<string, string> = {
   invoice_not_found: "Esta fatura não existe.",
   invoice_paid:
     "Esta fatura já está paga e não pode mais ser alterada. Uma compra não pode ser editada, excluída nem movida para uma fatura paga, e a fatura paga não recebe pagamento antecipado.",
+  invoice_would_be_overpaid:
+    "Esta alteração deixaria uma fatura com valor menor do que já foi pago nela antecipadamente. Pagamentos antecipados não podem ser desfeitos, então a fatura não pode ficar abaixo do que já foi pago.",
   amount_exceeds_remaining:
     "O valor não pode passar do que ainda falta pagar nesta fatura. Atualize a página para ver o valor restante.",
   invoice_payment_not_due:

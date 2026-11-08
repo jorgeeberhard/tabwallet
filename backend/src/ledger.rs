@@ -1,32 +1,15 @@
-//! The ledger: the calculation module for everything that depends on "today".
-//!
-//! It is a pure module. It knows neither HTTP nor SQL: repositories feed it
-//! the facts stored for one user ([`LedgerFacts`]) and a use case asks it a
-//! question with a "today" taken from the injectable clock. Nothing it
-//! computes is stored (ADR-0002); it is derived again on every read.
-//!
-//! It answers [`Ledger::current_balance`] and, for the statement,
-//! [`Ledger::occurrences`]. Later tickets add facts (card invoices, budgets)
-//! and questions (projected balance, invoice state, reports) to this same
-//! module, so the rules that depend on dates stay in one place. Recurring
-//! Transactions and their Occurrences live in [`recurring`]; the balance
-//! history and the Projected Balance (series of points over time) in [`series`].
-//! The reports by Reference Month (expenses by Category, income x expenses per
-//! month) are in [`reports`].
-//! Monthly Budgets, the spending of a Category in a Reference Month and the
-//! Budget Alert live in [`budget`].
-//! Bringing future Installments to the open invoice with a Discount
-//! (Installment Anticipation) is planned by [`Ledger::plan_anticipation`], in
-//! [`anticipation`].
+//! The ledger: the pure calculation module (no HTTP, no SQL) behind everything
+//! that depends on "today". Nothing it computes is stored (ADR-0002).
 
 pub mod anticipation;
 pub mod budget;
 pub mod cards;
+pub mod month;
 mod recurring;
 pub mod reports;
 mod series;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 
 pub use recurring::{
     AmountFrom, Occurrence, OccurrenceChange, OccurrenceException, RecurringDefinition,
@@ -46,10 +29,9 @@ pub const PROJECTION_HORIZON_MONTHS: u32 = 12;
 /// The last day the ledger projects recurring Occurrences to: the end of the
 /// month [`PROJECTION_HORIZON_MONTHS`] after the month of `today`.
 pub fn projection_horizon(today: NaiveDate) -> NaiveDate {
-    let months = today.year() * 12 + today.month0() as i32 + PROJECTION_HORIZON_MONTHS as i32;
-    let first = NaiveDate::from_ymd_opt(months.div_euclid(12), months.rem_euclid(12) as u32 + 1, 1)
-        .expect("a month inside the supported date range");
-    last_day_of_month(first)
+    Month::of(today)
+        .plus(PROJECTION_HORIZON_MONTHS as i32)
+        .last_day()
 }
 
 use crate::ids::CreditCardId;
@@ -114,6 +96,23 @@ impl Ledger {
             facts,
             budget: BudgetFacts::default(),
         }
+    }
+
+    /// A ledger that knows only these recurring Transactions: enough to ask
+    /// for their Occurrences.
+    pub fn of_recurring(recurring: Vec<RecurringDefinition>) -> Self {
+        Self::new(LedgerFacts {
+            recurring,
+            ..LedgerFacts::default()
+        })
+    }
+
+    /// A ledger that knows only the cards: enough to ask about invoices.
+    pub fn of_cards(cards: Vec<CardFacts>) -> Self {
+        Self::new(LedgerFacts {
+            cards,
+            ..LedgerFacts::default()
+        })
     }
 
     /// The Current Balance on `today`, in cents: the Opening Balance plus
@@ -290,6 +289,19 @@ impl Ledger {
         self.card(card_id)
             .ok_or(anticipation::AnticipationError::UnknownCard)?
             .plan_anticipation(chosen, discount_cents, today)
+    }
+
+    /// The first invoice of the card that `change` would leave with less in it
+    /// than was paid on it early (and that is not already in that state), if
+    /// any. A use case asks this before storing a change that lowers a total,
+    /// and refuses the change when it gets an answer.
+    pub fn overpaid_by(&self, card_id: CreditCardId, change: &cards::CardChange) -> Option<Month> {
+        let card = self.card(card_id)?;
+        let before = card.overpaid_invoices();
+        card.after(change)
+            .overpaid_invoices()
+            .into_iter()
+            .find(|month| !before.contains(month))
     }
 
     /// Whether any invoice of the card still has something to pay on `today`.

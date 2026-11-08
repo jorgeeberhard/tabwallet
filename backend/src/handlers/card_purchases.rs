@@ -5,12 +5,11 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     credit_cards::InvoiceCycleResponse,
-    extract::{ValidatedJson, trimmed, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed, trimmed_opt},
     transactions::{MAX_AMOUNT_CENTS, MAX_DESCRIPTION_LEN, TransactionCategory},
 };
 use crate::{
@@ -84,7 +83,7 @@ impl CardPurchaseResponse {
                 name: purchase.credit_card_name,
                 active: purchase.credit_card_active,
             },
-            reference_month: view.invoice.reference_month().to_string(),
+            reference_month: view.invoice.reference_month.to_string(),
             invoice: view.invoice.into(),
             is_projection: purchase.date > today,
             created_at: purchase.created_at,
@@ -154,13 +153,6 @@ pub struct UpdateRequest {
     #[validate(length(min = 1, max = MAX_DESCRIPTION_LEN, code = "description_length"))]
     description: Option<String>,
     category_id: Option<CategoryId>,
-}
-
-/// A malformed id is a purchase that does not exist.
-fn parse_id(raw: &str) -> Result<CardPurchaseId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(CardPurchaseId)
-        .map_err(|_| ApiError::CardPurchaseNotFound)
 }
 
 /// `PATCH /card-purchases/{id}` (protected): edits amount, date, description

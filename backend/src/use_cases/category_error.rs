@@ -24,11 +24,7 @@ pub enum CategoryError {
     Internal(String),
 }
 
-impl CategoryError {
-    pub fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(CategoryError);
 
 /// The error for a name that the database refused as already used: tells an
 /// active holder (`NameTaken`) from a deactivated one (`InactiveNameExists`).

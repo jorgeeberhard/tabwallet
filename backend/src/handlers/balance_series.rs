@@ -1,5 +1,5 @@
 //! `GET /balance/history` and `GET /balance/projection`: the balance over
-//! time (UC10).
+//! time.
 
 use axum::{
     Json,

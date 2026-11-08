@@ -1,3 +1,16 @@
+/// Gives a use case error its `internal(cause)` constructor: an unexpected
+/// failure (a repository error, say) wrapped in the `Internal` variant, whose
+/// cause is logged and never shown to the client.
+macro_rules! internal_error {
+    ($error:ident) => {
+        impl $error {
+            pub fn internal(cause: impl std::fmt::Display) -> Self {
+                Self::Internal(cause.to_string())
+            }
+        }
+    };
+}
+
 mod auth_error;
 mod balance;
 mod balance_series;
@@ -14,6 +27,7 @@ mod installment_anticipation;
 mod installment_purchase;
 mod invoice_charge;
 mod invoice_payment;
+mod ledger_loader;
 mod list_categories;
 mod list_transactions;
 mod log_in;

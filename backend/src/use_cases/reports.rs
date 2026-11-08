@@ -10,18 +10,19 @@ use chrono::NaiveDate;
 use crate::{
     ids::{CategoryId, UserId},
     ledger::{
-        BudgetFacts, Ledger, LedgerFacts,
+        BudgetFacts, Ledger,
         cards::Month,
         reports::{MonthTotals, ReportPeriodError},
     },
     repositories::{
         card_purchases::CardPurchaseRepository, categories::CategoryRepository,
-        credit_cards::CreditCardRepository, recurring::RecurringRepository,
-        spending::SpendingRepository, transactions::TransactionRepository,
+        credit_cards::CreditCardRepository, opening_balance::OpeningBalanceRepository,
+        recurring::RecurringRepository, spending::SpendingRepository,
+        transactions::TransactionRepository,
     },
 };
 
-use super::credit_card::card_facts;
+use super::ledger_loader::LedgerLoader;
 
 /// How many months the income x expenses series shows when the caller gives no
 /// start: the current month and the five before it.
@@ -42,11 +43,7 @@ pub enum ReportError {
     Internal(String),
 }
 
-impl ReportError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(ReportError);
 
 impl From<ReportPeriodError> for ReportError {
     fn from(error: ReportPeriodError) -> Self {
@@ -74,45 +71,17 @@ pub struct ReportPeriod {
 /// Reads what the ledger needs to answer a report question.
 struct ReportLoader {
     categories: CategoryRepository,
-    cards: CreditCardRepository,
-    purchases: CardPurchaseRepository,
-    recurring: RecurringRepository,
-    transactions: TransactionRepository,
+    facts: LedgerLoader,
     spending: SpendingRepository,
 }
 
 impl ReportLoader {
     async fn load(&self, user_id: UserId) -> Result<Ledger, ReportError> {
-        let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
-            .await
-            .map_err(ReportError::internal)?;
-        let recurring = self
-            .recurring
-            .list(user_id)
-            .await
-            .map_err(ReportError::internal)?;
-        let definitions = recurring
-            .into_iter()
-            .map(|recurring| recurring.definition)
-            .collect();
-        let cash_flows = self
-            .transactions
-            .cash_flows(user_id)
-            .await
-            .map_err(ReportError::internal)?;
         // The expenses with their Categories are the same facts the Budgets use.
-        let spending = self
-            .spending
-            .facts(user_id)
-            .await
-            .map_err(ReportError::internal)?;
-        Ok(Ledger::new(LedgerFacts {
-            cash_flows,
-            cards,
-            recurring: definitions,
-            ..LedgerFacts::default()
-        })
-        .with_budget_facts(BudgetFacts {
+        let (facts, spending) =
+            tokio::try_join!(self.facts.facts(user_id), self.spending.facts(user_id))
+                .map_err(ReportError::internal)?;
+        Ok(Ledger::new(facts).with_budget_facts(BudgetFacts {
             spending,
             budgets: Vec::new(),
         }))
@@ -127,15 +96,19 @@ macro_rules! constructor {
             purchases: CardPurchaseRepository,
             recurring: RecurringRepository,
             transactions: TransactionRepository,
+            opening_balance: OpeningBalanceRepository,
             spending: SpendingRepository,
         ) -> Self {
             Self {
                 loader: ReportLoader {
                     categories,
-                    cards,
-                    purchases,
-                    recurring,
-                    transactions,
+                    facts: LedgerLoader::new(
+                        transactions,
+                        opening_balance,
+                        recurring,
+                        cards,
+                        purchases,
+                    ),
                     spending,
                 },
             }
@@ -252,7 +225,7 @@ impl GetIncomeVsExpensesUseCase {
         let to = period.to.unwrap_or_else(|| Month::of(today));
         let from = period
             .from
-            .unwrap_or_else(|| shift_back(to, DEFAULT_SERIES_MONTHS - 1));
+            .unwrap_or_else(|| to.plus(1 - DEFAULT_SERIES_MONTHS as i32));
         let ledger = self.loader.load(user_id).await?;
         let months = ledger.income_vs_expenses(from, to, today)?;
         Ok(IncomeVsExpenses {
@@ -263,9 +236,4 @@ impl GetIncomeVsExpensesUseCase {
             months,
         })
     }
-}
-
-/// The month `months` before `month`.
-fn shift_back(month: Month, months: u32) -> Month {
-    (0..months).fold(month, |current, _| current.prev())
 }

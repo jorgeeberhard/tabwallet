@@ -4,7 +4,7 @@ use crate::{
     ids::{ChargeId, CreditCardId, UserId},
     ledger::{
         Ledger,
-        cards::{Invoice, InvoiceCycle, InvoiceState, Month},
+        cards::{CardChange, ChargeFact, Invoice, InvoiceCycle, InvoiceState, Month},
     },
     repositories::{
         card_purchases::CardPurchaseRepository,
@@ -35,6 +35,10 @@ pub enum ChargeError {
     /// deleted.
     #[error("the invoice is paid")]
     InvoicePaid,
+    /// The change would leave the invoice with a total below what was already
+    /// paid on it early.
+    #[error("the change would leave an invoice overpaid")]
+    WouldBeOverpaid,
     /// "Juros e encargos" is deactivated, so it cannot take new Charges.
     #[error("the charges category is inactive")]
     CategoryInactive,
@@ -42,11 +46,7 @@ pub enum ChargeError {
     Internal(String),
 }
 
-impl ChargeError {
-    fn internal(cause: impl std::fmt::Display) -> Self {
-        Self::Internal(cause.to_string())
-    }
-}
+internal_error!(ChargeError);
 
 impl From<CreditCardError> for ChargeError {
     fn from(error: CreditCardError) -> Self {
@@ -98,7 +98,7 @@ pub(super) fn view_of(
     Some(ChargeView { charge, invoice })
 }
 
-/// UC21: records the interest, penalty and IOF the bank charged on an invoice.
+/// Records the interest, penalty and IOF the bank charged on an invoice.
 /// It is an expense of the user's "Juros e encargos" Category, linked to the
 /// invoice, with a positive amount and a date. It joins the invoice total (so
 /// it is paid through the invoice payment) and counts in the month of the
@@ -207,7 +207,7 @@ async fn changeable(
     user_id: UserId,
     id: ChargeId,
     today: NaiveDate,
-) -> Result<InvoiceCharge, ChargeError> {
+) -> Result<(InvoiceCharge, Ledger), ChargeError> {
     let charge = charges
         .find(user_id, id)
         .await
@@ -218,10 +218,38 @@ async fn changeable(
     if view.invoice.state == InvoiceState::Paid {
         return Err(ChargeError::InvoicePaid);
     }
-    Ok(view.charge)
+    Ok((view.charge, ledger))
 }
 
-/// UC21: edits the amount, date and description of a Charge, unless its
+/// Refuses the change to a Charge (`removed` replaced by `added`, if any)
+/// when the invoice would come to less than was paid on it early.
+fn ensure_not_overpaid(
+    ledger: &Ledger,
+    charge: &InvoiceCharge,
+    added_cents: Option<i64>,
+) -> Result<(), ChargeError> {
+    let change = CardChange {
+        charges_removed: vec![fact_of(charge, charge.amount_cents)],
+        charges_added: added_cents
+            .map(|cents| fact_of(charge, cents))
+            .into_iter()
+            .collect(),
+        ..CardChange::default()
+    };
+    match ledger.overpaid_by(charge.credit_card_id, &change) {
+        Some(_) => Err(ChargeError::WouldBeOverpaid),
+        None => Ok(()),
+    }
+}
+
+fn fact_of(charge: &InvoiceCharge, amount_cents: i64) -> ChargeFact {
+    ChargeFact {
+        closing_month: Month::of(charge.closing_month),
+        amount_cents,
+    }
+}
+
+/// Edits the amount, date and description of a Charge, unless its
 /// invoice is Paid.
 pub struct UpdateChargeUseCase {
     charges: InvoiceChargeRepository,
@@ -249,7 +277,7 @@ impl UpdateChargeUseCase {
         changes: ChargeChanges,
         today: NaiveDate,
     ) -> Result<ChargeReceipt, ChargeError> {
-        changeable(
+        let (charge, ledger) = changeable(
             &self.charges,
             &self.cards,
             &self.purchases,
@@ -258,6 +286,11 @@ impl UpdateChargeUseCase {
             today,
         )
         .await?;
+        ensure_not_overpaid(
+            &ledger,
+            &charge,
+            Some(changes.amount_cents.unwrap_or(charge.amount_cents)),
+        )?;
         let updated = self
             .charges
             .update(user_id, id, changes)
@@ -268,7 +301,7 @@ impl UpdateChargeUseCase {
     }
 }
 
-/// UC21: removes a Charge, unless its invoice is Paid.
+/// Removes a Charge, unless its invoice is Paid.
 pub struct DeleteChargeUseCase {
     charges: InvoiceChargeRepository,
     cards: CreditCardRepository,
@@ -294,7 +327,7 @@ impl DeleteChargeUseCase {
         id: ChargeId,
         today: NaiveDate,
     ) -> Result<(), ChargeError> {
-        changeable(
+        let (charge, ledger) = changeable(
             &self.charges,
             &self.cards,
             &self.purchases,
@@ -303,6 +336,7 @@ impl DeleteChargeUseCase {
             today,
         )
         .await?;
+        ensure_not_overpaid(&ledger, &charge, None)?;
         match self.charges.delete(user_id, id).await {
             Ok(true) => Ok(()),
             Ok(false) => Err(ChargeError::NotFound),

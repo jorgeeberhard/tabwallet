@@ -38,7 +38,7 @@ interface BudgetDialogProps {
 }
 
 /**
- * UC12: sets or changes the monthly limit of an expense category. The limit
+ * Sets or changes the monthly limit of an expense category. The limit
  * applies from the current month on, every month, until it is changed again;
  * past months keep what they had. Mount it only while it is open.
  */
