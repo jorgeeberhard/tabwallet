@@ -9,12 +9,11 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     credit_cards::{InvoiceCycleResponse, InvoiceResponse},
-    extract::ValidatedJson,
+    extract::{ValidatedJson, parse_id},
     transactions::MAX_AMOUNT_CENTS,
 };
 use crate::{
@@ -145,9 +144,7 @@ pub async fn correct(
     Path((id, closing_month)): Path<(String, String)>,
     ValidatedJson(request): ValidatedJson<CorrectRequest>,
 ) -> Result<Json<CorrectResponse>, ApiError> {
-    let card_id = Uuid::parse_str(&id)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)?;
+    let card_id: CreditCardId = parse_id(&id)?;
     let month = Month::parse(&closing_month).ok_or(ApiError::InvoiceNotFound)?;
     let today = state.clock.today();
     let receipt = CorrectInvoicePaymentUseCase::new(
@@ -180,9 +177,7 @@ pub async fn pay(
     Path((id, closing_month)): Path<(String, String)>,
     ValidatedJson(request): ValidatedJson<PayRequest>,
 ) -> Result<(StatusCode, Json<PayResponse>), ApiError> {
-    let card_id = Uuid::parse_str(&id)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)?;
+    let card_id: CreditCardId = parse_id(&id)?;
     let month = Month::parse(&closing_month).ok_or(ApiError::InvoiceNotFound)?;
     let today = state.clock.today();
     let receipt = PayInvoiceUseCase::new(

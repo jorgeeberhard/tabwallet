@@ -5,10 +5,9 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
-use super::extract::{ValidatedJson, trimmed};
+use super::extract::{ValidatedJson, parse_id, trimmed};
 use crate::{
     app::AppState,
     auth::AuthUser,
@@ -92,13 +91,6 @@ pub struct RenameRequest {
     #[serde(deserialize_with = "trimmed")]
     #[validate(length(min = 1, max = MAX_NAME_LEN, code = "name_length"))]
     name: String,
-}
-
-/// A malformed id is a category that does not exist.
-fn parse_id(raw: &str) -> Result<CategoryId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(CategoryId)
-        .map_err(|_| ApiError::CategoryNotFound)
 }
 
 fn envelope(category: Category) -> Json<CategoryEnvelope> {

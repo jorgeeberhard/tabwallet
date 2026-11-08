@@ -163,6 +163,17 @@ pub enum InvoiceState {
     Paid,
 }
 
+impl InvoiceState {
+    /// The stable name the API uses for the state.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Paid => "paid",
+        }
+    }
+}
+
 /// The dates and state of one invoice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvoiceCycle {
@@ -189,6 +200,18 @@ pub enum CorrectionState {
     /// The invoice is Paid and the next one is not: the payment can be
     /// corrected, again and again.
     Editable,
+}
+
+impl CorrectionState {
+    /// The stable name the API uses for the state.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotDue => "not_due",
+            Self::NothingToPay => "nothing_to_pay",
+            Self::Locked => "locked",
+            Self::Editable => "editable",
+        }
+    }
 }
 
 /// The state of an invoice's payment correction and its numbers.

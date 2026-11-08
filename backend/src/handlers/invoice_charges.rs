@@ -9,13 +9,12 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     card_purchases::PurchaseCard,
     credit_cards::{InvoiceCycleResponse, InvoiceResponse},
-    extract::{ValidatedJson, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed_opt},
     transactions::{MAX_AMOUNT_CENTS, MAX_DESCRIPTION_LEN, TransactionCategory},
 };
 use crate::{
@@ -114,9 +113,7 @@ pub async fn create(
     Path((id, closing_month)): Path<(String, String)>,
     ValidatedJson(request): ValidatedJson<CreateRequest>,
 ) -> Result<(StatusCode, Json<ChargeReceiptResponse>), ApiError> {
-    let card_id = Uuid::parse_str(&id)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)?;
+    let card_id: CreditCardId = parse_id(&id)?;
     let month = Month::parse(&closing_month).ok_or(ApiError::InvoiceNotFound)?;
     let today = state.clock.today();
     let receipt = CreateChargeUseCase::new(
@@ -156,13 +153,6 @@ pub struct UpdateRequest {
     #[serde(default, deserialize_with = "trimmed_opt")]
     #[validate(length(min = 1, max = MAX_DESCRIPTION_LEN, code = "description_length"))]
     description: Option<String>,
-}
-
-/// A malformed id is a Charge that does not exist.
-fn parse_id(raw: &str) -> Result<ChargeId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(ChargeId)
-        .map_err(|_| ApiError::ChargeNotFound)
 }
 
 /// `PATCH /charges/{id}` (protected): edits amount, date and description

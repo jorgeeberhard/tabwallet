@@ -5,12 +5,11 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     card_purchases::CardPurchaseResponse,
-    extract::{ValidatedJson, trimmed, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed, trimmed_opt},
     installment_purchases::InvoiceInstallmentResponse,
     invoice_charges::ChargeResponse,
     invoice_payments::InvoicePaymentResponse,
@@ -20,7 +19,7 @@ use crate::{
     auth::AuthUser,
     error::ApiError,
     ids::CreditCardId,
-    ledger::cards::{CorrectionState, Invoice, InvoiceCycle, InvoiceState, Month},
+    ledger::cards::{Invoice, InvoiceCycle, Month},
     repositories::{
         card_purchases::CardPurchaseRepository, credit_cards::CreditCardRepository,
         installment_purchases::InstallmentPurchaseRepository,
@@ -72,13 +71,6 @@ fn envelope(view: CreditCardView) -> Json<CreditCardEnvelope> {
     Json(CreditCardEnvelope {
         credit_card: view.into(),
     })
-}
-
-/// A malformed id is a card that does not exist.
-fn parse_id(raw: &str) -> Result<CreditCardId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(CreditCardId)
-        .map_err(|_| ApiError::CreditCardNotFound)
 }
 
 #[derive(Deserialize, Validate)]
@@ -194,17 +186,6 @@ pub async fn reactivate(
     Ok(envelope(view))
 }
 
-/// Where an invoice is: `open` receives purchases (up to and including the
-/// closing date), `closed` is waiting for its due date, `paid` is from the
-/// due date on.
-fn state_name(state: InvoiceState) -> &'static str {
-    match state {
-        InvoiceState::Open => "open",
-        InvoiceState::Closed => "closed",
-        InvoiceState::Paid => "paid",
-    }
-}
-
 /// The dates and state of the invoice a purchase belongs to.
 #[derive(Serialize)]
 pub struct InvoiceCycleResponse {
@@ -225,7 +206,7 @@ impl From<InvoiceCycle> for InvoiceCycleResponse {
             closing_date: cycle.closing_date,
             due_date: cycle.due_date,
             reference_month: cycle.reference_month.to_string(),
-            state: state_name(cycle.state),
+            state: cycle.state.as_str(),
         }
     }
 }
@@ -289,12 +270,7 @@ impl From<Invoice> for InvoiceResponse {
             carried_balance_cents: invoice.carried_in_cents,
             carried_forward_cents: invoice.carried_out_cents,
             payment_correction: PaymentCorrectionResponse {
-                state: match correction.state {
-                    CorrectionState::NotDue => "not_due",
-                    CorrectionState::NothingToPay => "nothing_to_pay",
-                    CorrectionState::Editable => "editable",
-                    CorrectionState::Locked => "locked",
-                },
+                state: correction.state.as_str(),
                 corrected_cents: correction.corrected_cents,
                 max_cents: correction.max_cents,
             },

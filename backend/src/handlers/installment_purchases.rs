@@ -5,13 +5,12 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
     card_purchases::PurchaseCard,
     credit_cards::InvoiceCycleResponse,
-    extract::{ValidatedJson, trimmed, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed, trimmed_opt},
     transactions::{MAX_AMOUNT_CENTS, MAX_DESCRIPTION_LEN, TransactionCategory},
 };
 use crate::{
@@ -309,13 +308,6 @@ pub struct UpdateRequest {
     #[validate(length(min = 1, max = MAX_DESCRIPTION_LEN, code = "description_length"))]
     description: Option<String>,
     category_id: Option<CategoryId>,
-}
-
-/// A malformed id is a purchase that does not exist.
-fn parse_id(raw: &str) -> Result<InstallmentPurchaseId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(InstallmentPurchaseId)
-        .map_err(|_| ApiError::InstallmentPurchaseNotFound)
 }
 
 /// `PATCH /installment-purchases/{id}` (protected): edits total, number of

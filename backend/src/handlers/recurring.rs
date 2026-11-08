@@ -6,11 +6,10 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use super::{
-    extract::{ValidatedJson, trimmed, trimmed_opt},
+    extract::{ValidatedJson, parse_id, trimmed, trimmed_opt},
     transactions::{MAX_AMOUNT_CENTS, MAX_DESCRIPTION_LEN},
 };
 use crate::{
@@ -183,13 +182,6 @@ pub struct CreateRequest {
     /// cannot be an earlier one.
     #[serde(default)]
     start_month: Option<YearMonth>,
-}
-
-/// A malformed id is a recurring Transaction that does not exist.
-fn parse_id(raw: &str) -> Result<RecurringTransactionId, ApiError> {
-    Uuid::parse_str(raw)
-        .map(RecurringTransactionId)
-        .map_err(|_| ApiError::RecurringTransactionNotFound)
 }
 
 /// A malformed month is an Occurrence that does not exist.
