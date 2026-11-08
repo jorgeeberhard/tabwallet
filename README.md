@@ -80,7 +80,7 @@ Os dados do `dev-api.sh` somem quando ele é encerrado. Em desenvolvimento, o li
 | --- | --- |
 | `API_URL` | Endereço interno da API (padrão `http://127.0.0.1:8080`). Lido ao compilar e ao subir; defina em produção. |
 
-Em produção o front-end deve ser servido só por HTTPS (a Vercel já faz isso); ele envia `Strict-Transport-Security` e `upgrade-insecure-requests` quando compilado para produção.
+Em produção o front-end deve ser servido só por HTTPS (a Vercel já faz isso); ele envia `Strict-Transport-Security` (HSTS) quando compilado para produção.
 
 ## Testes e verificações
 
