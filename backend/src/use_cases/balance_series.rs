@@ -69,29 +69,38 @@ struct FactsLoader {
 
 impl FactsLoader {
     async fn ledger(&self, user_id: UserId) -> Result<Ledger, BalanceSeriesError> {
-        let opening_balance_cents = self
-            .opening_balance
-            .find(user_id)
-            .await
-            .map_err(BalanceSeriesError::internal)?;
-        let cash_flows = self
-            .transactions
-            .cash_flows(user_id)
-            .await
-            .map_err(BalanceSeriesError::internal)?;
-        let recurring = self
-            .recurring
-            .list(user_id)
-            .await
-            .map_err(BalanceSeriesError::internal)?
+        // Independent reads, run together (one round trip to the database).
+        // Card purchases reach the balance only through Invoice Payments, which
+        // the ledger derives from the cards' purchases and Early Payments.
+        let (opening_balance_cents, cash_flows, recurring, (_, cards)) = tokio::try_join!(
+            async {
+                self.opening_balance
+                    .find(user_id)
+                    .await
+                    .map_err(BalanceSeriesError::internal)
+            },
+            async {
+                self.transactions
+                    .cash_flows(user_id)
+                    .await
+                    .map_err(BalanceSeriesError::internal)
+            },
+            async {
+                self.recurring
+                    .list(user_id)
+                    .await
+                    .map_err(BalanceSeriesError::internal)
+            },
+            async {
+                card_facts(&self.cards, &self.purchases, user_id)
+                    .await
+                    .map_err(BalanceSeriesError::internal)
+            },
+        )?;
+        let recurring = recurring
             .into_iter()
             .map(|recurring| recurring.definition)
             .collect();
-        // Card purchases reach the balance only through Invoice Payments, which
-        // the ledger derives from the cards' purchases and Early Payments.
-        let (_, cards) = card_facts(&self.cards, &self.purchases, user_id)
-            .await
-            .map_err(BalanceSeriesError::internal)?;
         Ok(Ledger::new(LedgerFacts {
             opening_balance_cents,
             cash_flows,

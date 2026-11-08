@@ -81,34 +81,26 @@ pub(super) async fn card_facts(
     purchases: &CardPurchaseRepository,
     user_id: UserId,
 ) -> Result<(Vec<CreditCard>, Vec<CardFacts>), CreditCardError> {
-    let list = cards
-        .list(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
-    let mut schedules = cards
-        .schedules(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
-    let mut spending = purchases
-        .spending(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
-    let mut installments = cards
-        .installment_charges(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
-    let mut payments = cards
-        .payments(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
-    let mut charges = cards
-        .charges(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
-    let mut corrections = cards
-        .corrections(user_id)
-        .await
-        .map_err(CreditCardError::internal)?;
+    // Seven independent reads: run together, so a request waits for one round
+    // trip to the database instead of seven.
+    let (
+        list,
+        mut schedules,
+        mut spending,
+        mut installments,
+        mut payments,
+        mut charges,
+        mut corrections,
+    ) = tokio::try_join!(
+        cards.list(user_id),
+        cards.schedules(user_id),
+        purchases.spending(user_id),
+        cards.installment_charges(user_id),
+        cards.payments(user_id),
+        cards.charges(user_id),
+        cards.corrections(user_id),
+    )
+    .map_err(CreditCardError::internal)?;
     let facts = list
         .iter()
         .filter_map(|card| {
