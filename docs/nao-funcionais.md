@@ -10,7 +10,7 @@ Ambiente das medições: Windows 11 com Docker Desktop (16 CPUs, 7,6 GiB), Postg
 | Segurança | Verificada: Argon2id, JWT em cookie `httpOnly`, CSRF, XSS, SQL injection e HTTPS (HSTS) |
 | Usabilidade (responsiva) | Verificada em 375 px e em desktop, em Chromium |
 | Portabilidade (navegadores) | Parcial: só Chromium (base do Chrome e do Edge); Firefox e Safari não testados |
-| Disponibilidade | Não verificável ainda: depende da implantação (ticket #6) |
+| Disponibilidade | Não verificável ainda: o pipeline de deploy está pronto, mas falta tempo de operação em produção para medir (ticket #6) |
 | Manutenibilidade | Atendida: TypeScript e Rust, testes das regras críticas no CI |
 | Escalabilidade | Arquitetura em camadas mantida; sem teste além do usuário único |
 | Acessibilidade básica | Verificada (axe em testes e no navegador, teclado e foco) |
@@ -66,7 +66,7 @@ Todas as leituras juntas: 1 cliente, p50 6,3 ms, p95 31,0 ms, p99 44,5 ms (1.900
 | CSRF | Três camadas: `SameSite=Lax`; sem CORS e proxy de mesma origem (`/api/*`); e a verificação de `Origin`/`Referer` da API (`backend/src/csrf.rs`), nova neste ticket: requisição que altera dados e declara outra origem recebe `403 forbidden_origin`. Testes em `backend/tests/csrf.rs` (origem alheia, `null`, domínio parecido, porta e esquema diferentes, `Referer`, login e logout, GET livre) e unitários. Verificado também pelo navegador: o login pelo Next.js (que repassa o `Origin`) funciona e um `curl` com `Origin: https://evil.example` em `/api/auth/logout` recebeu 403. |
 | XSS | Nenhum HTML de usuário é renderizado: a única ocorrência de `dangerouslySetInnerHTML` é o estilo de cores do componente de gráfico do shadcn, alimentado só por configuração estática do código. O e-mail de recuperação é texto puro. Cabeçalhos: `Content-Security-Policy` (`default-src 'self'`, `object-src 'none'`, `base-uri`, `form-action` e `connect-src` restritos, `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` e `Permissions-Policy` (testes em `frontend/lib/security-headers.test.ts`; conferidos nas respostas do `next dev` e do `next start`). Com a CSP ativa, a versão de produção carregou login e relatórios com gráficos sem violação. |
 | SQL injection | Busca no código: nenhum SQL é montado com texto de usuário; todas as consultas usam `.bind`. O `sqlx` 0.9 só aceita SQL dinâmico dentro de `AssertSqlSafe`, que aparece apenas nos testes (nome do banco gerado pelo próprio teste). |
-| HTTPS | Em produção o front-end envia `Strict-Transport-Security: max-age=63072000; includeSubDomains` (conferido no `next start`) e o cookie é `Secure`. Em desenvolvimento nenhum dos dois vale, por serem HTTP local. O HTTPS em si é da hospedagem (Vercel); a implantação ainda não foi feita. |
+| HTTPS | Em produção o front-end envia `Strict-Transport-Security: max-age=63072000; includeSubDomains` (conferido no `next start`) e o cookie é `Secure`. Em desenvolvimento nenhum dos dois vale, por serem HTTP local. O HTTPS em si é da hospedagem: a Vercel serve o front-end e o Fly.io serve a API com `force_https = true` (`backend/fly.toml`); a conexão da API com o PostgreSQL gerenciado usa TLS (`sslmode=require`, testada em `backend/tests/postgres_tls.rs`). Que os endereços de produção respondem por HTTPS só se confirma no primeiro deploy: o job `smoke` do pipeline (`.github/workflows/deploy.yml`) chama a API e o front-end pelos endereços públicos. |
 | Limite de tentativas | Novo: 5 senhas erradas em 15 minutos por e-mail e 3 pedidos de recuperação de senha por hora por e-mail, com `429` e `Retry-After`. Testes em `backend/tests/rate_limit.rs` e unitários. As contagens ficam na memória de cada instância. |
 
 **Limitações conhecidas (decisões a rever).**
@@ -100,12 +100,12 @@ Verificado só em Chromium (o mesmo motor do Chrome e do Edge). **Firefox e Safa
 
 ## 6. Disponibilidade
 
-Não verificável: não há ambiente hospedado ainda (ticket #6 depende de contas do responsável). O `GET /health` existe e consulta o banco, para o monitoramento.
+Não verificável ainda: não há tempo de operação em produção para medir a disponibilidade. O que está pronto para isso (ticket #6): a API roda numa máquina sempre ligada no Fly.io (sem escalar a zero), com o `GET /live` (sem consultar o banco, para não manter o Neon acordado) como verificação de saúde; o `GET /health` (que consulta o banco) fica para o teste de fumaça do deploy, e o deploy usa a estratégia `bluegreen`, em que a versão nova só recebe tráfego depois de passar nessa verificação, então um deploy com defeito não derruba a versão anterior. É uma máquina só, sem redundância: uma falha da máquina ou do banco gerenciado deixa a API fora até a recuperação. Os 99% do termo precisam de um período de operação para serem confirmados.
 
 ## 7. Manutenibilidade e CI
 
 - Tipagem forte: TypeScript (`npm run typecheck`) e Rust.
-- O workflow `.github/workflows/ci.yml` roda a cada PR e a cada push na `main`: job `backend` (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, que inclui todos os testes de integração das regras de negócio contra um PostgreSQL real; o teste de carga é `#[ignore]`) e job `frontend` (`typecheck`, `lint`, `npm test`, `build`). A exigência de "verde" para o merge é configuração de proteção da `main` no GitHub, que não foi alterada aqui.
+- O workflow `.github/workflows/ci.yml` roda a cada PR e a cada push na `main`: job `backend` (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, que inclui todos os testes de integração das regras de negócio contra um PostgreSQL real; o teste de carga é `#[ignore]`) e job `frontend` (`typecheck`, `lint`, `npm test`, `build`). A exigência de "verde" para o merge é configuração de proteção da `main` no GitHub (ruleset que exige PR e os checks `backend` e `frontend`). Depois do merge, `.github/workflows/deploy.yml` roda quando o CI termina com sucesso e publica a API (Fly.io) e o front-end (Vercel), nessa ordem, com um teste de fumaça no fim; veja o README da raiz.
 - Contagem no fim deste ticket (`backend/scripts/check.sh` e `npm test`, tudo verde): 312 testes no back-end (unitários e de integração; mais 1 de carga ignorado) e 243 testes em 41 arquivos no front-end.
 
 ## 8. Escalabilidade

@@ -1,0 +1,133 @@
+name: Deploy
+
+# Production pipeline: the CI workflow (back-end and front-end tests) is the
+# gate. Only when it finishes successfully for a push to `main` do these jobs
+# run, one after the other:
+#   1. api       deploys the API to Fly.io (the API applies its own migrations
+#                when it starts, so there is no separate migration step)
+#   2. frontend  builds and deploys the front-end to Vercel
+#   3. smoke     calls the public addresses
+# A failure in any job stops the ones after it; Fly keeps the previous version
+# when the new one is not healthy, and Vercel only switches the production
+# domain after a successful deploy.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Manual re-run of the pipeline for the current head of `main`.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One production deploy at a time; a later one waits instead of cutting the
+# running one short.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  API_ADDRESS: https://tabwallet-api.fly.dev
+  APP_ADDRESS: https://tabwallet.vercel.app
+  # Deploy exactly the commit CI tested (`workflow_run` otherwise checks out
+  # the latest commit of the default branch).
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  api:
+    name: Deploy API (Fly.io)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      # superfly/flyctl-actions tag 1.6, pinned by commit.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+
+      # Built on Fly's remote builder from backend/Dockerfile. With the
+      # blue-green strategy in fly.toml, the new machine must pass the
+      # /health check before it gets traffic; otherwise this step fails and the
+      # old version keeps running.
+      - name: Deploy
+        working-directory: backend
+        run: flyctl deploy --remote-only --config fly.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  frontend:
+    name: Deploy front-end (Vercel)
+    needs: api
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the Vercel CLI
+        run: npm install --global vercel@66.4.0
+
+      # Downloads the project settings and the Production environment
+      # variables (API_URL, read at build time by next.config.ts).
+      - name: Pull the Vercel project settings
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      # Uploads the build and, being --prod, points the production domain at
+      # it only once it is ready.
+      - name: Deploy
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+  smoke:
+    name: Smoke test
+    needs: [api, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # --retry-all-errors also retries HTTP errors: a fresh deploy may need a
+      # few seconds before it answers.
+      - name: API health route answers through its public address
+        run: |
+          curl --fail --silent --show-error --max-time 15 \
+            --retry 10 --retry-delay 6 --retry-all-errors \
+            "$API_ADDRESS/health" | tee health.json
+          jq --exit-status '.status == "ok" and .database == "up"' health.json
+
+      - name: Front-end login page answers 200
+        run: |
+          curl --fail --silent --show-error --max-time 15 --output /dev/null \
+            --retry 10 --retry-delay 6 --retry-all-errors \
+            --write-out 'HTTP %{http_code}\n' \
+            "$APP_ADDRESS/login"
+
+      # next.config.ts rewrites /api/:path* to API_URL/:path*, so this goes
+      # browser -> Vercel -> Fly -> database: it fails when the front-end was
+      # built with the wrong API_URL.
+      - name: Front-end proxies the API (/api/health)
+        run: |
+          curl --fail --silent --show-error --max-time 15 \
+            --retry 10 --retry-delay 6 --retry-all-errors \
+            "$APP_ADDRESS/api/health" | tee proxied-health.json
+          jq --exit-status '.status == "ok" and .database == "up"' proxied-health.json

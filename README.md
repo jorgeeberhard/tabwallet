@@ -21,7 +21,7 @@ O projeto é o MVP descrito no [termo de abertura](docs/termo-abertura-tabwallet
 - **Back-end** (`backend/`): Rust, Axum, `sqlx` e PostgreSQL 17. Camadas: handlers HTTP, use cases (`*UseCase`) e repositórios. Dinheiro em centavos inteiros; "hoje" vem de um relógio injetável no fuso America/Sao_Paulo.
 - **Front-end** (`frontend/`): Next.js 16 (App Router), React 19, TypeScript, TanStack Query, Recharts e shadcn/ui sobre Tailwind CSS v4 com o tema do Design System.
 - **Sessão**: JWT em cookie `httpOnly` (`SameSite=Lax`, `Secure` em produção). O navegador só fala com o Next.js; ele encaminha `/api/*` à API (uma origem só, sem CORS).
-- **CI**: GitHub Actions (`.github/workflows/ci.yml`) com os jobs `backend` e `frontend`.
+- **CI/CD**: GitHub Actions: `.github/workflows/ci.yml` (jobs `backend` e `frontend`) e `.github/workflows/deploy.yml` (deploy em produção depois do CI verde na `main`; veja [Deploy](#deploy)).
 
 ```mermaid
 flowchart LR
@@ -82,12 +82,68 @@ Os dados do `dev-api.sh` somem quando ele é encerrado. Em desenvolvimento, o li
 
 Em produção o front-end deve ser servido só por HTTPS (a Vercel já faz isso); ele envia `Strict-Transport-Security` (HSTS) quando compilado para produção.
 
+## Deploy
+
+Depois do merge na `main`, o esqueleto vai sozinho para produção, tudo por HTTPS.
+
+| Parte | Serviço | Endereço | Configuração |
+| --- | --- | --- | --- |
+| Front-end | Vercel (projeto `tabwallet`) | https://tabwallet.vercel.app | [`frontend/vercel.json`](frontend/vercel.json) |
+| API | Fly.io (app `tabwallet-api`, região `gru`) | https://tabwallet-api.fly.dev | [`backend/fly.toml`](backend/fly.toml) e [`backend/Dockerfile`](backend/Dockerfile) |
+| Banco | PostgreSQL gerenciado (Neon) | privado, só a API o acessa | `DATABASE_URL` nos segredos do Fly |
+
+A API roda numa máquina `shared-cpu-1x` com 512 MB, sempre ligada (sem escalar a zero), com a rota `/live` (processo no ar, sem consultar o banco) como verificação de saúde do Fly. O front-end encaminha `/api/*` à API (rewrite de `frontend/next.config.ts`), então o navegador só fala com `tabwallet.vercel.app`.
+
+### Pipeline
+
+O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) roda quando o workflow `CI` termina com sucesso num push na `main` (os testes são o portão). Também pode ser disparado à mão (Actions, "Deploy", "Run workflow"), sempre sobre a `main`. Os jobs rodam em sequência e qualquer falha interrompe os seguintes:
+
+1. **Testes** (workflow `CI`, `backend` e `frontend`): fmt, clippy, testes de integração com PostgreSQL de verdade, typecheck, lint, testes e build do front-end. Sem eles verdes, o deploy nem começa.
+2. **Migrations e deploy da API** (job `api`): `fly deploy --remote-only` a partir de `backend/`; a imagem é construída no builder do Fly. **Não há passo separado de migrations: a API aplica as migrations do `sqlx` ao subir** (`db::migrate` em `backend/src/main.rs`), antes de começar a atender. A estratégia é `bluegreen`: a máquina nova sobe ao lado da antiga e só recebe tráfego depois de passar em `GET /live`; como a API só começa a atender depois de aplicar as migrations, passar nessa verificação também significa que elas terminaram; se não passar, o deploy falha e a versão anterior continua no ar.
+3. **Deploy do front-end** (job `frontend`): `vercel pull`, `vercel build --prod` e `vercel deploy --prebuilt --prod`, com a CLI da Vercel. Os deploys automáticos da Vercel pelo Git estão desligados (`git.deploymentEnabled: false`), então nada chega à produção sem passar por este pipeline.
+4. **Teste de fumaça** (job `smoke`), com `curl` e novas tentativas: `GET /health` da API em `tabwallet-api.fly.dev` responde `ok` com o banco `up`; a página `/login` do front-end responde 200; e `GET /api/health` pelo front-end (rewrite para a API) também responde `ok`, o que prova que o front-end foi compilado com o `API_URL` certo.
+
+Os deploys de produção nunca rodam em paralelo (`concurrency`, sem cancelar o que está em andamento). Se a API for publicada e o front-end falhar, a API nova fica no ar com o front-end antigo: por isso uma mudança que quebre o contrato entre os dois deve ser feita em duas etapas (primeiro a API aceitando os dois formatos, depois o front-end). Pelo mesmo motivo, as migrations devem ser compatíveis com a versão anterior da API (acrescentar antes de remover ou renomear): durante o deploy as duas versões convivem, e, se a versão nova falhar depois de migrar, a antiga continua rodando sobre o esquema já migrado.
+
+### Segredos e variáveis (nenhum valor fica no repositório)
+
+| Onde | Nome | O que é |
+| --- | --- | --- |
+| Segredos do Fly (`fly secrets set -a tabwallet-api NOME=valor`) | `DATABASE_URL` | Conexão com o Neon. O Neon exige TLS: a URL precisa terminar com `?sslmode=require`. |
+| | `JWT_SECRET` | Segredo do JWT, 32 caracteres ou mais. |
+| | `APP_URL` | `https://tabwallet.vercel.app`, igual ao endereço do front-end (veja abaixo). |
+| | `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM` | E-mail da recuperação de senha. |
+| `backend/fly.toml` (não secretas) | `BIND_ADDR`, `RUST_LOG` | Endereço de escuta e nível de log. |
+| Segredos do GitHub Actions | `FLY_API_TOKEN` | Token de deploy do app (`fly tokens create deploy -a tabwallet-api`). |
+| | `VERCEL_TOKEN` | Token da conta Vercel que faz o deploy. |
+| | `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | Identificam a equipe e o projeto (ficam em `frontend/.vercel/project.json` depois de `vercel link`; essa pasta é ignorada pelo Git). |
+| Variáveis do projeto Vercel (ambiente Production) | `API_URL` | `https://tabwallet-api.fly.dev`. Lida **ao compilar**: mudar o valor só vale no próximo deploy. |
+
+Não defina `APP_ENV` nem `COOKIE_SECURE` em produção: os padrões já são os de produção (cookie `Secure`, e-mail e `APP_URL` obrigatórios). A `main` está protegida por um ruleset que exige PR e os checks `backend` e `frontend`.
+
+### Cuidados de operação
+
+- **`APP_URL` precisa ser exatamente o endereço do front-end** (`https://tabwallet.vercel.app`, sem barra no fim). Ele é a única origem aceita nas requisições que alteram dados; se estiver diferente, login, cadastro e todas as gravações respondem 403. Trocar o domínio do front-end exige atualizar `APP_URL` (`fly secrets set`, que reinicia a API).
+- **Trocar o `JWT_SECRET` encerra todas as sessões**: todos os tokens emitidos deixam de valer e todo mundo precisa entrar de novo.
+- **Cold start do Neon.** O Neon suspende o banco depois de um tempo sem uso (escala a zero), e a primeira conexão depois disso demora mais que o normal. O Fly consulta `/live` a cada 30 segundos, e essa rota **não acessa o banco** de propósito: com `/health` (que faz um `SELECT`) o banco nunca dormiria e gastaria as horas de computação do plano do Neon. Assim o banco dorme quando ninguém usa o sistema, e a primeira requisição depois disso paga o cold start. Ao subir a API, o `grace_period` de 30 s da verificação cobre o banco acordando e as migrations. `/health` continua existindo para quem quer saber se o banco responde (é a rota do teste de fumaça); não aponte nenhuma verificação periódica para ela.
+- **Região.** O requisito de desempenho (95% das respostas em até 300 ms) foi medido com banco e API lado a lado; mantenha o banco do Neon numa região próxima de `gru` (São Paulo).
+
+### Como voltar a uma versão anterior
+
+- **API**: o rollback é implantar a imagem de um release anterior. Liste com `fly releases --image -a tabwallet-api` e publique uma delas com `fly deploy -a tabwallet-api --image <imagem do release>`. Isso não desfaz migrations (elas só andam para frente): por isso devem ser compatíveis com a versão anterior.
+- **Front-end**: na Vercel, abra o deployment anterior (aba Deployments) e use "Promote to Production", ou `vercel rollback` (ou `vercel promote <url do deploy>`), com a CLI logada no projeto. Também dá para fazer um `revert` na `main` e deixar o pipeline publicar.
+- **Reverter pelo Git** (`git revert` e merge pelo PR) é o caminho mais simples e passa pelos mesmos testes, mas leva o tempo do pipeline inteiro.
+
+### O que só se confirma no primeiro deploy
+
+O pipeline foi escrito e revisado (o YAML passa no `actionlint`), mas um deploy real no Fly e na Vercel só acontece com o merge na `main`. O que foi verificado antes: a imagem Docker constrói, sobe sem `.env` e responde `/health` contra um PostgreSQL local; a conexão TLS com `sslmode=require` foi testada contra um PostgreSQL com certificado autoassinado (`backend/tests/postgres_tls.rs`). Se o primeiro deploy falhar, a versão anterior (ou nenhuma, no primeiro) continua como estava e o log do job aponta a etapa.
+
 ## Testes e verificações
 
 | O quê | Comando | Observação |
 | --- | --- | --- |
 | Back-end: formato, clippy e testes | `cd backend && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` | Os testes sobem um PostgreSQL de verdade (Docker). |
-| Back-end sem Rust nativo | `backend/scripts/check.sh [filtro]` | Roda o mesmo no Docker, com um PostgreSQL descartável. `backend/scripts/fmt.sh` aplica o `cargo fmt`. |
+| Back-end sem Rust nativo | `backend/scripts/check.sh [filtro]` | Roda o mesmo no Docker, com um PostgreSQL descartável (e outro com TLS, para o teste da conexão segura). `backend/scripts/fmt.sh` aplica o `cargo fmt`. |
 | Carga (desempenho) | `backend/scripts/load-check.sh` | Veja [`docs/nao-funcionais.md`](docs/nao-funcionais.md). Não roda no CI. |
 | Front-end | `cd frontend && npm run typecheck && npm run lint && npm test && npm run build` | |
 
@@ -104,5 +160,5 @@ Em produção o front-end deve ser servido só por HTTPS (a Vercel já faz isso)
 - **CSP com `'unsafe-inline'`**: a Content-Security-Policy permite scripts e estilos inline, porque nonces exigiriam renderização 100% dinâmica e são incompatíveis com a pré-renderização parcial usada (veja `docs/nao-funcionais.md`).
 - **Sem verificação de e-mail** no cadastro, sem exclusão de conta e sem notificações por e-mail ou push (fora do escopo do MVP).
 - **Saldo projetado** até 12 meses e só com o que já foi lançado; sem moedas múltiplas, contas ou carteiras.
-- **Implantação** (Vercel, Fly.io ou Railway, PostgreSQL gerenciado e o pipeline de deploy) ainda não foi feita; depende de contas do responsável (ticket #6).
+- **Implantação**: o pipeline de deploy (Fly.io, Vercel e Neon) está descrito em [Deploy](#deploy); o primeiro deploy real acontece no merge do ticket #6.
 - **Safari**: não foi possível testar em Safari neste ambiente; veja `docs/nao-funcionais.md`.

@@ -1,0 +1,11 @@
+# Keep the build context small and free of local state or secrets. The image
+# build needs only Cargo.toml, Cargo.lock, src/ and migrations/.
+target
+.env
+.env.*
+tests
+scripts
+docker-compose.yml
+README.md
+.gitignore
+.gitattributes

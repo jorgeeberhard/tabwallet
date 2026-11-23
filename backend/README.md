@@ -23,13 +23,15 @@ cargo run                     # aplica as migrations e sobe em 127.0.0.1:8080
 curl http://127.0.0.1:8080/health
 ```
 
-A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}`.
+A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}` (`503` com `"database":"down"` se o banco não responder).
+
+`GET /live` só diz que o processo está no ar (`{"status":"ok"}`) e **não acessa o banco**: é a verificação de saúde do Fly, que roda a cada 30 s e, se consultasse o banco, o manteria acordado o tempo todo (o Neon escala a zero). Use `/health` para saber se o banco responde.
 
 ### Variáveis de ambiente
 
 | Variável | Obrigatória | Descrição |
 | --- | --- | --- |
-| `DATABASE_URL` | sim | Conexão com o PostgreSQL. |
+| `DATABASE_URL` | sim | Conexão com o PostgreSQL. Um banco gerenciado que exige TLS (como o Neon) precisa de `?sslmode=require` no fim da URL; o `sqlx` é compilado com `tls-rustls-aws-lc-rs`. Sem `sslmode`, a conexão usa TLS quando o servidor oferece e cai para texto puro quando não (desenvolvimento local). |
 | `JWT_SECRET` | sim | Segredo que assina os tokens de sessão (HS256), com pelo menos 32 caracteres. Gere um por ambiente (`openssl rand -base64 48`) e nunca versione. |
 | `COOKIE_SECURE` | não | O cookie de sessão é `Secure` (só HTTPS) a menos que seja `false`. Só use `false` no desenvolvimento local, sem HTTPS. |
 | `BIND_ADDR` | não | Endereço de escuta (padrão `0.0.0.0:8080`). |
@@ -374,7 +376,26 @@ LOAD_CHECK_P95_MS=200 backend/scripts/load-check.sh         # limite mais rígid
 
 O teste `tests/load_check.rs` (marcado `#[ignore]`, por isso fora do `cargo test` e do CI) cria um usuário com 2.000 Transações em dois anos, 6 Transações fixas, 4 cartões com 432 compras e 72 compras parceladas (montadas mês a mês, movendo o "hoje", como uma pessoa faria) e 6 Orçamentos. Depois chama os endpoints principais (extrato, saldo, histórico e projeção, cartões e faturas, orçamentos, relatórios e login) e imprime p50, p95 e máximo por endpoint, primeiro com um cliente e depois com 8 clientes ao mesmo tempo, sem pausa entre as requisições. Falha se algum p95 passar do limite. O script usa build de release, a API e o PostgreSQL numa rede Docker própria (banco ao lado da API, como numa hospedagem na mesma região) e chama a API por HTTP local: não inclui TLS nem o proxy do Next.js. Os números medidos estão em [`docs/nao-funcionais.md`](../docs/nao-funcionais.md).
 
+## Conexão TLS com o PostgreSQL
+
+Em produção o banco é um PostgreSQL gerenciado (Neon) que só aceita conexões com TLS (`sslmode=require`). Por isso o `sqlx` é compilado com a feature `tls-rustls-aws-lc-rs` (rustls com `aws-lc-rs`, o mesmo provedor criptográfico do `reqwest`, e certificados raiz embutidos). `sslmode=require` criptografa a conexão sem validar a cadeia do certificado.
+
+O teste `tests/postgres_tls.rs` conecta com `sslmode=require` a um PostgreSQL com `ssl=on` e certificado autoassinado, confere em `pg_stat_ssl` que a sessão está criptografada e aplica as migrations; outro teste confirma que `sslmode=disable` continua funcionando. O servidor é informado em `TEST_TLS_DATABASE_URL` (sem `sslmode`): o `scripts/check.sh` e o CI sobem um `postgres:17-alpine` com TLS para isso. Sem a variável os dois testes se pulam, porque o banco comum dos demais testes não fala TLS (e continuam funcionando sem TLS, como antes).
+
+## Imagem Docker e deploy
+
+O `Dockerfile` (build em vários estágios: dependências em camada própria, binário de release, imagem final `debian:bookworm-slim` com `ca-certificates`, usuário sem privilégios e `EXPOSE 8080`) e o `fly.toml` publicam a API no Fly.io. Tudo vem de variáveis de ambiente: a imagem não leva `.env`, e as migrations vão embutidas no binário (`sqlx::migrate!`), aplicadas na subida.
+
+```bash
+docker build -t tabwallet-api backend
+docker run --rm -p 8080:8080 -e DATABASE_URL=... -e JWT_SECRET=... -e APP_ENV=development tabwallet-api
+```
+
+O pipeline, os segredos e o rollback estão na seção [Deploy do README da raiz](../README.md#deploy).
+
 ## CI
 
 O workflow `.github/workflows/ci.yml` roda a cada PR e a cada push na `main`.
-O merge na `main` deve exigir o check `backend`.
+O merge na `main` deve exigir os checks `backend` e `frontend`. Depois do merge, o
+workflow `.github/workflows/deploy.yml` publica a API e o front-end quando o CI
+termina com sucesso.
