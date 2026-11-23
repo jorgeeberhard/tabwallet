@@ -119,6 +119,10 @@ npm run build      # build de produção
 
 O CI (job `frontend`) roda `typecheck`, `lint`, `test` e `build` a cada PR.
 
+## Deploy
+
+A produção fica na Vercel (https://tabwallet.vercel.app). Quem publica é o workflow `.github/workflows/deploy.yml`, depois do CI verde na `main`; os deploys automáticos pelo Git estão desligados em `vercel.json` (`git.deploymentEnabled: false`) para nada chegar à produção sem passar pelo pipeline. `API_URL` (`https://tabwallet-api.fly.dev`) é uma variável do ambiente Production do projeto na Vercel e é lida ao compilar. Detalhes, segredos e rollback: seção [Deploy do README da raiz](../README.md#deploy).
+
 ## Adicionar componentes do shadcn
 
 ```bash
