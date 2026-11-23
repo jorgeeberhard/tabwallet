@@ -88,11 +88,11 @@ Depois do merge na `main`, o esqueleto vai sozinho para produção, tudo por HTT
 
 | Parte | Serviço | Endereço | Configuração |
 | --- | --- | --- | --- |
-| Front-end | Vercel (projeto `tabwallet`) | https://tabwallet.vercel.app | [`frontend/vercel.json`](frontend/vercel.json) |
+| Front-end | Vercel (projeto `tabwallet`) | https://tabwallet.com.br (o endereço antigo `tabwallet.vercel.app` redireciona para ele) | [`frontend/vercel.json`](frontend/vercel.json) |
 | API | Fly.io (app `tabwallet-api`, região `gru`) | https://tabwallet-api.fly.dev | [`backend/fly.toml`](backend/fly.toml) e [`backend/Dockerfile`](backend/Dockerfile) |
 | Banco | PostgreSQL gerenciado (Neon) | privado, só a API o acessa | `DATABASE_URL` nos segredos do Fly |
 
-A API roda numa máquina `shared-cpu-1x` com 512 MB, sempre ligada (sem escalar a zero), com a rota `/live` (processo no ar, sem consultar o banco) como verificação de saúde do Fly. O front-end encaminha `/api/*` à API (rewrite de `frontend/next.config.ts`), então o navegador só fala com `tabwallet.vercel.app`.
+A API roda numa máquina `shared-cpu-1x` com 512 MB, sempre ligada (sem escalar a zero), com a rota `/live` (processo no ar, sem consultar o banco) como verificação de saúde do Fly. O front-end encaminha `/api/*` à API (rewrite de `frontend/next.config.ts`), então o navegador só fala com `tabwallet.com.br`.
 
 ### Pipeline
 
@@ -111,8 +111,8 @@ Os deploys de produção nunca rodam em paralelo (`concurrency`, sem cancelar o 
 | --- | --- | --- |
 | Segredos do Fly (`fly secrets set -a tabwallet-api NOME=valor`) | `DATABASE_URL` | Conexão com o Neon. O Neon exige TLS: a URL precisa terminar com `?sslmode=require`. |
 | | `JWT_SECRET` | Segredo do JWT, 32 caracteres ou mais. |
-| | `APP_URL` | `https://tabwallet.vercel.app`, igual ao endereço do front-end (veja abaixo). |
-| | `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM` | E-mail da recuperação de senha. |
+| | `APP_URL` | `https://tabwallet.com.br`, igual ao endereço do front-end (veja abaixo). |
+| | `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM` | E-mail da recuperação de senha, enviado do subdomínio verificado no Resend (`TabWallet <no-reply@mail.tabwallet.com.br>`). |
 | `backend/fly.toml` (não secretas) | `BIND_ADDR`, `RUST_LOG` | Endereço de escuta e nível de log. |
 | Segredos do GitHub Actions | `FLY_API_TOKEN` | Token de deploy do app (`fly tokens create deploy -a tabwallet-api`). |
 | | `VERCEL_TOKEN` | Token da conta Vercel que faz o deploy. |
@@ -123,7 +123,7 @@ Não defina `APP_ENV` nem `COOKIE_SECURE` em produção: os padrões já são os
 
 ### Cuidados de operação
 
-- **`APP_URL` precisa ser exatamente o endereço do front-end** (`https://tabwallet.vercel.app`, sem barra no fim). Ele é a única origem aceita nas requisições que alteram dados; se estiver diferente, login, cadastro e todas as gravações respondem 403. Trocar o domínio do front-end exige atualizar `APP_URL` (`fly secrets set`, que reinicia a API).
+- **`APP_URL` precisa ser exatamente o endereço do front-end** (`https://tabwallet.com.br`, sem barra no fim). Ele é a única origem aceita nas requisições que alteram dados; se estiver diferente, login, cadastro e todas as gravações respondem 403. Trocar o domínio do front-end exige atualizar `APP_URL` (`fly secrets set`, que reinicia a API).
 - **Trocar o `JWT_SECRET` encerra todas as sessões**: todos os tokens emitidos deixam de valer e todo mundo precisa entrar de novo.
 - **Cold start do Neon.** O Neon suspende o banco depois de um tempo sem uso (escala a zero), e a primeira conexão depois disso demora mais que o normal. O Fly consulta `/live` a cada 30 segundos, e essa rota **não acessa o banco** de propósito: com `/health` (que faz um `SELECT`) o banco nunca dormiria e gastaria as horas de computação do plano do Neon. Assim o banco dorme quando ninguém usa o sistema, e a primeira requisição depois disso paga o cold start. Ao subir a API, o `grace_period` de 30 s da verificação cobre o banco acordando e as migrations. `/health` continua existindo para quem quer saber se o banco responde (é a rota do teste de fumaça); não aponte nenhuma verificação periódica para ela.
 - **Região.** O requisito de desempenho (95% das respostas em até 300 ms) foi medido com banco e API lado a lado; mantenha o banco do Neon numa região próxima de `gru` (São Paulo).
