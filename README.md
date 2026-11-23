@@ -92,14 +92,14 @@ Depois do merge na `main`, o esqueleto vai sozinho para produção, tudo por HTT
 | API | Fly.io (app `tabwallet-api`, região `gru`) | https://tabwallet-api.fly.dev | [`backend/fly.toml`](backend/fly.toml) e [`backend/Dockerfile`](backend/Dockerfile) |
 | Banco | PostgreSQL gerenciado (Neon) | privado, só a API o acessa | `DATABASE_URL` nos segredos do Fly |
 
-A API roda numa máquina `shared-cpu-1x` com 512 MB, sempre ligada (sem escalar a zero), com a rota `/health` como verificação de saúde. O front-end encaminha `/api/*` à API (rewrite de `frontend/next.config.ts`), então o navegador só fala com `tabwallet.vercel.app`.
+A API roda numa máquina `shared-cpu-1x` com 512 MB, sempre ligada (sem escalar a zero), com a rota `/live` (processo no ar, sem consultar o banco) como verificação de saúde do Fly. O front-end encaminha `/api/*` à API (rewrite de `frontend/next.config.ts`), então o navegador só fala com `tabwallet.vercel.app`.
 
 ### Pipeline
 
 O workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) roda quando o workflow `CI` termina com sucesso num push na `main` (os testes são o portão). Também pode ser disparado à mão (Actions, "Deploy", "Run workflow"), sempre sobre a `main`. Os jobs rodam em sequência e qualquer falha interrompe os seguintes:
 
 1. **Testes** (workflow `CI`, `backend` e `frontend`): fmt, clippy, testes de integração com PostgreSQL de verdade, typecheck, lint, testes e build do front-end. Sem eles verdes, o deploy nem começa.
-2. **Migrations e deploy da API** (job `api`): `fly deploy --remote-only` a partir de `backend/`; a imagem é construída no builder do Fly. **Não há passo separado de migrations: a API aplica as migrations do `sqlx` ao subir** (`db::migrate` em `backend/src/main.rs`), antes de começar a atender. A estratégia é `bluegreen`: a máquina nova sobe ao lado da antiga e só recebe tráfego depois de passar em `GET /health`; se não passar, o deploy falha e a versão anterior continua no ar.
+2. **Migrations e deploy da API** (job `api`): `fly deploy --remote-only` a partir de `backend/`; a imagem é construída no builder do Fly. **Não há passo separado de migrations: a API aplica as migrations do `sqlx` ao subir** (`db::migrate` em `backend/src/main.rs`), antes de começar a atender. A estratégia é `bluegreen`: a máquina nova sobe ao lado da antiga e só recebe tráfego depois de passar em `GET /live`; como a API só começa a atender depois de aplicar as migrations, passar nessa verificação também significa que elas terminaram; se não passar, o deploy falha e a versão anterior continua no ar.
 3. **Deploy do front-end** (job `frontend`): `vercel pull`, `vercel build --prod` e `vercel deploy --prebuilt --prod`, com a CLI da Vercel. Os deploys automáticos da Vercel pelo Git estão desligados (`git.deploymentEnabled: false`), então nada chega à produção sem passar por este pipeline.
 4. **Teste de fumaça** (job `smoke`), com `curl` e novas tentativas: `GET /health` da API em `tabwallet-api.fly.dev` responde `ok` com o banco `up`; a página `/login` do front-end responde 200; e `GET /api/health` pelo front-end (rewrite para a API) também responde `ok`, o que prova que o front-end foi compilado com o `API_URL` certo.
 
@@ -125,7 +125,7 @@ Não defina `APP_ENV` nem `COOKIE_SECURE` em produção: os padrões já são os
 
 - **`APP_URL` precisa ser exatamente o endereço do front-end** (`https://tabwallet.vercel.app`, sem barra no fim). Ele é a única origem aceita nas requisições que alteram dados; se estiver diferente, login, cadastro e todas as gravações respondem 403. Trocar o domínio do front-end exige atualizar `APP_URL` (`fly secrets set`, que reinicia a API).
 - **Trocar o `JWT_SECRET` encerra todas as sessões**: todos os tokens emitidos deixam de valer e todo mundo precisa entrar de novo.
-- **Cold start do Neon.** O Neon suspende o banco depois de um tempo sem uso (escala a zero), e a primeira conexão depois disso demora mais que o normal. Como o Fly consulta `/health` (que faz um `SELECT` no banco) a cada 30 segundos, o banco na prática quase não fica ocioso: o cold start praticamente não aparece, mas o banco também quase não dorme, o que consome horas de computação do plano do Neon. Para a API não depender do banco na verificação de saúde seria preciso uma rota de vida separada. Ao subir a API, o `grace_period` de 30 s do health check cobre o banco acordando.
+- **Cold start do Neon.** O Neon suspende o banco depois de um tempo sem uso (escala a zero), e a primeira conexão depois disso demora mais que o normal. O Fly consulta `/live` a cada 30 segundos, e essa rota **não acessa o banco** de propósito: com `/health` (que faz um `SELECT`) o banco nunca dormiria e gastaria as horas de computação do plano do Neon. Assim o banco dorme quando ninguém usa o sistema, e a primeira requisição depois disso paga o cold start. Ao subir a API, o `grace_period` de 30 s da verificação cobre o banco acordando e as migrations. `/health` continua existindo para quem quer saber se o banco responde (é a rota do teste de fumaça); não aponte nenhuma verificação periódica para ela.
 - **Região.** O requisito de desempenho (95% das respostas em até 300 ms) foi medido com banco e API lado a lado; mantenha o banco do Neon numa região próxima de `gru` (São Paulo).
 
 ### Como voltar a uma versão anterior
@@ -160,5 +160,5 @@ O pipeline foi escrito e revisado (o YAML passa no `actionlint`), mas um deploy 
 - **CSP com `'unsafe-inline'`**: a Content-Security-Policy permite scripts e estilos inline, porque nonces exigiriam renderização 100% dinâmica e são incompatíveis com a pré-renderização parcial usada (veja `docs/nao-funcionais.md`).
 - **Sem verificação de e-mail** no cadastro, sem exclusão de conta e sem notificações por e-mail ou push (fora do escopo do MVP).
 - **Saldo projetado** até 12 meses e só com o que já foi lançado; sem moedas múltiplas, contas ou carteiras.
-- **Implantação**: o pipeline de deploy (Fly.io, Vercel e Neon) está descrito em [Deploy](#deploy); o primeiro deploy real acontece no merge do ticket #6. O health check do Fly mantém o banco do Neon quase sempre acordado.
+- **Implantação**: o pipeline de deploy (Fly.io, Vercel e Neon) está descrito em [Deploy](#deploy); o primeiro deploy real acontece no merge do ticket #6.
 - **Safari**: não foi possível testar em Safari neste ambiente; veja `docs/nao-funcionais.md`.

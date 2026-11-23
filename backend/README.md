@@ -23,7 +23,9 @@ cargo run                     # aplica as migrations e sobe em 127.0.0.1:8080
 curl http://127.0.0.1:8080/health
 ```
 
-A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}`.
+A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}` (`503` com `"database":"down"` se o banco não responder).
+
+`GET /live` só diz que o processo está no ar (`{"status":"ok"}`) e **não acessa o banco**: é a verificação de saúde do Fly, que roda a cada 30 s e, se consultasse o banco, o manteria acordado o tempo todo (o Neon escala a zero). Use `/health` para saber se o banco responde.
 
 ### Variáveis de ambiente
 

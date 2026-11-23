@@ -100,7 +100,7 @@ Verificado só em Chromium (o mesmo motor do Chrome e do Edge). **Firefox e Safa
 
 ## 6. Disponibilidade
 
-Não verificável ainda: não há tempo de operação em produção para medir a disponibilidade. O que está pronto para isso (ticket #6): a API roda numa máquina sempre ligada no Fly.io (sem escalar a zero), com o `GET /health` (que consulta o banco) como verificação de saúde, e o deploy usa a estratégia `bluegreen`, em que a versão nova só recebe tráfego depois de passar nessa verificação, então um deploy com defeito não derruba a versão anterior. É uma máquina só, sem redundância: uma falha da máquina ou do banco gerenciado deixa a API fora até a recuperação. Os 99% do termo precisam de um período de operação para serem confirmados.
+Não verificável ainda: não há tempo de operação em produção para medir a disponibilidade. O que está pronto para isso (ticket #6): a API roda numa máquina sempre ligada no Fly.io (sem escalar a zero), com o `GET /live` (sem consultar o banco, para não manter o Neon acordado) como verificação de saúde; o `GET /health` (que consulta o banco) fica para o teste de fumaça do deploy, e o deploy usa a estratégia `bluegreen`, em que a versão nova só recebe tráfego depois de passar nessa verificação, então um deploy com defeito não derruba a versão anterior. É uma máquina só, sem redundância: uma falha da máquina ou do banco gerenciado deixa a API fora até a recuperação. Os 99% do termo precisam de um período de operação para serem confirmados.
 
 ## 7. Manutenibilidade e CI
 
