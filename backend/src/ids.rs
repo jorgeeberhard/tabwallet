@@ -1,0 +1,59 @@
+//! Identifiers shared by every layer.
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// The id of a user. Every repository method that reads or writes a user's
+/// data takes one, so data is always scoped to its owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct UserId(pub Uuid);
+
+/// The id of a Transaction (an income or expense outside the credit card).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct TransactionId(pub Uuid);
+
+/// The id of a credit card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct CreditCardId(pub Uuid);
+
+/// The id of a card purchase (an expense linked to a credit card).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct CardPurchaseId(pub Uuid);
+
+/// The id of a Charge (Encargo): interest, penalty or IOF recorded on an
+/// invoice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct ChargeId(pub Uuid);
+
+/// The id of an Early Payment of an invoice (the only Invoice Payment that is
+/// stored).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct InvoicePaymentId(pub Uuid);
+
+/// The id of a category.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct CategoryId(pub Uuid);
+
+/// The id of a recurring Transaction (a Gasto fixo or Receita fixa).
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type,
+)]
+#[sqlx(transparent)]
+pub struct RecurringTransactionId(pub Uuid);
+
+/// The id of an installment purchase (a card purchase split in Installments).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct InstallmentPurchaseId(pub Uuid);
+
+/// The id of one Installment of an installment purchase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct InstallmentId(pub Uuid);

@@ -1,0 +1,177 @@
+use std::sync::Arc;
+
+use axum::{
+    Router,
+    middleware::from_fn_with_state,
+    routing::{get, patch, post, put},
+};
+use sqlx::PgPool;
+
+use crate::{
+    auth::{Auth, require_auth},
+    clock::Clock,
+    csrf::require_same_origin,
+    email::EmailSender,
+    handlers,
+    rate_limit::RateLimits,
+};
+
+/// Shared state handed to every handler.
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: PgPool,
+    pub clock: Arc<dyn Clock>,
+    pub auth: Auth,
+    /// Sends transactional e-mail (password-reset links).
+    pub email: Arc<dyn EmailSender>,
+    /// Public address of the front-end, for the links in e-mails.
+    pub app_url: String,
+    /// Attempt limits for login and password-reset requests.
+    pub rate_limits: RateLimits,
+}
+
+pub fn build_router(state: AppState) -> Router {
+    // Routes that need a signed-in user. Add new ones here: `require_auth`
+    // rejects requests without a valid session with 401 and gives the handler
+    // an `AuthUser`, whose `id` every query must be scoped to.
+    let protected = Router::new()
+        .route("/auth/me", get(handlers::auth::me))
+        .route("/profile", patch(handlers::profile::update))
+        .route(
+            "/categories",
+            get(handlers::categories::list).post(handlers::categories::create),
+        )
+        .route("/categories/{id}", patch(handlers::categories::rename))
+        .route(
+            "/categories/{id}/deactivate",
+            post(handlers::categories::deactivate),
+        )
+        .route(
+            "/categories/{id}/reactivate",
+            post(handlers::categories::reactivate),
+        )
+        .route("/balance", get(handlers::balance::get))
+        .route("/balance/opening", post(handlers::balance::set_opening))
+        .route("/balance/history", get(handlers::balance_series::history))
+        .route(
+            "/balance/projection",
+            get(handlers::balance_series::projection),
+        )
+        .route(
+            "/reports/expenses-by-category",
+            get(handlers::reports::expenses_by_category),
+        )
+        .route(
+            "/reports/income-vs-expenses",
+            get(handlers::reports::income_vs_expenses),
+        )
+        .route(
+            "/transactions",
+            get(handlers::transactions::list).post(handlers::transactions::create),
+        )
+        .route(
+            "/transactions/{id}",
+            patch(handlers::transactions::update).delete(handlers::transactions::delete),
+        )
+        .route(
+            "/credit-cards",
+            get(handlers::credit_cards::list).post(handlers::credit_cards::create),
+        )
+        .route("/credit-cards/{id}", patch(handlers::credit_cards::update))
+        .route(
+            "/credit-cards/{id}/deactivate",
+            post(handlers::credit_cards::deactivate),
+        )
+        .route(
+            "/credit-cards/{id}/reactivate",
+            post(handlers::credit_cards::reactivate),
+        )
+        .route(
+            "/credit-cards/{id}/invoices",
+            get(handlers::credit_cards::invoices),
+        )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}",
+            get(handlers::credit_cards::invoice),
+        )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}/payments",
+            post(handlers::invoice_payments::pay),
+        )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}/payment",
+            put(handlers::invoice_payments::correct),
+        )
+        .route(
+            "/credit-cards/{id}/invoices/{closing_month}/charges",
+            post(handlers::invoice_charges::create),
+        )
+        .route(
+            "/charges/{id}",
+            patch(handlers::invoice_charges::update).delete(handlers::invoice_charges::delete),
+        )
+        .route(
+            "/credit-cards/{id}/anticipable-installments",
+            get(handlers::installment_anticipations::list_anticipable),
+        )
+        .route(
+            "/credit-cards/{id}/installment-anticipations",
+            post(handlers::installment_anticipations::anticipate),
+        )
+        .route("/card-purchases", post(handlers::card_purchases::create))
+        .route(
+            "/card-purchases/{id}",
+            patch(handlers::card_purchases::update).delete(handlers::card_purchases::delete),
+        )
+        .route(
+            "/installment-purchases",
+            post(handlers::installment_purchases::create),
+        )
+        .route(
+            "/installment-purchases/{id}",
+            patch(handlers::installment_purchases::update)
+                .delete(handlers::installment_purchases::delete),
+        )
+        .route(
+            "/recurring-transactions",
+            get(handlers::recurring::list).post(handlers::recurring::create),
+        )
+        .route(
+            "/recurring-transactions/{id}",
+            patch(handlers::recurring::update),
+        )
+        .route(
+            "/recurring-transactions/{id}/end",
+            post(handlers::recurring::end),
+        )
+        .route(
+            "/recurring-transactions/{id}/occurrences/{month}",
+            patch(handlers::recurring::edit_occurrence)
+                .delete(handlers::recurring::delete_occurrence),
+        )
+        .route("/budgets", get(handlers::budgets::list))
+        .route("/budgets/status", get(handlers::budgets::status))
+        .route(
+            "/budgets/{category_id}",
+            put(handlers::budgets::set).delete(handlers::budgets::remove),
+        )
+        .route_layer(from_fn_with_state(state.clone(), require_auth));
+
+    Router::new()
+        .route("/health", get(handlers::health::health))
+        .route("/auth/signup", post(handlers::auth::sign_up))
+        .route("/auth/login", post(handlers::auth::log_in))
+        .route("/auth/logout", post(handlers::auth::log_out))
+        .route(
+            "/auth/password-reset/request",
+            post(handlers::password_reset::request),
+        )
+        .route(
+            "/auth/password-reset/confirm",
+            post(handlers::password_reset::confirm),
+        )
+        .merge(protected)
+        // Outermost: refuse cross-site writes before any route (even login).
+        .layer(from_fn_with_state(state.clone(), require_same_origin))
+        .with_state(state)
+}
