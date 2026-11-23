@@ -33,7 +33,10 @@ primary_region = "gru"
 
   [[http_service.checks]]
     method = "GET"
-    path = "/health"
+    # /live, not /health: this check runs every 30 s, and /health queries the
+    # database, which would keep the serverless Neon database awake around the
+    # clock and use up its compute hours. /live never touches the database.
+    path = "/live"
     # Time for the start, the migrations and a Neon database waking up.
     grace_period = "30s"
     interval = "30s"
