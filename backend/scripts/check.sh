@@ -8,7 +8,8 @@
 #   backend/scripts/check.sh -- --nocapture  # extra args go to `cargo test`
 #
 # Requires Docker running. Each run starts ONE throwaway PostgreSQL container
-# (data in tmpfs, see _docker.sh) and removes it when the script ends, even on
+# (data in tmpfs, see _docker.sh), plus a second one with TLS on for the
+# PostgreSQL TLS test, and removes both when the script ends, even on
 # Ctrl-C. Tests get it through TEST_DATABASE_URL, so testcontainers is not used
 # here: it started a container per test binary and never removed them, which
 # piled up and slowed the machine down. Cargo registry and build output live in
@@ -23,6 +24,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/_docker.sh"
 if [ "${1:-}" = "--" ]; then shift; fi
 
 start_postgres
+# For tests/postgres_tls.rs (production's managed database requires TLS).
+start_tls_postgres
 
 docker run --rm --network host \
   -v "$backend_dir:/work" -w /work \
@@ -30,6 +33,7 @@ docker run --rm --network host \
   -v tabwallet-cargo-target:/target \
   -e CARGO_TARGET_DIR=/target \
   -e "TEST_DATABASE_URL=postgres://postgres:postgres@host.docker.internal:${pg_port}/postgres" \
+  -e "TEST_TLS_DATABASE_URL=postgres://postgres:postgres@host.docker.internal:${tls_pg_port}/postgres" \
   rust:1-bookworm \
   bash -euxc 'rustup component add clippy rustfmt >/dev/null 2>&1
     cargo fmt --check
