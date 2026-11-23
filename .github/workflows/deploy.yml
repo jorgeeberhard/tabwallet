@@ -29,7 +29,7 @@ concurrency:
 
 env:
   API_ADDRESS: https://tabwallet-api.fly.dev
-  APP_ADDRESS: https://tabwallet.vercel.app
+  APP_ADDRESS: https://tabwallet.com.br
   # Deploy exactly the commit CI tested (`workflow_run` otherwise checks out
   # the latest commit of the default branch).
   DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
