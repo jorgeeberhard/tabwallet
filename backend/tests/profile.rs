@@ -60,38 +60,8 @@ async fn changing_the_email_requires_the_current_password() {
     assert_eq!(unchanged["user"]["email"], json!("ana@example.com"));
 }
 
-#[tokio::test]
-async fn with_the_current_password_the_email_changes_and_the_new_one_logs_in() {
-    let app = TestApp::spawn().await;
-    let browser = app.session();
-    browser.sign_up("ana@example.com", PASSWORD).await;
-
-    let response = browser
-        .patch_json(
-            "/profile",
-            &json!({ "email": " Ana.New@Example.com ", "current_password": PASSWORD }),
-        )
-        .await;
-
-    assert_eq!(response.status(), 200);
-    let body: Value = response.json().await.unwrap();
-    assert_eq!(body["user"]["email"], json!("Ana.New@Example.com"));
-    let other_browser = app.session();
-    assert_eq!(
-        other_browser
-            .log_in("ana@example.com", PASSWORD)
-            .await
-            .status(),
-        401
-    );
-    assert_eq!(
-        other_browser
-            .log_in("ana.new@example.com", PASSWORD)
-            .await
-            .status(),
-        200
-    );
-}
+// Asking for a new e-mail only creates a pending change; the whole flow
+// (confirmation, notice, expiry, limits) is in `tests/email_change.rs`.
 
 #[tokio::test]
 async fn sending_the_unchanged_email_with_a_new_name_needs_no_password() {
@@ -192,34 +162,6 @@ async fn the_profile_can_only_be_edited_while_signed_in_and_only_for_oneself() {
     bia.log_in("bia@example.com", PASSWORD).await;
     let me: Value = bia.get("/auth/me").await.json().await.unwrap();
     assert_eq!(me["user"]["name"], json!(common::DEFAULT_NAME));
-}
-
-#[tokio::test]
-async fn the_email_cannot_be_taken_from_another_account_nor_be_invalid() {
-    let app = TestApp::spawn().await;
-    app.session().sign_up("bia@example.com", PASSWORD).await;
-    let browser = app.session();
-    browser.sign_up("ana@example.com", PASSWORD).await;
-
-    let taken = browser
-        .patch_json(
-            "/profile",
-            &json!({ "email": "BIA@example.com", "current_password": PASSWORD }),
-        )
-        .await;
-    assert_eq!(taken.status(), 409);
-    let body: Value = taken.json().await.unwrap();
-    assert_eq!(body["error"]["code"], json!("email_taken"));
-
-    let invalid = browser
-        .patch_json(
-            "/profile",
-            &json!({ "email": "nope", "current_password": PASSWORD }),
-        )
-        .await;
-    assert_eq!(invalid.status(), 422);
-    let body: Value = invalid.json().await.unwrap();
-    assert_eq!(body["error"]["fields"]["email"], json!("invalid_email"));
 }
 
 /// Asks for each `(new_password, code)` in the profile of a signed-in account

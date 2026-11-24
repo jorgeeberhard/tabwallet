@@ -70,13 +70,17 @@ impl RateLimiter {
 /// for an e-mail address. Password-reset requests count every request: 3 per
 /// hour for an e-mail address. So do sign-up requests and the resending of the
 /// confirmation e-mail, each with its own count (a Pending signup can thus get
-/// at most 6 e-mails an hour).
+/// at most 6 e-mails an hour). Requests to change the e-mail and resends of its
+/// link share one count of 3 per hour for the account.
 #[derive(Clone)]
 pub struct RateLimits {
     pub login: RateLimiter,
     pub password_reset: RateLimiter,
     pub sign_up: RateLimiter,
     pub resend_confirmation: RateLimiter,
+    /// Requests to change the e-mail and resends of its link, together, per
+    /// account (the key is the account id).
+    pub email_change: RateLimiter,
 }
 
 impl Default for RateLimits {
@@ -86,6 +90,7 @@ impl Default for RateLimits {
             password_reset: RateLimiter::new(3, Duration::hours(1)),
             sign_up: RateLimiter::new(3, Duration::hours(1)),
             resend_confirmation: RateLimiter::new(3, Duration::hours(1)),
+            email_change: RateLimiter::new(3, Duration::hours(1)),
         }
     }
 }

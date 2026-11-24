@@ -8,6 +8,7 @@ pub mod invoice_charges;
 pub mod invoice_payments;
 pub mod opening_balance;
 pub mod password_resets;
+pub mod pending_email_changes;
 pub mod pending_signups;
 pub mod recurring;
 pub mod spending;
