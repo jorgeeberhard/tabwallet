@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CheckEmail } from "@/components/auth/check-email"
 import { ConfirmEmail } from "@/components/auth/confirm-email"
+import { ConfirmEmailChange } from "@/components/auth/confirm-email-change"
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
 import { LoginForm } from "@/components/auth/login-form"
 import { ResetPasswordForm } from "@/components/auth/reset-password-form"
@@ -72,6 +73,8 @@ const screens: Array<[string, () => ReactElement]> = [
   ["check-your-e-mail screen", () => <CheckEmail email="ana@example.com" />],
   ["confirm-e-mail page, link confirmed", () => <ConfirmEmail token="abc" />],
   ["confirm-e-mail page, link expired or used", () => <ConfirmEmail token="" />],
+  ["confirm-e-mail-change page, change confirmed", () => <ConfirmEmailChange token="abc" />],
+  ["confirm-e-mail-change page, link expired or used", () => <ConfirmEmailChange token="" />],
   ["forgot-password form", () => <ForgotPasswordForm />],
   ["reset-password form", () => <ResetPasswordForm token="abc" />],
   ["profile forms", () => <ProfileForms />],
@@ -152,6 +155,58 @@ describe("accessibility of forms and dialogs (axe)", () => {
     )
     render(<ConfirmEmail token="abc" />)
     await screen.findByText("Este e-mail já tem uma conta")
+
+    expect(await violationsIn(document.body)).toEqual([])
+  })
+
+  it("the confirm-e-mail-change page for an e-mail that became someone else's account has no axe violations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: { code: "email_taken", message: "x" } }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ConfirmEmailChange token="abc" />
+      </QueryClientProvider>,
+    )
+    await screen.findByText("Este e-mail já tem uma conta")
+
+    expect(await violationsIn(document.body)).toEqual([])
+  })
+
+  it("the profile with a pending e-mail change has no axe violations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              user,
+              pending_email_change: {
+                email: "ana.nova@example.com",
+                expires_at: "2026-01-02T00:00:00Z",
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      ),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ProfileForms />
+      </QueryClientProvider>,
+    )
+    await screen.findByText("Troca de e-mail pendente")
 
     expect(await violationsIn(document.body)).toEqual([])
   })

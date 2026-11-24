@@ -13,9 +13,9 @@ const PUBLIC_PAGES = ["/login", "/signup", "/forgot-password"]
 
 /**
  * Open to everyone, signed in or not: the pages the e-mailed links open
- * (password reset and sign-up confirmation).
+ * (password reset, sign-up confirmation and e-mail change).
  */
-const OPEN_PAGES = ["/reset-password", "/confirm-email"]
+const OPEN_PAGES = ["/reset-password", "/confirm-email", "/confirm-email-change"]
 
 /**
  * Where to send the request, or `null` to let it through.

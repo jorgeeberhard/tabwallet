@@ -2,13 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQueryClient } from "@tanstack/react-query"
-import { TriangleAlertIcon } from "lucide-react"
+import { MailCheckIcon, TriangleAlertIcon } from "lucide-react"
 import { useState } from "react"
 import { type FieldValues, type Path, type UseFormSetError, useForm } from "react-hook-form"
 import { toast } from "sonner"
 
 import { useCurrentUser } from "@/components/user-menu"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -21,7 +21,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
-import { type ProfileChanges, type User, updateProfile } from "@/lib/api"
+import {
+  type PendingEmailChange,
+  type ProfileChanges,
+  type User,
+  resendEmailChange,
+  updateProfile,
+} from "@/lib/api"
 import {
   type ProfileEmailValues,
   type ProfileNameValues,
@@ -66,11 +72,11 @@ function useSaveProfile() {
     setError: UseFormSetError<T>,
     fieldFor: Record<string, Path<T>>,
     action: string,
-  ): Promise<{ saved: true } | { saved: false; failure: string | null }> {
+  ): Promise<{ saved: true; user: User } | { saved: false; failure: string | null }> {
     try {
       const user = await updateProfile(changes)
       queryClient.setQueryData<User>(["current-user"], user)
-      return { saved: true }
+      return { saved: true, user }
     } catch (error) {
       if (isApiError(error)) {
         // Errors that belong to one field are shown under it.
@@ -175,20 +181,26 @@ function EmailCard({ user }: { user: User }) {
 
   async function onSubmit(values: ProfileEmailValues) {
     setFailure(null)
+    const requested = values.email.trim()
+    if (requested.toLowerCase() === user.email.toLowerCase()) {
+      setError("email", { message: "Este já é o seu e-mail de acesso. Digite o novo e-mail." })
+      return
+    }
     const result = await save(
-      { email: values.email, currentPassword: values.currentPassword },
+      { email: requested, currentPassword: values.currentPassword },
       setError,
       {
         email: "email",
-        email_taken: "email",
         current_password: "currentPassword",
         invalid_current_password: "currentPassword",
       },
-      "salvar o e-mail",
+      "pedir a troca do e-mail",
     )
     if (result.saved) {
-      toast.success("E-mail salvo. Use o novo e-mail para entrar.")
-      reset({ email: values.email.trim(), currentPassword: "" })
+      toast.success(`Enviamos um link de confirmação para ${requested}.`)
+      // The e-mail does not change until the link is opened: the form goes
+      // back to the e-mail that still works.
+      reset({ email: result.user.email, currentPassword: "" })
     } else {
       setFailure(result.failure)
     }
@@ -201,10 +213,15 @@ function EmailCard({ user }: { user: User }) {
           <h2>E-mail</h2>
         </CardTitle>
         <CardDescription>
-          É o e-mail que você usa para entrar e onde recebe o link de recuperação de senha.
+          É o e-mail que você usa para entrar e onde recebe o link de recuperação de senha. Ao
+          trocar, enviamos um link de confirmação para o novo e-mail; você continua entrando com o
+          atual até confirmar.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-6">
+        {user.pendingEmailChange && (
+          <PendingEmailChangeNotice pending={user.pendingEmailChange} currentEmail={user.email} />
+        )}
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
           <FailureAlert message={failure} />
           <FieldGroup>
@@ -237,11 +254,85 @@ function EmailCard({ user }: { user: User }) {
           </FieldGroup>
           <Button type="submit" className="self-start" disabled={isSubmitting}>
             {isSubmitting && <Spinner />}
-            Salvar e-mail
+            Trocar e-mail
           </Button>
         </form>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Shown while a change of e-mail waits for the link sent to the new address:
+ * which address, how it works, and a button to send the link again. A new
+ * request in the form below replaces this one.
+ */
+function PendingEmailChangeNotice({
+  pending,
+  currentEmail,
+}: {
+  pending: PendingEmailChange
+  currentEmail: string
+}) {
+  const queryClient = useQueryClient()
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle")
+  const [failure, setFailure] = useState<string | null>(null)
+
+  async function resend() {
+    setFailure(null)
+    setState("sending")
+    try {
+      await resendEmailChange()
+    } catch (error) {
+      setState("idle")
+      if (isApiError(error) && error.code === "no_pending_email_change") {
+        // Confirmed or expired meanwhile: read the profile again.
+        void queryClient.invalidateQueries({ queryKey: ["current-user"] })
+      }
+      setFailure(
+        (isApiError(error) && messageForCode(error.code)) || genericFailure("reenviar o link"),
+      )
+      return
+    }
+    setState("sent")
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Alert variant="info">
+        <MailCheckIcon strokeWidth={1.75} />
+        <AlertTitle>Troca de e-mail pendente</AlertTitle>
+        <AlertDescription>
+          <p>
+            Enviamos um link de confirmação para <strong>{pending.email}</strong>. Abra o link
+            (vale por 24 horas e só pode ser usado uma vez) para concluir a troca. Veja também a
+            caixa de spam.
+          </p>
+          <p>
+            Até lá, você continua entrando com <strong>{currentEmail}</strong>. Quando a troca for
+            concluída, avisamos esse e-mail. Pedir outra troca abaixo substitui esta e invalida o link anterior.
+          </p>
+        </AlertDescription>
+      </Alert>
+      <Button
+        type="button"
+        variant="outline"
+        className="self-start"
+        disabled={state === "sending"}
+        onClick={resend}
+      >
+        {state === "sending" && <Spinner />}
+        Reenviar link
+      </Button>
+      <div aria-live="polite" className="text-sm">
+        {state === "sent" && (
+          <p className="text-muted-foreground">
+            Enviamos um novo link para {pending.email}. O link anterior deixou de valer.
+          </p>
+        )}
+        {failure && <p className="text-destructive">{failure}</p>}
+      </div>
+    </div>
   )
 }
 

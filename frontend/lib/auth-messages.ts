@@ -21,6 +21,8 @@ const MESSAGES: Record<string, string> = {
     "Confirme seu e-mail para entrar. Enviamos um link de confirmação para o endereço do cadastro.",
   invalid_confirmation_token:
     "Este link de confirmação é inválido, expirou ou já foi usado. Peça um novo link.",
+  no_pending_email_change:
+    "Não há troca de e-mail pendente: ela já foi concluída ou o link expirou. Peça a troca de novo, se ainda quiser.",
   invalid_reset_token:
     "Este link de redefinição é inválido, expirou ou já foi usado. Peça um novo link.",
 }
