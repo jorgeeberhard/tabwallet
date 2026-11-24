@@ -59,6 +59,9 @@ impl EmailSender for RecordingEmailSender {
     }
 }
 
+/// The name `Session::sign_up` gives the people it creates.
+pub const DEFAULT_NAME: &str = "Maria Silva";
+
 /// The address the test API puts in e-mail links.
 pub const TEST_APP_URL: &str = "http://app.test";
 
@@ -78,6 +81,7 @@ pub struct Session {
     address: String,
     client: reqwest::Client,
     cookie: Mutex<Option<String>>,
+    emails: RecordingEmailSender,
 }
 
 impl Session {
@@ -161,13 +165,56 @@ impl Session {
             .unwrap()
     }
 
-    /// Registers a user and, as the API does, leaves this session signed in.
+    /// Gives a test a signed-in user, through the real flow: asks for the
+    /// sign-up, opens the link of the confirmation e-mail the fake recorded,
+    /// then logs in. The API never signs anyone in at sign-up, so this is
+    /// what a person does. Returns the login response (`200` and the user).
     pub async fn sign_up(&self, email: &str, password: &str) -> Response {
+        let requested = self.request_sign_up(email, DEFAULT_NAME, password).await;
+        assert_eq!(requested.status(), 202, "sign-up of {email} was refused");
+        let token = self.latest_confirmation_token(email);
+        let confirmed = self.confirm_sign_up(&token).await;
+        assert_eq!(confirmed.status(), 204, "confirmation of {email} failed");
+        self.log_in(email, password).await
+    }
+
+    /// Asks for a sign-up the way the sign-up form does. It only creates a
+    /// Pending signup: nobody is signed in and no Account exists yet.
+    pub async fn request_sign_up(&self, email: &str, name: &str, password: &str) -> Response {
         self.post_json(
             "/auth/signup",
-            &json!({ "email": email, "password": password }),
+            &json!({ "email": email, "name": name, "password": password }),
         )
         .await
+    }
+
+    /// Opens a confirmation link: the token is the one in the e-mailed link.
+    pub async fn confirm_sign_up(&self, token: &str) -> Response {
+        self.post_json("/auth/signup/confirm", &json!({ "token": token }))
+            .await
+    }
+
+    /// Asks for the confirmation e-mail to be sent again.
+    pub async fn resend_confirmation(&self, email: &str) -> Response {
+        self.post_json("/auth/signup/resend", &json!({ "email": email }))
+            .await
+    }
+
+    /// The confirmation token in the latest e-mail sent to `email`.
+    pub fn latest_confirmation_token(&self, email: &str) -> String {
+        let link = format!("{TEST_APP_URL}/confirm-email?token=");
+        let message = self
+            .emails
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|message| message.to.eq_ignore_ascii_case(email) && message.text.contains(&link))
+            .cloned()
+            .unwrap_or_else(|| panic!("no confirmation e-mail was sent to {email}"));
+        let rest = message.text.split_once(&link).unwrap().1;
+        rest.split(char::is_whitespace).next().unwrap().to_string()
     }
 
     pub async fn log_in(&self, email: &str, password: &str) -> Response {
@@ -207,6 +254,16 @@ impl Session {
                     Some(pair.to_string())
                 };
             }
+        }
+    }
+}
+
+impl Drop for TestApp {
+    /// Drops the test's database when the test ends (see
+    /// `postgres::drop_database`).
+    fn drop(&mut self) {
+        if let Some(name) = self.pool.connect_options().get_database() {
+            postgres::drop_database(name);
         }
     }
 }
@@ -270,6 +327,7 @@ impl TestApp {
             address: self.address.clone(),
             client: reqwest::Client::new(),
             cookie: Mutex::new(None),
+            emails: self.emails.clone(),
         }
     }
 

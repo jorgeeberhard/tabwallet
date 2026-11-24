@@ -18,7 +18,7 @@ const PASSWORD: &str = "correct horse battery";
 async fn signed_up(app: &TestApp, email: &str) -> Session {
     let browser = app.session();
     let response = browser.sign_up(email, PASSWORD).await;
-    assert_eq!(response.status(), 201);
+    assert_eq!(response.status(), 200);
     browser
 }
 

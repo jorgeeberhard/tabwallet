@@ -1,5 +1,6 @@
-//! A small in-memory limiter for the two operations that guessing or spam can
-//! abuse without a session: logging in and asking for a password-reset e-mail.
+//! A small in-memory limiter for the operations that guessing or spam can
+//! abuse without a session: logging in and asking for an e-mail (password
+//! reset, sign-up confirmation).
 //!
 //! It counts attempts per key (the e-mail address, lowercased) in a sliding
 //! window. The counters live in the memory of one API instance, so with several
@@ -67,11 +68,15 @@ impl RateLimiter {
 
 /// The limiters of the API. Login counts failed attempts: 5 per 15 minutes
 /// for an e-mail address. Password-reset requests count every request: 3 per
-/// hour for an e-mail address.
+/// hour for an e-mail address. So do sign-up requests and the resending of the
+/// confirmation e-mail, each with its own count (a Pending signup can thus get
+/// at most 6 e-mails an hour).
 #[derive(Clone)]
 pub struct RateLimits {
     pub login: RateLimiter,
     pub password_reset: RateLimiter,
+    pub sign_up: RateLimiter,
+    pub resend_confirmation: RateLimiter,
 }
 
 impl Default for RateLimits {
@@ -79,6 +84,8 @@ impl Default for RateLimits {
         Self {
             login: RateLimiter::new(5, Duration::minutes(15)),
             password_reset: RateLimiter::new(3, Duration::hours(1)),
+            sign_up: RateLimiter::new(3, Duration::hours(1)),
+            resend_confirmation: RateLimiter::new(3, Duration::hours(1)),
         }
     }
 }

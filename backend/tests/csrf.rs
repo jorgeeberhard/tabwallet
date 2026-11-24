@@ -19,7 +19,7 @@ async fn signed_up(app: &TestApp) -> Session {
     let browser = app.session();
     assert_eq!(
         browser.sign_up("ana@example.com", PASSWORD).await.status(),
-        201
+        200
     );
     browser
 }

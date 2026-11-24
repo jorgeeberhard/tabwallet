@@ -14,6 +14,10 @@ pub enum AuthError {
     EmailTaken,
     #[error("wrong e-mail or password")]
     InvalidCredentials,
+    #[error("the e-mail and password match a sign-up that is not confirmed yet")]
+    EmailNotConfirmed,
+    #[error("the sign-up confirmation link is invalid, expired, used or replaced")]
+    InvalidConfirmationToken,
     #[error("the current password is wrong")]
     InvalidCurrentPassword,
     #[error("the current password is required for this change")]

@@ -36,6 +36,10 @@ pub enum ApiError {
     InvalidCredentials,
     /// The current password sent to confirm a sensitive change is wrong.
     InvalidCurrentPassword,
+    /// The e-mail and password match a sign-up still waiting for confirmation.
+    EmailNotConfirmed,
+    /// The sign-up confirmation link is unknown, expired, used or replaced.
+    InvalidConfirmationToken,
     /// The password-reset link is unknown, expired or already used.
     InvalidResetToken,
     /// No valid session.
@@ -143,6 +147,8 @@ impl From<AuthError> for ApiError {
                 "password".to_string(),
                 rejection.code().to_string(),
             )])),
+            AuthError::EmailNotConfirmed => Self::EmailNotConfirmed,
+            AuthError::InvalidConfirmationToken => Self::InvalidConfirmationToken,
             AuthError::InvalidResetToken => Self::InvalidResetToken,
             AuthError::Unauthenticated => Self::Unauthenticated,
             AuthError::Internal(cause) => Self::Internal(cause),
@@ -423,6 +429,20 @@ impl IntoResponse for ApiError {
                 StatusCode::FORBIDDEN,
                 "invalid_current_password",
                 "The current password is wrong.",
+                None,
+            ),
+            // 403, not 401: the front-end treats 401 as "signed out", and
+            // here the credentials are right.
+            Self::EmailNotConfirmed => (
+                StatusCode::FORBIDDEN,
+                "email_not_confirmed",
+                "Confirm your e-mail to sign in.",
+                None,
+            ),
+            Self::InvalidConfirmationToken => (
+                StatusCode::BAD_REQUEST,
+                "invalid_confirmation_token",
+                "The confirmation link is invalid, expired, already used or replaced.",
                 None,
             ),
             Self::InvalidResetToken => (

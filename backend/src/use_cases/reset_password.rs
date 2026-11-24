@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     auth::{
-        self,
+        self, link_token,
         password_policy::{self, Account},
-        reset_token,
     },
     clock::Clock,
     repositories::password_resets::PasswordResetRepository,
@@ -29,7 +28,7 @@ impl ResetPasswordUseCase {
     /// the link usable. Sessions already open stay valid: the session token is
     /// a JWT, which cannot be revoked.
     pub async fn execute(&self, token: &str, new_password: &str) -> Result<(), AuthError> {
-        let token_hash = reset_token::hash(token);
+        let token_hash = link_token::hash(token);
         let (email, name) = self
             .resets
             .find_account(&token_hash, self.clock.now())

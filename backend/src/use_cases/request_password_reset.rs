@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::Duration;
 
 use crate::{
-    auth::reset_token,
+    auth::link_token,
     clock::Clock,
     email::{EmailMessage, EmailSender},
     repositories::{password_resets::PasswordResetRepository, users::UserRepository},
@@ -54,12 +54,12 @@ impl RequestPasswordResetUseCase {
         };
         let user = account.user;
 
-        let token = reset_token::generate();
+        let token = link_token::generate();
         let now = self.clock.now();
         self.resets
             .replace_token(
                 user.id,
-                &reset_token::hash(&token),
+                &link_token::hash(&token),
                 now,
                 now + Duration::minutes(RESET_LINK_TTL_MINUTES),
             )

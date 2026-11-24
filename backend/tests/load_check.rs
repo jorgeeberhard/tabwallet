@@ -112,7 +112,7 @@ async fn seed(app: &TestApp, transactions: usize) -> Seeded {
     let mut random = Lcg(42);
     let session = Arc::new(app.session());
     let response = session.sign_up("load@example.com", PASSWORD).await;
-    assert_eq!(response.status(), 201);
+    assert_eq!(response.status(), 200);
 
     let response = session
         .post_json("/balance/opening", &json!({ "amount_cents": 1_500_000 }))
