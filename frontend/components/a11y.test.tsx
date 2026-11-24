@@ -5,11 +5,14 @@
  * (see docs/nao-funcionais.md).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import axe from "axe-core"
 import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { CheckEmail } from "@/components/auth/check-email"
+import { ConfirmEmail } from "@/components/auth/confirm-email"
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
 import { LoginForm } from "@/components/auth/login-form"
 import { ResetPasswordForm } from "@/components/auth/reset-password-form"
@@ -66,6 +69,9 @@ const noop = () => {}
 const screens: Array<[string, () => ReactElement]> = [
   ["login form", () => <LoginForm />],
   ["sign-up form", () => <SignupForm />],
+  ["check-your-e-mail screen", () => <CheckEmail email="ana@example.com" />],
+  ["confirm-e-mail page, link confirmed", () => <ConfirmEmail token="abc" />],
+  ["confirm-e-mail page, link expired or used", () => <ConfirmEmail token="" />],
   ["forgot-password form", () => <ForgotPasswordForm />],
   ["reset-password form", () => <ResetPasswordForm token="abc" />],
   ["profile forms", () => <ProfileForms />],
@@ -109,6 +115,45 @@ describe("accessibility of forms and dialogs (axe)", () => {
 
     expect(violations.join("\n")).toContain("label")
     expect(violations.join("\n")).toContain("button-name")
+  })
+
+  it("the login notice to confirm the e-mail has no axe violations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: { code: "email_not_confirmed", message: "x" } }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    )
+    render(<LoginForm />)
+    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
+    await userEvent.type(screen.getByLabelText("Senha"), "correct horse battery")
+    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+    await screen.findByText("Confirme seu e-mail para entrar")
+
+    expect(await violationsIn(document.body)).toEqual([])
+  })
+
+  it("the confirm-e-mail page for an e-mail that became someone else's account has no axe violations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: { code: "email_taken", message: "x" } }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    )
+    render(<ConfirmEmail token="abc" />)
+    await screen.findByText("Este e-mail já tem uma conta")
+
+    expect(await violationsIn(document.body)).toEqual([])
   })
 
   it.each(screens)("%s has no axe violations", async (_name, element) => {

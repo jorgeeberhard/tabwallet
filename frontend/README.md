@@ -12,9 +12,18 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 ## Autenticação
 
 - O navegador só fala com este app: `next.config.ts` encaminha `/api/*` para a API (`API_URL`, padrão `http://127.0.0.1:8080`). Com uma origem só, o cookie de sessão `httpOnly` é de primeira parte (`SameSite=Lax`) e a API não precisa de CORS. Copie `.env.example` para `.env.local`.
-- `proxy.ts` (o "middleware" do Next 16) roda em toda página: lê o cookie `tabwallet_session`, pergunta à API (`GET /auth/me`) se a sessão vale e redireciona visitantes para `/login`; quem já entrou é levado de `/login` e `/signup` para `/`. A regra de decisão está em `lib/access.ts`.
-- `lib/api.ts` chama a API (`signUp`, `logIn`, `logOut`, `getCurrentUser`) e converte erros para `ApiError` com o `code` estável da API; `lib/auth-messages.ts` traduz cada código para o texto em português.
+- `proxy.ts` (o "middleware" do Next 16) roda em toda página: lê o cookie `tabwallet_session`, pergunta à API (`GET /auth/me`) se a sessão vale e redireciona visitantes para `/login`; quem já entrou é levado de `/login` e `/signup` para `/`. As páginas que um link de e-mail abre (`/reset-password` e `/confirm-email`) ficam abertas para todos, logados ou não. A regra de decisão está em `lib/access.ts`.
+- `lib/api.ts` chama a API (`signUp`, `confirmSignUp`, `resendConfirmation`, `logIn`, `logOut`, `getCurrentUser`) e converte erros para `ApiError` com o `code` estável da API; `lib/auth-messages.ts` traduz cada código para o texto em português.
 - Telas: `app/(auth)/login` e `app/(auth)/signup` (formulários com `react-hook-form` + `zod`, `lib/auth-schemas.ts`); `app/(app)` é a área logada, com o menu da conta e a ação "Sair".
+
+### Cadastro com confirmação de e-mail
+
+O cadastro não cria a conta nem inicia a sessão: só a pessoa que abre o link do e-mail ganha a Conta (backend/README.md, "Cadastro com confirmação de e-mail").
+
+- **Formulário** (`components/auth/signup-form.tsx`): nome, e-mail e senha (a Regra de senha é a descrita adiante). Ao enviar com sucesso, o formulário dá lugar à tela **"Confira seu e-mail"** (`components/auth/check-email.tsx`): diz para onde o e-mail foi, que o link vale 24 horas e só funciona uma vez, e oferece "Reenviar e-mail" e "Voltar para entrar". O texto é o mesmo para e-mail novo, pendente ou de uma conta existente (a API não diz qual), então nunca promete que a conta foi criada. Não há redirecionamento para a área logada.
+- **Reenvio** (`components/auth/resend-confirmation.tsx`): `ResendConfirmationButton` (e-mail já conhecido: tela "Confira seu e-mail" e aviso do login) e `ResendConfirmationForm` (pede o e-mail: tela de link inválido). A resposta é sempre a mesma ("se houver um cadastro aguardando confirmação, enviamos um novo link"); passando de 3 por hora, a mensagem de "muitas tentativas".
+- **`/confirm-email?token=...`** (`app/(auth)/confirm-email`, `components/auth/confirm-email.tsx`): aberta pelo link do e-mail, **confirma ao carregar** (um `useRef` garante uma única chamada, mesmo com o efeito duplo do React em desenvolvimento) e mostra: "E-mail confirmado" com o botão **Entrar** (a confirmação não inicia sessão); "Este link não vale mais" (link inválido, expirado, usado, substituído ou sem token) com o formulário para pedir outro link e o caminho para fazer o cadastro de novo (depois de 24 horas o pendente deixou de valer e não há o que reenviar); "Este e-mail já tem uma conta" (`email_taken`) com Entrar e Esqueci a senha; e, se a API não responder, "Tentar de novo". Acessível a visitantes e a quem já está logado.
+- **Login** (`components/auth/login-form.tsx`): quando a API responde `email_not_confirmed` (e-mail e senha batem com um cadastro pendente), mostra o aviso **"Confirme seu e-mail para entrar"** com o botão de reenvio; qualquer outro erro continua com a mensagem genérica.
 
 ## Perfil e recuperação de senha
 

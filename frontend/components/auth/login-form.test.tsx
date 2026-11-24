@@ -89,6 +89,52 @@ describe("LoginForm", () => {
     )
   })
 
+  it("says to confirm the e-mail, with a resend button, when the sign-up is still pending", async () => {
+    fetchMock.mockReturnValueOnce(
+      answer(403, { error: { code: "email_not_confirmed", message: "Confirm your e-mail." } }),
+    )
+    fetchMock.mockReturnValueOnce(answer(202))
+    render(<LoginForm />)
+
+    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
+    await userEvent.type(screen.getByLabelText("Senha"), "correct horse battery")
+    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+
+    expect(await screen.findByText("Confirme seu e-mail para entrar")).toBeInTheDocument()
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(
+      screen.queryByText("E-mail ou senha incorretos. Confira os dados e tente de novo."),
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole("button", { name: "Reenviar e-mail" }))
+
+    expect(await screen.findByText(/Se houver um cadastro aguardando confirmação/)).toBeInTheDocument()
+    const [url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe("/api/auth/signup/resend")
+    expect(JSON.parse(init.body)).toEqual({ email: "ana@example.com" })
+  })
+
+  it("clears the confirm-your-e-mail notice when the person tries again", async () => {
+    fetchMock.mockReturnValueOnce(
+      answer(403, { error: { code: "email_not_confirmed", message: "Confirm your e-mail." } }),
+    )
+    fetchMock.mockReturnValueOnce(
+      answer(401, { error: { code: "invalid_credentials", message: "Wrong e-mail or password." } }),
+    )
+    render(<LoginForm />)
+    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
+    await userEvent.type(screen.getByLabelText("Senha"), "correct horse battery")
+    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+    await screen.findByText("Confirme seu e-mail para entrar")
+
+    await userEvent.click(screen.getByRole("button", { name: "Entrar" }))
+
+    expect(
+      await screen.findByText("E-mail ou senha incorretos. Confira os dados e tente de novo."),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Confirme seu e-mail para entrar")).not.toBeInTheDocument()
+  })
+
   it("asks to check the connection when the API cannot be reached", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"))
     render(<LoginForm />)

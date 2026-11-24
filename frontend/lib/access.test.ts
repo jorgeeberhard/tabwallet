@@ -30,6 +30,13 @@ describe("decideAccess", () => {
     expect(decideAccess("/forgot-password", "valid")).toEqual({ redirectTo: "/" })
   })
 
+  it("opens the confirmation-link page to visitors and to signed-in users", () => {
+    expect(decideAccess("/confirm-email", "none")).toBeNull()
+    expect(decideAccess("/confirm-email", "invalid")).toBeNull()
+    expect(decideAccess("/confirm-email", "unknown")).toBeNull()
+    expect(decideAccess("/confirm-email", "valid")).toBeNull()
+  })
+
   it("lets a signed-in user into private pages", () => {
     expect(decideAccess("/", "valid")).toBeNull()
   })

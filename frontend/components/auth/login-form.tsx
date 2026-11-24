@@ -1,13 +1,14 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { TriangleAlertIcon } from "lucide-react"
+import { MailWarningIcon, TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ResendConfirmationButton } from "@/components/auth/resend-confirmation"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -19,6 +20,9 @@ import { genericFailure, isApiError, messageForCode } from "@/lib/auth-messages"
 export function LoginForm() {
   const router = useRouter()
   const [failure, setFailure] = useState<string | null>(null)
+  // Set when the e-mail and password match a sign-up still waiting for the
+  // confirmation link: the person is told so and can ask for the e-mail again.
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null)
   const {
     register,
     handleSubmit,
@@ -30,9 +34,14 @@ export function LoginForm() {
 
   async function onSubmit(values: LogInValues) {
     setFailure(null)
+    setUnconfirmedEmail(null)
     try {
       await logIn(values.email, values.password)
     } catch (error) {
+      if (isApiError(error) && error.code === "email_not_confirmed") {
+        setUnconfirmedEmail(values.email)
+        return
+      }
       setFailure(
         (isApiError(error) && messageForCode(error.code)) || genericFailure("entrar"),
       )
@@ -49,6 +58,19 @@ export function LoginForm() {
           <TriangleAlertIcon strokeWidth={1.75} />
           <AlertDescription>{failure}</AlertDescription>
         </Alert>
+      )}
+      {unconfirmedEmail && (
+        <div className="flex flex-col gap-3">
+          <Alert variant="warning">
+            <MailWarningIcon strokeWidth={1.75} />
+            <AlertTitle>Confirme seu e-mail para entrar</AlertTitle>
+            <AlertDescription>
+              Seu cadastro ainda aguarda a confirmação. Abra o link que enviamos para{" "}
+              {unconfirmedEmail}. Se o e-mail não chegou, peça outro.
+            </AlertDescription>
+          </Alert>
+          <ResendConfirmationButton email={unconfirmedEmail} />
+        </div>
       )}
       <FieldGroup>
         <Field data-invalid={!!errors.email}>

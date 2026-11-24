@@ -3,10 +3,10 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { CheckEmail } from "@/components/auth/check-email"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,8 +23,13 @@ import { type SignUpValues, signUpSchema } from "@/lib/auth-schemas"
 import { genericFailure, isApiError, messageForCode } from "@/lib/auth-messages"
 import { PASSWORD_HINT } from "@/lib/password-rule"
 
+/**
+ * Asks for the sign-up. It does not sign anyone in: the account exists only
+ * after the link in the e-mail is opened, so on success the form gives way to
+ * the "Confira seu e-mail" screen.
+ */
 export function SignupForm() {
-  const router = useRouter()
+  const [sentTo, setSentTo] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const {
     register,
@@ -33,36 +38,37 @@ export function SignupForm() {
     formState: { errors, isSubmitting },
   } = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "", name: "", password: "" },
   })
 
   async function onSubmit(values: SignUpValues) {
     setFailure(null)
     try {
-      await signUp(values.email, values.password)
+      await signUp(values.email, values.name, values.password)
     } catch (error) {
       if (isApiError(error)) {
-        if (error.code === "email_taken") {
-          setError("email", { message: messageForCode(error.code) })
-          return
-        }
         // Rules the form should have caught itself, e.g. after a rule change.
         const fieldMessages = Object.entries(error.fields)
         if (error.code === "validation_failed" && fieldMessages.length > 0) {
           for (const [field, rule] of fieldMessages) {
-            if (field === "email" || field === "password") {
+            if (field === "email" || field === "name" || field === "password") {
               setError(field, { message: messageForCode(rule) ?? "Confira este campo." })
             }
           }
+          return
+        }
+        if (error.code === "too_many_requests") {
+          setFailure(messageForCode(error.code) ?? genericFailure("criar a conta"))
           return
         }
       }
       setFailure(genericFailure("criar a conta"))
       return
     }
-    router.replace("/")
-    router.refresh()
+    setSentTo(values.email)
   }
+
+  if (sentTo) return <CheckEmail email={sentTo} />
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
@@ -73,6 +79,17 @@ export function SignupForm() {
         </Alert>
       )}
       <FieldGroup>
+        <Field data-invalid={!!errors.name}>
+          <FieldLabel htmlFor="name">Nome</FieldLabel>
+          <Input
+            id="name"
+            type="text"
+            autoComplete="name"
+            aria-invalid={!!errors.name}
+            {...register("name")}
+          />
+          <FieldError errors={[errors.name]} />
+        </Field>
         <Field data-invalid={!!errors.email}>
           <FieldLabel htmlFor="email">E-mail</FieldLabel>
           <Input
