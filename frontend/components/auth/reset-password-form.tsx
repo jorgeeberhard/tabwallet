@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { confirmPasswordReset } from "@/lib/api"
 import { type ResetPasswordValues, resetPasswordSchema } from "@/lib/auth-schemas"
 import { genericFailure, isApiError, messageForCode } from "@/lib/auth-messages"
+import { PASSWORD_HINT } from "@/lib/password-rule"
 
 /** Sets the new password with the token from the e-mailed link. */
 export function ResetPasswordForm({ token }: { token: string }) {
@@ -99,7 +100,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
           {errors.password ? (
             <FieldError errors={[errors.password]} />
           ) : (
-            <FieldDescription>Use pelo menos 8 caracteres.</FieldDescription>
+            <FieldDescription>{PASSWORD_HINT}</FieldDescription>
           )}
         </Field>
         <Field data-invalid={!!errors.confirmation}>

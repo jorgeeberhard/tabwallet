@@ -31,6 +31,7 @@ import {
   profilePasswordSchema,
 } from "@/lib/auth-schemas"
 import { genericFailure, isApiError, messageForCode } from "@/lib/auth-messages"
+import { PASSWORD_HINT } from "@/lib/password-rule"
 
 /** Name, e-mail and password, each in its own card and saved on its own. */
 export function ProfileForms() {
@@ -315,7 +316,7 @@ function PasswordCard() {
               {errors.newPassword ? (
                 <FieldError errors={[errors.newPassword]} />
               ) : (
-                <FieldDescription>Use pelo menos 8 caracteres.</FieldDescription>
+                <FieldDescription>{PASSWORD_HINT}</FieldDescription>
               )}
             </Field>
             <Field data-invalid={!!errors.confirmation}>

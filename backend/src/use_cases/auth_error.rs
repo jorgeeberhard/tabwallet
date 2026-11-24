@@ -1,4 +1,4 @@
-use crate::repositories::users::User;
+use crate::{auth::password_policy::Rejection, repositories::users::User};
 
 /// A signed-in user and the token that proves it.
 pub struct Session {
@@ -18,6 +18,8 @@ pub enum AuthError {
     InvalidCurrentPassword,
     #[error("the current password is required for this change")]
     CurrentPasswordRequired,
+    #[error("the new password is refused by the Password policy: {}", .0.code())]
+    PasswordRejected(Rejection),
     #[error("the password reset link is invalid, expired or already used")]
     InvalidResetToken,
     #[error("there is no valid session")]

@@ -2,16 +2,15 @@ use axum::{Json, extract::State};
 use serde::Deserialize;
 use validator::Validate;
 
-use super::{
-    auth::{MAX_PASSWORD_LEN, MIN_PASSWORD_LEN, UserEnvelope},
-    extract::ValidatedJson,
-};
+use std::collections::BTreeMap;
+
+use super::{auth::UserEnvelope, extract::ValidatedJson};
 use crate::{
     app::AppState,
     auth::AuthUser,
     error::ApiError,
     repositories::users::UserRepository,
-    use_cases::{ProfileChanges, UpdateProfileUseCase},
+    use_cases::{AuthError, ProfileChanges, UpdateProfileUseCase},
 };
 
 pub const MAX_NAME_LEN: u64 = 100;
@@ -26,7 +25,8 @@ pub struct UpdateProfileRequest {
     #[serde(default, deserialize_with = "trimmed")]
     #[validate(email(code = "invalid_email"))]
     email: Option<String>,
-    #[validate(length(min = MIN_PASSWORD_LEN, max = MAX_PASSWORD_LEN, code = "password_length"))]
+    /// Judged by the Password policy in the use case, which also knows the
+    /// account's e-mail and name.
     new_password: Option<String>,
     current_password: Option<String>,
 }
@@ -50,6 +50,13 @@ pub async fn update(
     };
     let user = UpdateProfileUseCase::new(UserRepository::new(state.pool.clone()))
         .execute(auth_user.id, changes)
-        .await?;
+        .await
+        .map_err(|error| match error {
+            AuthError::PasswordRejected(rejection) => ApiError::Validation(BTreeMap::from([(
+                "new_password".to_string(),
+                rejection.code().to_string(),
+            )])),
+            other => other.into(),
+        })?;
     Ok(Json(UserEnvelope { user: user.into() }))
 }

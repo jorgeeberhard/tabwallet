@@ -1,5 +1,8 @@
 use crate::{
-    auth,
+    auth::{
+        self,
+        password_policy::{self, Account},
+    },
     ids::UserId,
     repositories::users::{InsertUserError, User, UserRepository},
 };
@@ -25,7 +28,10 @@ impl UpdateProfileUseCase {
         Self { users }
     }
 
-    /// The fields are already validated by the handler.
+    /// The fields are already validated by the handler. A new password is
+    /// judged by the Password policy against the e-mail and name the account
+    /// has now (not the ones in this same request), before the current
+    /// password is checked.
     ///
     /// Sessions already open stay valid after an e-mail or password change:
     /// the session token is a JWT, which cannot be revoked (see README).
@@ -40,6 +46,17 @@ impl UpdateProfileUseCase {
             .await
             .map_err(AuthError::internal)?
             .ok_or(AuthError::Unauthenticated)?;
+
+        if let Some(new_password) = &changes.new_password {
+            password_policy::check(
+                new_password,
+                Account {
+                    email: &current.user.email,
+                    name: &current.user.name,
+                },
+            )
+            .map_err(AuthError::PasswordRejected)?;
+        }
 
         let email = changes.email.unwrap_or_else(|| current.user.email.clone());
         let is_sensitive = email != current.user.email || changes.new_password.is_some();

@@ -1,11 +1,18 @@
 import { ApiError } from "@/lib/api"
+import { PASSWORD_TOO_LONG_MESSAGE, PASSWORD_TOO_SHORT_MESSAGE } from "@/lib/password-rule"
 
 /** What the person sees for each stable API error code (see backend/src/error.rs). */
 const MESSAGES: Record<string, string> = {
   email_taken: "Já existe uma conta com este e-mail. Entre ou use outro e-mail.",
   invalid_credentials: "E-mail ou senha incorretos. Confira os dados e tente de novo.",
   invalid_email: "Digite um e-mail válido, como nome@dominio.com.",
-  password_length: "Use uma senha de 8 a 128 caracteres.",
+  // The Password policy refusals (backend/src/auth/password_policy.rs).
+  password_too_short: PASSWORD_TOO_SHORT_MESSAGE,
+  password_too_long: PASSWORD_TOO_LONG_MESSAGE,
+  password_common: "Essa senha é muito comum e fácil de adivinhar. Escolha outra, de preferência uma frase.",
+  password_sequence: "Evite sequências e repetições, como 1234567890 ou aaaaaaaaaa. Escolha outra senha.",
+  password_contains_email: "A senha não pode conter o seu e-mail. Escolha outra.",
+  password_contains_name: "A senha não pode conter o seu nome. Escolha outra.",
   required: "Preencha este campo.",
   name_length: "Use um nome com até 100 caracteres.",
   invalid_current_password: "A senha atual não confere. Confira e tente de novo.",

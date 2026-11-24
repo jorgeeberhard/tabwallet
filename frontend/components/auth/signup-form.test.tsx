@@ -39,7 +39,7 @@ describe("SignupForm", () => {
     expect(
       await screen.findByText("Digite um e-mail válido, como nome@dominio.com."),
     ).toBeInTheDocument()
-    expect(screen.getByText("Use uma senha com pelo menos 8 caracteres.")).toBeInTheDocument()
+    expect(screen.getByText("A senha precisa ter pelo menos 10 caracteres.")).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -71,6 +71,60 @@ describe("SignupForm", () => {
       await screen.findByText("Já existe uma conta com este e-mail. Entre ou use outro e-mail."),
     ).toBeInTheDocument()
     expect(screen.getByLabelText("E-mail")).toHaveAttribute("aria-invalid", "true")
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+})
+
+const refusals = [
+  ["password_too_short", "A senha precisa ter pelo menos 10 caracteres."],
+  ["password_too_long", "A senha pode ter no máximo 128 caracteres."],
+  [
+    "password_common",
+    "Essa senha é muito comum e fácil de adivinhar. Escolha outra, de preferência uma frase.",
+  ],
+  [
+    "password_sequence",
+    "Evite sequências e repetições, como 1234567890 ou aaaaaaaaaa. Escolha outra senha.",
+  ],
+  ["password_contains_email", "A senha não pode conter o seu e-mail. Escolha outra."],
+  ["password_contains_name", "A senha não pode conter o seu nome. Escolha outra."],
+] as const
+
+describe("SignupForm password rule", () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+    router.replace.mockReset()
+  })
+
+  it("shows a short hint of the rule next to the password field, with no strength meter", () => {
+    render(<SignupForm />)
+
+    expect(screen.getByText("Use de 10 a 128 caracteres; uma frase longa é uma boa senha. Evite senhas comuns, sequências e o seu e-mail ou nome.")).toBeInTheDocument()
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument()
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
+  })
+
+  it.each(refusals)("shows the reason for %s under the password field", async (code, message) => {
+    fetchMock.mockReturnValue(
+      answer(422, {
+        error: { code: "validation_failed", message: "invalid", fields: { password: code } },
+      }),
+    )
+    render(<SignupForm />)
+
+    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
+    await userEvent.type(screen.getByLabelText("Senha"), "senha1234567")
+    await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.getByLabelText("Senha")).toHaveAttribute("aria-invalid", "true")
     expect(router.replace).not.toHaveBeenCalled()
   })
 })

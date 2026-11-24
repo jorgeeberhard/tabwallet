@@ -1,5 +1,8 @@
 use crate::{
-    auth::{self, TokenService},
+    auth::{
+        self, TokenService,
+        password_policy::{self, Account},
+    },
     repositories::users::{InsertUserError, User, UserRepository},
 };
 
@@ -16,8 +19,11 @@ impl SignUpUseCase {
         Self { users, tokens }
     }
 
-    /// `email` and `password` are already validated by the handler.
+    /// `email` is already validated by the handler; the password is judged by
+    /// the Password policy against that e-mail (a sign-up has no name yet).
     pub async fn execute(&self, email: &str, password: &str) -> Result<Session, AuthError> {
+        password_policy::check(password, Account { email, name: "" })
+            .map_err(AuthError::PasswordRejected)?;
         let password_hash = auth::password::hash(password.to_string())
             .await
             .map_err(AuthError::Internal)?;

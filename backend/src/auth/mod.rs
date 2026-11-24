@@ -7,6 +7,7 @@
 
 mod middleware;
 pub mod password;
+pub mod password_policy;
 pub mod reset_token;
 mod token;
 

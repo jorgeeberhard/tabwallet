@@ -45,7 +45,7 @@ A resposta esperada é `{"status":"ok","database":"up","today":"AAAA-MM-DD"}` (`
 
 | Rota | Efeito |
 | --- | --- |
-| `POST /auth/signup` `{email, password}` | Cria a conta (senha com 8 a 128 caracteres, e-mail único sem diferenciar maiúsculas) e já inicia a sessão. `201`. |
+| `POST /auth/signup` `{email, password}` | Cria a conta (senha pela Regra de senha, abaixo; e-mail único sem diferenciar maiúsculas) e já inicia a sessão. `201`. |
 | `POST /auth/login` `{email, password}` | Inicia a sessão. Erro igual para e-mail desconhecido e senha errada. |
 | `POST /auth/logout` | Expira o cookie. `204`, mesmo sem sessão. |
 | `GET /auth/me` | Rota protegida: devolve o usuário da sessão. |
@@ -59,15 +59,42 @@ A senha é guardada com Argon2id. A sessão é um JWT (7 dias) no cookie `tabwal
 - **SQL injection.** Todas as consultas usam parâmetros do `sqlx` (`.bind`); nenhum texto de usuário é concatenado em SQL (o `sqlx` 0.9 nem aceita SQL montado em tempo de execução sem `AssertSqlSafe`, usado só em testes).
 - **XSS.** A API só devolve JSON e o e-mail de recuperação é texto puro.
 
-Erros têm sempre a forma `{"error": {"code", "message", "fields"?}}`; o front-end usa o `code` estável (`email_taken`, `invalid_credentials`, `unauthenticated`, `validation_failed`, `invalid_request`).
+### Regra de senha (UC01, UC03 e UC14)
+
+Toda senha nova passa por um único módulo, `src/auth/password_policy.rs` (`PasswordPolicy` no glossário): `password_policy::check(senha, Account { email, name })`. É puro, sem HTTP nem SQL, e quem o chama são os três pontos em que uma senha nasce: o use case de cadastro (`SignUpUseCase`), o de redefinição pelo link (`ResetPasswordUseCase`) e o da troca no perfil (`UpdateProfileUseCase`). A decisão é sempre do servidor; o front-end só espelha o tamanho.
+
+Uma senha recusada dá `422 validation_failed`, com o código estável sob o campo da senha (`fields.password` no cadastro e na redefinição, `fields.new_password` no perfil). Verificadas nesta ordem, a primeira que falha é a resposta:
+
+| Código | Quando |
+| --- | --- |
+| `password_too_short` | Menos de 10 caracteres (conta caracteres, não bytes). |
+| `password_too_long` | Mais de 128 caracteres (limite que impede um corpo enorme de virar um trabalho enorme do Argon2). |
+| `password_sequence` | Sequência ou repetição óbvia: `aaaaaaaaaa`, `abababababab`, `123123123123`, `1234567890`, `0987654321`, `abcdefghij`, `zyxwvutsrqp`, um trecho de uma fileira do teclado (`qwertyuiop`). |
+| `password_common` | Está na lista embutida de senhas comuns (abaixo). |
+| `password_contains_email` | Contém o e-mail da conta. |
+| `password_contains_name` | Contém o nome da conta. |
+
+Não há exigência de maiúsculas, números ou símbolos: uma frase longa só em minúsculas passa.
+
+**Como os textos são comparados.** Sempre sem diferenciar maiúsculas de minúsculas e sem acentos (`José` vale `jose`).
+
+- **Lista de senhas comuns e padrões.** São olhadas quatro versões da senha: como foi digitada; sem os dígitos, símbolos e espaços do *fim* (`Senha123!` vira `senha`, `Qwerty@2024` vira `qwerty`); e essas duas de novo com as trocas usuais desfeitas (`@` e `4` por `a`, `0` por `o`, `3` por `e`, `5` e `$` por `s`, `7` por `t`: `p@ssw0rd` vira `password`). A lista só precisa das palavras-base; os finais que as pessoas acrescentam ficam por conta da regra. A versão sem o fim só conta para sequências e repetições se tiver pelo menos 8 caracteres (`abcd` mais seis dígitos sorteados não é uma "sequência").
+- **E-mail.** A parte antes do `@` (e, se houver `+etiqueta`, a parte antes do `+`) e o endereço inteiro. Senha e e-mail são reduzidos a letras e dígitos, então `bruno.lima`, `bruno_lima` e `BrunoLima` se encontram. Pedaços com menos de 4 caracteres são ignorados (`ana@...` não proíbe toda senha que tenha "ana").
+- **Nome.** O nome inteiro junto (`Ana Souza` vira `anasouza`) e cada palavra dele, também só letras e dígitos. Palavras com menos de 4 caracteres (`Ana`, `de`, `da`) são ignoradas, para não recusar senha à toa. Conta sem nome não proíbe nada. O cadastro ainda não pede o nome, então só o e-mail vale ali; na redefinição e no perfil valem o e-mail e o nome que a conta tem agora (no perfil, os de agora, não os que vêm no mesmo pedido).
+
+**Lista de senhas comuns** (`src/auth/common_passwords.txt`, cerca de 4 mil entradas, embutida no binário com `include_str!`). Foi escrita à mão, a partir do que se sabe em geral sobre as senhas mais escolhidas (temas internacionais, padrões de teclado, palavras do português do Brasil, clubes de futebol, nomes próprios populares) e depois combinada por um script com os finais mais comuns (`123`, anos, `!`, `@123`). Nenhuma lista foi baixada ou copiada de um vazamento, e ela não tem dados pessoais nem senhas de contas reais. Para mudar, edite as palavras em `scripts/generate-common-passwords.mjs` e rode `node backend/scripts/generate-common-passwords.mjs` (o arquivo `.txt` é gerado; não o edite à mão).
+
+**Na redefinição.** O link é verificado antes da senha: link desconhecido, expirado ou usado dá `400 invalid_reset_token` mesmo com senha fraca. Com o link válido e a senha recusada, o link continua valendo. **No perfil**, a senha nova é julgada antes de conferir a senha atual: uma senha fraca dá `422` mesmo que a senha atual esteja errada.
+
+Erros têm sempre a forma `{"error": {"code", "message", "fields"?}}`; o front-end usa o `code` estável (`email_taken`, `invalid_credentials`, `unauthenticated`, `validation_failed`, `invalid_request`; os códigos de `fields` da senha estão em "Regra de senha").
 
 ## Perfil e recuperação de senha (UC14 e UC03)
 
 | Rota | Efeito |
 | --- | --- |
-| `PATCH /profile` (protegida) `{name?, email?, new_password?, current_password?}` | Edita só o que vier no corpo e devolve `{user}`. Trocar `email` ou `new_password` exige `current_password`: ausente dá `422` (`fields.current_password = "required"`), errada dá `403` (`invalid_current_password`). Trocar a senha cancela os links de recuperação pendentes. `GET /auth/me` devolve também `name` (vazio se não definido). |
+| `PATCH /profile` (protegida) `{name?, email?, new_password?, current_password?}` | Edita só o que vier no corpo e devolve `{user}`. `new_password` segue a Regra de senha (recusa dá `422` com o código em `fields.new_password`). Trocar `email` ou `new_password` exige `current_password`: ausente dá `422` (`fields.current_password = "required"`), errada dá `403` (`invalid_current_password`). Trocar a senha cancela os links de recuperação pendentes. `GET /auth/me` devolve também `name` (vazio se não definido). |
 | `POST /auth/password-reset/request` `{email}` | Envia por e-mail um link de redefinição para o e-mail de login. Responde `202` igual com ou sem conta, e também se o provedor falhar (só vai ao log), para não revelar quais e-mails existem. Um novo pedido invalida o link anterior. |
-| `POST /auth/password-reset/confirm` `{token, password}` | Define a nova senha. `204` em caso de sucesso (não inicia sessão); `400 invalid_reset_token` para link desconhecido, expirado ou já usado. |
+| `POST /auth/password-reset/confirm` `{token, password}` | Define a nova senha (pela Regra de senha; recusada, `422` e o link continua valendo). `204` em caso de sucesso (não inicia sessão); `400 invalid_reset_token` para link desconhecido, expirado ou já usado. |
 
 O link é `APP_URL/reset-password?token=...`, vale 60 minutos e só funciona uma vez. O token tem 64 caracteres hexadecimais aleatórios e o banco guarda apenas o SHA-256 dele. O envio passa pelo trait `EmailSender` (`src/email.rs`): `HttpEmailSender` em produção, `LogEmailSender` (escreve o link no log, nível info) em desenvolvimento sem provedor, e um fake que grava as mensagens nos testes. O cadastro e a troca de e-mail exigem confirmação por e-mail (veja o glossário: cadastro pendente e troca de e-mail pendente).
 
