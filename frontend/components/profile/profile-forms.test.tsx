@@ -35,10 +35,11 @@ const refusals = [
   ],
   [
     "password_sequence",
-    "Evite sequências e repetições, como 1234567890 ou aaaaaaaaaa. Escolha outra senha.",
+    "Evite sequências e repetições, como Abcdefghij1 ou Ab1Ab1Ab1Ab1. Escolha outra senha.",
   ],
   ["password_contains_email", "A senha não pode conter o seu e-mail. Escolha outra."],
   ["password_contains_name", "A senha não pode conter o seu nome. Escolha outra."],
+  ["password_composition", "A senha precisa ter pelo menos 3 destes tipos de caractere: letras minúsculas, letras maiúsculas, números e símbolos."],
 ] as const
 
 function renderForms() {
@@ -67,7 +68,7 @@ describe("ProfileForms password rule", () => {
 
     expect(
       screen.getByText(
-        "Use de 10 a 128 caracteres; uma frase longa é uma boa senha. Evite senhas comuns, sequências e o seu e-mail ou nome.",
+        "Use de 10 a 128 caracteres, com pelo menos 3 destes tipos: letras minúsculas, letras maiúsculas, números e símbolos. Evite senhas comuns, sequências e o seu e-mail ou nome.",
       ),
     ).toBeInTheDocument()
   })
@@ -81,8 +82,8 @@ describe("ProfileForms password rule", () => {
     renderForms()
 
     await userEvent.type(document.getElementById("password-current-password")!, "correct horse battery")
-    await userEvent.type(screen.getByLabelText("Nova senha"), "senha1234567")
-    await userEvent.type(screen.getByLabelText("Repita a nova senha"), "senha1234567")
+    await userEvent.type(screen.getByLabelText("Nova senha"), "Senha1234567")
+    await userEvent.type(screen.getByLabelText("Repita a nova senha"), "Senha1234567")
     await userEvent.click(screen.getByRole("button", { name: "Alterar senha" }))
 
     expect(await screen.findByText(message)).toBeInTheDocument()
