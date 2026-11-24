@@ -2,10 +2,10 @@ use axum::{Json, extract::State};
 use serde::Deserialize;
 use validator::Validate;
 
-use super::{
-    auth::{MAX_PASSWORD_LEN, MIN_PASSWORD_LEN, UserEnvelope},
-    extract::ValidatedJson,
-};
+use super::{auth::UserEnvelope, extract::ValidatedJson};
+
+const MIN_PASSWORD_LEN: u64 = 8;
+const MAX_PASSWORD_LEN: u64 = 128;
 use crate::{
     app::AppState,
     auth::AuthUser,

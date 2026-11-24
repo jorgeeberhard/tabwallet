@@ -139,6 +139,10 @@ impl From<AuthError> for ApiError {
                 "current_password".to_string(),
                 "required".to_string(),
             )])),
+            AuthError::PasswordRejected(rejection) => Self::Validation(BTreeMap::from([(
+                "password".to_string(),
+                rejection.code().to_string(),
+            )])),
             AuthError::InvalidResetToken => Self::InvalidResetToken,
             AuthError::Unauthenticated => Self::Unauthenticated,
             AuthError::Internal(cause) => Self::Internal(cause),

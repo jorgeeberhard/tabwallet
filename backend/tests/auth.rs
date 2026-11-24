@@ -51,20 +51,195 @@ async fn signup_rejects_an_email_already_registered_regardless_of_letter_case() 
 }
 
 #[tokio::test]
-async fn signup_rejects_an_invalid_email_and_a_short_password_naming_each_field() {
+async fn signup_rejects_an_invalid_email_naming_the_field() {
     let app = TestApp::spawn().await;
     let browser = app.session();
 
-    let response = browser.sign_up("not-an-email", "short").await;
+    let response = browser.sign_up("not-an-email", PASSWORD).await;
 
     assert_eq!(response.status(), 422);
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["error"]["code"], json!("validation_failed"));
     assert_eq!(body["error"]["fields"]["email"], json!("invalid_email"));
+}
+
+/// Signs up with a password the Password policy must refuse and checks the
+/// stable code under the `password` field, and that nobody is signed in.
+async fn assert_signup_refuses(email: &str, password: &str, code: &str) {
+    let app = TestApp::spawn().await;
+    let browser = app.session();
+
+    let response = browser.sign_up(email, password).await;
+
+    assert_eq!(response.status(), 422, "{password:?} should be refused");
+    assert!(response.headers().get(SET_COOKIE).is_none());
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], json!("validation_failed"));
     assert_eq!(
         body["error"]["fields"]["password"],
-        json!("password_length")
+        json!(code),
+        "wrong code for {password:?}"
     );
+    assert_eq!(browser.get("/auth/me").await.status(), 401);
+}
+
+#[tokio::test]
+async fn signup_refuses_a_password_shorter_than_ten_characters() {
+    for weak in ["short", "12345678", "password", "senha123", "xk!bruno9"] {
+        assert_signup_refuses("ana@example.com", weak, "password_too_short").await;
+    }
+}
+
+#[tokio::test]
+async fn signup_refuses_a_password_longer_than_128_characters() {
+    let too_long = "the quick brown fox jumps over the lazy dog ".repeat(3);
+    assert!(too_long.chars().count() > 128);
+    assert_signup_refuses("ana@example.com", &too_long, "password_too_long").await;
+}
+
+#[tokio::test]
+async fn signup_counts_characters_not_bytes_for_the_length() {
+    let app = TestApp::spawn().await;
+
+    // Nine characters, but more than ten bytes.
+    let nine = app.session().sign_up("ana@example.com", "çãõéíóúàê").await;
+    assert_eq!(nine.status(), 422);
+    let body: Value = nine.json().await.unwrap();
+    assert_eq!(
+        body["error"]["fields"]["password"],
+        json!("password_too_short")
+    );
+
+    // Exactly ten characters.
+    let ten = app.session().sign_up("ana@example.com", "çãõéíóúàêâ").await;
+    assert_eq!(ten.status(), 201);
+}
+
+#[tokio::test]
+async fn signup_refuses_common_passwords_ignoring_case_and_trivial_endings() {
+    for common in [
+        "1q2w3e4r5t",
+        "PASSWORD123",
+        "Password1234",
+        "SENHA123456",
+        "senha1234!!",
+        "Brasil12345",
+        "qwerty123456",
+        "Qwerty@2024!",
+        "iloveyou!!!",
+        "SuperMan#99",
+        "p@ssw0rd123",
+        "Corinthians1",
+    ] {
+        assert_signup_refuses("ana@example.com", common, "password_common").await;
+    }
+}
+
+#[tokio::test]
+async fn signup_refuses_obvious_sequences_and_repetitions() {
+    for obvious in [
+        "aaaaaaaaaa",
+        "1111111111",
+        "1234567890",
+        "0987654321",
+        "abcdefghij",
+        "zyxwvutsrqp",
+        "1234567890123",
+        "abababababab",
+        "123123123123",
+        "qwertyuiop",
+        "asdfghjkl;",
+        "aaaaaaaaaa1",
+        "ABCDEFGHIJ!",
+    ] {
+        assert_signup_refuses("ana@example.com", obvious, "password_sequence").await;
+    }
+}
+
+#[tokio::test]
+async fn signup_refuses_a_password_that_contains_the_email_before_the_at_sign() {
+    for password in [
+        "xk!bruno.lima#92",
+        "BRUNO.LIMA-rocks",
+        "my-brunolima-pass",
+        "bruno_lima_2024!",
+        "bruno.lima@example.com",
+        "prefix+bruno.lima@example.com",
+    ] {
+        assert_signup_refuses(
+            "Bruno.Lima@example.com",
+            password,
+            "password_contains_email",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn signup_ignores_a_very_short_email_fragment_to_avoid_false_positives() {
+    let app = TestApp::spawn().await;
+
+    let response = app
+        .session()
+        .sign_up("ana@example.com", "ana paints blue cats")
+        .await;
+
+    assert_eq!(response.status(), 201);
+}
+
+#[tokio::test]
+async fn signup_accepts_a_long_passphrase_and_a_plain_lowercase_one_without_mixing_types() {
+    let app = TestApp::spawn().await;
+
+    let passphrase = app
+        .session()
+        .sign_up(
+            "ana@example.com",
+            "the quick brown fox jumps over the lazy dog",
+        )
+        .await;
+    let lowercase = app
+        .session()
+        .sign_up("bia@example.com", "purplegiraffesdancequietly")
+        .await;
+
+    assert_eq!(passphrase.status(), 201);
+    assert_eq!(lowercase.status(), 201);
+    let longest: String = "the quick brown fox jumps over the lazy dog, "
+        .repeat(3)
+        .chars()
+        .take(128)
+        .collect();
+    assert_eq!(longest.chars().count(), 128);
+    assert_eq!(
+        app.session()
+            .sign_up("cris@example.com", &longest)
+            .await
+            .status(),
+        201,
+        "128 characters is the largest accepted size"
+    );
+}
+
+#[tokio::test]
+async fn the_signed_up_password_is_the_one_that_logs_in() {
+    let app = TestApp::spawn().await;
+    app.session()
+        .sign_up(
+            "ana@example.com",
+            "the quick brown fox jumps over the lazy dog",
+        )
+        .await;
+
+    let response = app
+        .session()
+        .log_in(
+            "ana@example.com",
+            "the quick brown fox jumps over the lazy dog",
+        )
+        .await;
+
+    assert_eq!(response.status(), 200);
 }
 
 #[tokio::test]

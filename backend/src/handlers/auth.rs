@@ -14,16 +14,13 @@ use crate::{
     use_cases::{AuthError, GetCurrentUserUseCase, LogInUseCase, SignUpUseCase},
 };
 
-pub const MIN_PASSWORD_LEN: u64 = 8;
-/// Upper bound that keeps a huge body from becoming a huge Argon2 job.
-pub const MAX_PASSWORD_LEN: u64 = 128;
-
 #[derive(Deserialize, Validate)]
 pub struct SignUpRequest {
     #[serde(deserialize_with = "trimmed")]
     #[validate(email(code = "invalid_email"))]
     email: String,
-    #[validate(length(min = MIN_PASSWORD_LEN, max = MAX_PASSWORD_LEN, code = "password_length"))]
+    /// Judged by the Password policy in the use case, which also knows the
+    /// e-mail.
     password: String,
 }
 
