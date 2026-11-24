@@ -115,19 +115,39 @@ jobs:
             "$API_ADDRESS/health" | tee health.json
           jq --exit-status '.status == "ok" and .database == "up"' health.json
 
-      - name: Front-end login page answers 200
+      # Exactly 200: a redirect (3xx) means the public address is not served
+      # directly (e.g. the domain redirects to another host), which would
+      # break writes because the API only accepts APP_URL as origin.
+      - name: Front-end login page answers 200, without a redirect
         run: |
-          curl --fail --silent --show-error --max-time 15 --output /dev/null \
-            --retry 10 --retry-delay 6 --retry-all-errors \
-            --write-out 'HTTP %{http_code}\n' \
-            "$APP_ADDRESS/login"
+          for attempt in $(seq 1 10); do
+            result=$(curl --silent --max-time 15 --output /dev/null \
+              --write-out '%{http_code} %{redirect_url}' \
+              "$APP_ADDRESS/login" || true)
+            echo "attempt $attempt: HTTP $result"
+            if [ "${result%% *}" = "200" ]; then exit 0; fi
+            sleep 6
+          done
+          echo "Expected HTTP 200 without a redirect at $APP_ADDRESS/login" >&2
+          exit 1
 
       # next.config.ts rewrites /api/:path* to API_URL/:path*, so this goes
       # browser -> Vercel -> Fly -> database: it fails when the front-end was
       # built with the wrong API_URL.
       - name: Front-end proxies the API (/api/health)
         run: |
-          curl --fail --silent --show-error --max-time 15 \
-            --retry 10 --retry-delay 6 --retry-all-errors \
-            "$APP_ADDRESS/api/health" | tee proxied-health.json
-          jq --exit-status '.status == "ok" and .database == "up"' proxied-health.json
+          for attempt in $(seq 1 10); do
+            code=$(curl --silent --max-time 15 --output proxied-health.json \
+              --write-out '%{http_code}' "$APP_ADDRESS/api/health" || true)
+            echo "attempt $attempt: HTTP $code"
+            if [ "$code" = "200" ] \
+              && jq --exit-status '.status == "ok" and .database == "up"' \
+                proxied-health.json > /dev/null 2>&1; then
+              cat proxied-health.json
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "Expected the API health JSON (HTTP 200) at $APP_ADDRESS/api/health" >&2
+          cat proxied-health.json >&2 || true
+          exit 1
