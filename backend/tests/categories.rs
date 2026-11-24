@@ -6,7 +6,7 @@ mod common;
 use common::{Session, TestApp};
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 const DEFAULT_EXPENSES: [&str; 9] = [
     "Alimentação",

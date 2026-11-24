@@ -17,7 +17,7 @@ function answer(status: number, body?: unknown) {
 }
 
 async function fillAndSubmit(
-  { name = "Ana Souza", email = "ana@example.com", password = "correct horse battery" } = {},
+  { name = "Ana Souza", email = "ana@example.com", password = "Correct horse battery 7" } = {},
 ) {
   if (name) await userEvent.type(screen.getByLabelText("Nome"), name)
   await userEvent.type(screen.getByLabelText("E-mail"), email)
@@ -69,7 +69,7 @@ describe("SignupForm", () => {
     expect(JSON.parse(init.body)).toEqual({
       email: "ana@example.com",
       name: "Ana Souza",
-      password: "correct horse battery",
+      password: "Correct horse battery 7",
     })
     expect(screen.queryByLabelText("Senha")).not.toBeInTheDocument()
   })
@@ -149,10 +149,11 @@ const refusals = [
   ],
   [
     "password_sequence",
-    "Evite sequências e repetições, como 1234567890 ou aaaaaaaaaa. Escolha outra senha.",
+    "Evite sequências e repetições, como Abcdefghij1 ou Ab1Ab1Ab1Ab1. Escolha outra senha.",
   ],
   ["password_contains_email", "A senha não pode conter o seu e-mail. Escolha outra."],
   ["password_contains_name", "A senha não pode conter o seu nome. Escolha outra."],
+  ["password_composition", "A senha precisa ter pelo menos 3 destes tipos de caractere: letras minúsculas, letras maiúsculas, números e símbolos."],
 ] as const
 
 describe("SignupForm password rule", () => {
@@ -171,7 +172,7 @@ describe("SignupForm password rule", () => {
   it("shows a short hint of the rule next to the password field, with no strength meter", () => {
     render(<SignupForm />)
 
-    expect(screen.getByText("Use de 10 a 128 caracteres; uma frase longa é uma boa senha. Evite senhas comuns, sequências e o seu e-mail ou nome.")).toBeInTheDocument()
+    expect(screen.getByText("Use de 10 a 128 caracteres, com pelo menos 3 destes tipos: letras minúsculas, letras maiúsculas, números e símbolos. Evite senhas comuns, sequências e o seu e-mail ou nome.")).toBeInTheDocument()
     expect(screen.queryByRole("meter")).not.toBeInTheDocument()
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
   })
@@ -184,7 +185,7 @@ describe("SignupForm password rule", () => {
     )
     render(<SignupForm />)
 
-    await fillAndSubmit({ password: "senha1234567" })
+    await fillAndSubmit({ password: "Senha1234567" })
 
     expect(await screen.findByText(message)).toBeInTheDocument()
     expect(screen.getByLabelText("Senha")).toHaveAttribute("aria-invalid", "true")

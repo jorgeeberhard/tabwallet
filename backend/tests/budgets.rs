@@ -14,7 +14,7 @@ mod common;
 use common::{Session, TestApp};
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 async fn signed_up(app: &TestApp, email: &str) -> Session {
     let browser = app.session();

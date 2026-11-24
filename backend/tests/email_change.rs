@@ -10,7 +10,7 @@ use common::{TEST_APP_URL, TestApp};
 use reqwest::{Response, header::SET_COOKIE};
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 async fn error_code(response: Response) -> (u16, String) {
     let status = response.status().as_u16();
@@ -241,7 +241,7 @@ async fn name_and_password_in_the_same_request_apply_at_once_and_only_the_e_mail
     let app = TestApp::spawn().await;
     let browser = app.session();
     browser.sign_up("ana@example.com", PASSWORD).await;
-    let new_password = "a brand new passphrase";
+    let new_password = "A brand new passphrase 9";
 
     let response = browser
         .patch_json(
@@ -287,7 +287,7 @@ async fn the_password_policy_still_judges_a_new_password_sent_with_the_e_mail_ch
             "/profile",
             &json!({
                 "email": "ana.new@example.com",
-                "new_password": "1234567890",
+                "new_password": "Abcdefghij1!",
                 "current_password": PASSWORD
             }),
         )

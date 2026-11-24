@@ -2,9 +2,12 @@ import { z } from "zod"
 
 import {
   MAX_PASSWORD_LENGTH,
+  MIN_CHARACTER_TYPES,
   MIN_PASSWORD_LENGTH,
+  PASSWORD_COMPOSITION_MESSAGE,
   PASSWORD_TOO_LONG_MESSAGE,
   PASSWORD_TOO_SHORT_MESSAGE,
+  countCharacterTypes,
 } from "@/lib/password-rule"
 
 const email = z
@@ -13,13 +16,19 @@ const email = z
   .min(1, "Digite seu e-mail.")
   .pipe(z.email("Digite um e-mail válido, como nome@dominio.com."))
 
-// A new password: the browser checks only the length. Everything else of the
-// Password policy (common passwords, sequences, e-mail, name) is decided by the
-// API and shown from its error codes.
-const newPassword = z
-  .string()
-  .min(MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE)
-  .max(MAX_PASSWORD_LENGTH, PASSWORD_TOO_LONG_MESSAGE)
+// A new password: the browser checks the length and the composition (at least
+// 3 of the 4 character types), in the API's order, and reports only the first
+// that fails. Everything else of the Password policy (common passwords,
+// sequences, e-mail, name) is decided by the API and shown from its error codes.
+const newPassword = z.string().superRefine((value, context) => {
+  if (value.length < MIN_PASSWORD_LENGTH) {
+    context.addIssue({ code: "custom", message: PASSWORD_TOO_SHORT_MESSAGE })
+  } else if (value.length > MAX_PASSWORD_LENGTH) {
+    context.addIssue({ code: "custom", message: PASSWORD_TOO_LONG_MESSAGE })
+  } else if (countCharacterTypes(value) < MIN_CHARACTER_TYPES) {
+    context.addIssue({ code: "custom", message: PASSWORD_COMPOSITION_MESSAGE })
+  }
+})
 
 export const MAX_NAME_LENGTH = 100
 

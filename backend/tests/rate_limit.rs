@@ -7,7 +7,7 @@ use common::TestApp;
 use reqwest::header::RETRY_AFTER;
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 async fn code(response: reqwest::Response) -> String {
     let body: Value = response.json().await.unwrap();

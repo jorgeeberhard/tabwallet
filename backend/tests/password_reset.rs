@@ -8,8 +8,8 @@ use common::{Session, TEST_APP_URL, TestApp};
 use serde_json::{Value, json};
 use tabwallet_backend::email::EmailMessage;
 
-const PASSWORD: &str = "correct horse battery";
-const NEW_PASSWORD: &str = "a brand new passphrase";
+const PASSWORD: &str = "Correct horse battery 7";
+const NEW_PASSWORD: &str = "A brand new passphrase 9";
 
 /// The reset token inside the link of an e-mail.
 fn token_in(email: &EmailMessage) -> String {
@@ -112,7 +112,7 @@ async fn a_link_that_was_already_used_is_rejected() {
     let token = token_in(&reset_emails(&app)[0]);
     confirm_reset(&visitor, &token, NEW_PASSWORD).await;
 
-    let again = confirm_reset(&visitor, &token, "yet another passphrase").await;
+    let again = confirm_reset(&visitor, &token, "Yet another passphrase 3").await;
 
     assert_eq!(again.status(), 400);
     let body: Value = again.json().await.unwrap();
@@ -221,7 +221,8 @@ async fn assert_reset_refuses(app: &TestApp, email: &str, cases: &[(&str, &str)]
 }
 
 #[tokio::test]
-async fn the_reset_refuses_short_long_common_and_sequence_passwords_with_a_code_for_each() {
+async fn the_reset_refuses_short_long_poorly_mixed_common_and_sequence_passwords_with_a_code_for_each()
+ {
     let app = TestApp::spawn().await;
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let too_long = "the quick brown fox jumps over the lazy dog ".repeat(3);
@@ -234,13 +235,23 @@ async fn the_reset_refuses_short_long_common_and_sequence_passwords_with_a_code_
             ("password", "password_too_short"),
             ("senha123", "password_too_short"),
             (&too_long, "password_too_long"),
-            ("aaaaaaaaaa", "password_sequence"),
-            ("1234567890", "password_sequence"),
-            ("abcdefghij", "password_sequence"),
-            ("PASSWORD123", "password_common"),
+            ("1234512345", "password_composition"),
+            ("1234567890", "password_composition"),
+            ("aaaaaaaaaa", "password_composition"),
+            ("abcdefghijkl", "password_composition"),
+            ("ABCDEFGHIJKL", "password_composition"),
+            ("abcdefghij1", "password_composition"),
+            ("the quick brown fox jumps", "password_composition"),
+            ("qwertyuiop", "password_composition"),
+            ("password1234", "password_composition"),
+            ("Aaaaaaaaaa1!", "password_sequence"),
+            ("Abcdefghij1", "password_sequence"),
+            ("Ab1!Ab1!Ab1!", "password_sequence"),
+            ("Qwertyuiop1!", "password_sequence"),
+            ("Password123", "password_common"),
             ("Senha123456!", "password_common"),
             ("Brasil12345", "password_common"),
-            ("qwerty123456", "password_common"),
+            ("Qwerty@2024", "password_common"),
         ],
     )
     .await;
@@ -260,9 +271,9 @@ async fn the_reset_refuses_a_password_with_the_email_or_the_name_of_the_account(
         &[
             ("xk!bruno.lima#92", "password_contains_email"),
             ("BRUNOLIMA is here", "password_contains_email"),
-            ("my password is aparecida", "password_contains_name"),
+            ("My password is Aparecida", "password_contains_name"),
             ("trust-JOSE-with-everything", "password_contains_name"),
-            ("maria jose aparecida", "password_contains_name"),
+            ("Maria jose Aparecida", "password_contains_name"),
         ],
     )
     .await;
@@ -279,7 +290,7 @@ async fn the_reset_accepts_a_long_passphrase_and_ignores_short_name_fragments() 
     request_reset(&visitor, "ana@example.com").await;
     let token = token_in(&reset_emails(&app)[0]);
 
-    let passphrase = "li and ana walk to the old market every morning";
+    let passphrase = "Li and Ana walk to the old market every morning";
     let response = confirm_reset(&visitor, &token, passphrase).await;
 
     assert_eq!(response.status(), 204);
@@ -326,6 +337,27 @@ async fn changing_the_password_in_the_profile_cancels_pending_links() {
     )
     .await;
 
-    let response = confirm_reset(&app.session(), &token, "yet another passphrase").await;
+    let response = confirm_reset(&app.session(), &token, "Yet another passphrase 3").await;
     assert_eq!(response.status(), 400);
+}
+
+#[tokio::test]
+async fn the_reset_accepts_a_password_with_three_or_four_character_types() {
+    let app = TestApp::spawn().await;
+    app.session().sign_up("ana@example.com", PASSWORD).await;
+
+    // Three requests: the limit is 3 reset e-mails per hour per address.
+    for password in ["nf8$kd29xq#w", "Zk3!mPq9wLx", "Frase com espaços Z"] {
+        let visitor = app.session();
+        request_reset(&visitor, "ana@example.com").await;
+        let token = token_in(reset_emails(&app).last().unwrap());
+
+        let response = confirm_reset(&visitor, &token, password).await;
+
+        assert_eq!(response.status(), 204, "{password:?} should be accepted");
+        assert_eq!(
+            visitor.log_in("ana@example.com", password).await.status(),
+            200
+        );
+    }
 }

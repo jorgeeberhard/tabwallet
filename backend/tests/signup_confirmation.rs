@@ -10,7 +10,7 @@ use common::{Session, TEST_APP_URL, TestApp};
 use reqwest::{Response, header::SET_COOKIE};
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 async fn error_code(response: Response) -> (u16, String) {
     let status = response.status().as_u16();
@@ -118,10 +118,11 @@ async fn the_password_policy_judges_the_password_against_the_name_and_e_mail_of_
             "xk!beatriz#92pass",
             "password_contains_name",
         ),
-        ("Ana Souza", "souza-is-my-family", "password_contains_name"),
+        ("Ana Souza", "Souza-is-my-family", "password_contains_name"),
         ("Ana Souza", "xk!bruno.lima#92", "password_contains_email"),
         ("Ana Souza", "12345678", "password_too_short"),
-        ("Ana Souza", "password1234", "password_common"),
+        ("Ana Souza", "Password1234", "password_common"),
+        ("Ana Souza", "1234512345", "password_composition"),
     ];
     for (name, password, code) in cases {
         let response = browser
@@ -260,12 +261,12 @@ async fn a_new_sign_up_with_the_same_e_mail_replaces_the_pending_one_and_kills_t
     let app = TestApp::spawn().await;
     let browser = app.session();
     browser
-        .request_sign_up("ana@example.com", "Ana Souza", "first password here")
+        .request_sign_up("ana@example.com", "Ana Souza", "First password here 1")
         .await;
     let old_token = browser.latest_confirmation_token("ana@example.com");
 
     let second = browser
-        .request_sign_up("ANA@example.com", "Ana S. Lima", "second password here")
+        .request_sign_up("ANA@example.com", "Ana S. Lima", "Second password here 2")
         .await;
     let new_token = browser.latest_confirmation_token("ana@example.com");
 
@@ -279,13 +280,13 @@ async fn a_new_sign_up_with_the_same_e_mail_replaces_the_pending_one_and_kills_t
     assert_eq!(browser.confirm_sign_up(&new_token).await.status(), 204);
     assert_eq!(
         browser
-            .log_in("ana@example.com", "first password here")
+            .log_in("ana@example.com", "First password here 1")
             .await
             .status(),
         401
     );
     let login = browser
-        .log_in("ana@example.com", "second password here")
+        .log_in("ana@example.com", "Second password here 2")
         .await;
     assert_eq!(login.status(), 200);
     let body: Value = login.json().await.unwrap();
@@ -297,7 +298,7 @@ async fn a_pending_sign_up_does_not_stop_the_real_owner_from_signing_up() {
     let app = TestApp::spawn().await;
     // A stranger asks for a sign-up with Ana's address and a password of theirs.
     app.session()
-        .request_sign_up("ana@example.com", "Impostor", "the impostor password")
+        .request_sign_up("ana@example.com", "Impostor", "Their sneaky password 4")
         .await;
     let ana = app.session();
 
@@ -311,7 +312,7 @@ async fn a_pending_sign_up_does_not_stop_the_real_owner_from_signing_up() {
     assert_eq!(ana.log_in("ana@example.com", PASSWORD).await.status(), 200);
     assert_eq!(
         app.session()
-            .log_in("ana@example.com", "the impostor password")
+            .log_in("ana@example.com", "Their sneaky password 4")
             .await
             .status(),
         401
@@ -345,7 +346,7 @@ async fn a_sign_up_with_the_e_mail_of_an_account_looks_the_same_and_sends_the_no
     let visitor = app.session();
 
     let existing = visitor
-        .request_sign_up("ANA@example.com", "Someone Else", "some other password")
+        .request_sign_up("ANA@example.com", "Someone Else", "Some other password 5")
         .await;
     let existing_status = existing.status();
     let existing_cookie = existing.headers().get(SET_COOKIE).cloned();
@@ -383,7 +384,7 @@ async fn a_sign_up_with_the_e_mail_of_an_account_looks_the_same_and_sends_the_no
     // sign-up was created for its address.
     assert_eq!(
         app.session()
-            .log_in("ana@example.com", "some other password")
+            .log_in("ana@example.com", "Some other password 5")
             .await
             .status(),
         401
@@ -606,13 +607,13 @@ async fn login_of_a_confirmed_account_is_unchanged_even_if_someone_signed_up_wit
     // Someone asks for a sign-up with Ana's address: the notice goes out, no
     // pending one is created, so the account logs in as always.
     app.session()
-        .request_sign_up("ana@example.com", "Someone Else", "some other password")
+        .request_sign_up("ana@example.com", "Someone Else", "Some other password 5")
         .await;
     let browser = app.session();
 
     let response = browser.log_in("ana@example.com", PASSWORD).await;
     let other = browser
-        .log_in("ana@example.com", "some other password")
+        .log_in("ana@example.com", "Some other password 5")
         .await;
 
     assert_eq!(response.status(), 200);

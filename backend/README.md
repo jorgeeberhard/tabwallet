@@ -76,7 +76,7 @@ A senha é guardada com Argon2id. A sessão é um JWT (7 dias) no cookie `tabwal
 
 ### Regra de senha (UC01, UC03 e UC14)
 
-Toda senha nova passa por um único módulo, `src/auth/password_policy.rs` (`PasswordPolicy` no glossário): `password_policy::check(senha, Account { email, name })`. É puro, sem HTTP nem SQL, e quem o chama são os três pontos em que uma senha nasce: o use case de pedido de cadastro (`SignUpUseCase`), o de redefinição pelo link (`ResetPasswordUseCase`) e o da troca no perfil (`UpdateProfileUseCase`). A decisão é sempre do servidor; o front-end só espelha o tamanho.
+Toda senha nova passa por um único módulo, `src/auth/password_policy.rs` (`PasswordPolicy` no glossário): `password_policy::check(senha, Account { email, name })`. É puro, sem HTTP nem SQL, e quem o chama são os três pontos em que uma senha nasce: o use case de pedido de cadastro (`SignUpUseCase`), o de redefinição pelo link (`ResetPasswordUseCase`) e o da troca no perfil (`UpdateProfileUseCase`). A decisão é sempre do servidor; o front-end espelha o tamanho e a composição (para dar retorno na hora) e as mensagens.
 
 Uma senha recusada dá `422 validation_failed`, com o código estável sob o campo da senha (`fields.password` no pedido de cadastro e na redefinição, `fields.new_password` no perfil). Verificadas nesta ordem, a primeira que falha é a resposta:
 
@@ -84,12 +84,13 @@ Uma senha recusada dá `422 validation_failed`, com o código estável sob o cam
 | --- | --- |
 | `password_too_short` | Menos de 10 caracteres (conta caracteres, não bytes). |
 | `password_too_long` | Mais de 128 caracteres (limite que impede um corpo enorme de virar um trabalho enorme do Argon2). |
-| `password_sequence` | Sequência ou repetição óbvia: `aaaaaaaaaa`, `abababababab`, `123123123123`, `1234567890`, `0987654321`, `abcdefghij`, `zyxwvutsrqp`, um trecho de uma fileira do teclado (`qwertyuiop`). |
+| `password_composition` | Menos de 3 dos 4 tipos de caractere (abaixo): `1234512345`, `abcdefghijkl`, `ABCDEFGHIJKL`, `abcdefghij1`, `the quick brown fox jumps` (minúsculas e espaço). Vem logo depois do tamanho, antes de todas as regras abaixo, para quem digita `1234512345` saber como corrigir a mistura em vez de receber uma mensagem de padrão. |
+| `password_sequence` | Sequência ou repetição óbvia, já com a mistura de tipos em ordem: `Aaaaaaaaaa1!`, `Ab1!Ab1!Ab1!` (qualquer bloco repetido pelo menos duas vezes), `Abcdefghij1`, `Zyxwvutsrqp1!`, um trecho de uma fileira do teclado (`Qwertyuiop1!`). Os finais de dígitos e símbolos são ignorados na comparação (abaixo). |
 | `password_common` | Está na lista embutida de senhas comuns (abaixo). |
 | `password_contains_email` | Contém o e-mail da conta. |
 | `password_contains_name` | Contém o nome da conta. |
 
-Não há exigência de maiúsculas, números ou símbolos: uma frase longa só em minúsculas passa.
+**Os 4 tipos de caractere.** Contados na senha como foi digitada: letra minúscula, letra maiúscula, número (`0` a `9`) e símbolo. Símbolo é qualquer caractere que não seja letra nem número: pontuação, o espaço e pontuação não ASCII (como o travessão). Letras acentuadas são letras, minúsculas ou maiúsculas conforme a caixa (`ç` minúscula, `Ç` maiúscula); uma letra sem caixa (chinês, árabe) não é símbolo, mas também não conta como nenhum dos 4 tipos. Não há exceção para frases longas: `the quick brown fox jumps over the lazy dog` é recusada, `The quick brown fox jumps over the lazy dog` passa (minúscula, maiúscula e espaço).
 
 **Como os textos são comparados.** Sempre sem diferenciar maiúsculas de minúsculas e sem acentos (`José` vale `jose`).
 

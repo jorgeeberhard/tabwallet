@@ -34,7 +34,7 @@ describe("ResetPasswordForm", () => {
   it("does not call the API when the two passwords differ", async () => {
     render(<ResetPasswordForm token="abc" />)
 
-    await fillAndSubmit("a brand new passphrase", "another passphrase")
+    await fillAndSubmit("A brand new passphrase 9", "Another passphrase 9")
 
     expect(await screen.findByText("As senhas não são iguais.")).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
@@ -44,13 +44,13 @@ describe("ResetPasswordForm", () => {
     fetchMock.mockReturnValue(answer(204))
     render(<ResetPasswordForm token="abc" />)
 
-    await fillAndSubmit("a brand new passphrase", "a brand new passphrase")
+    await fillAndSubmit("A brand new passphrase 9", "A brand new passphrase 9")
 
     expect(await screen.findByText("Senha redefinida")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Entrar" })).toHaveAttribute("href", "/login")
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/api/auth/password-reset/confirm")
-    expect(JSON.parse(init.body)).toEqual({ token: "abc", password: "a brand new passphrase" })
+    expect(JSON.parse(init.body)).toEqual({ token: "abc", password: "A brand new passphrase 9" })
   })
 
   it("explains an expired or used link and offers a new one", async () => {
@@ -59,7 +59,7 @@ describe("ResetPasswordForm", () => {
     )
     render(<ResetPasswordForm token="abc" />)
 
-    await fillAndSubmit("a brand new passphrase", "a brand new passphrase")
+    await fillAndSubmit("A brand new passphrase 9", "A brand new passphrase 9")
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Este link de redefinição é inválido, expirou ou já foi usado. Peça um novo link.",
@@ -80,10 +80,11 @@ const refusals = [
   ],
   [
     "password_sequence",
-    "Evite sequências e repetições, como 1234567890 ou aaaaaaaaaa. Escolha outra senha.",
+    "Evite sequências e repetições, como Abcdefghij1 ou Ab1Ab1Ab1Ab1. Escolha outra senha.",
   ],
   ["password_contains_email", "A senha não pode conter o seu e-mail. Escolha outra."],
   ["password_contains_name", "A senha não pode conter o seu nome. Escolha outra."],
+  ["password_composition", "A senha precisa ter pelo menos 3 destes tipos de caractere: letras minúsculas, letras maiúsculas, números e símbolos."],
 ] as const
 
 describe("ResetPasswordForm password rule", () => {
@@ -101,7 +102,7 @@ describe("ResetPasswordForm password rule", () => {
   it("shows a short hint of the rule next to the new password field", () => {
     render(<ResetPasswordForm token="abc" />)
 
-    expect(screen.getByText("Use de 10 a 128 caracteres; uma frase longa é uma boa senha. Evite senhas comuns, sequências e o seu e-mail ou nome.")).toBeInTheDocument()
+    expect(screen.getByText("Use de 10 a 128 caracteres, com pelo menos 3 destes tipos: letras minúsculas, letras maiúsculas, números e símbolos. Evite senhas comuns, sequências e o seu e-mail ou nome.")).toBeInTheDocument()
   })
 
   it.each(refusals)("shows the reason for %s under the new password field", async (code, message) => {
@@ -112,7 +113,7 @@ describe("ResetPasswordForm password rule", () => {
     )
     render(<ResetPasswordForm token="abc" />)
 
-    await fillAndSubmit("senha1234567", "senha1234567")
+    await fillAndSubmit("Senha1234567", "Senha1234567")
 
     expect(await screen.findByText(message)).toBeInTheDocument()
     expect(screen.getByLabelText("Nova senha")).toHaveAttribute("aria-invalid", "true")

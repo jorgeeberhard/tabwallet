@@ -18,7 +18,7 @@ describe("signUpSchema", () => {
     const result = signUpSchema.safeParse({
       email: "  ana@example.com ",
       name: "  Ana Souza ",
-      password: "correct horse battery",
+      password: "Correct horse battery 7",
     })
 
     expect(result.success).toBe(true)
@@ -41,7 +41,7 @@ describe("signUpSchema", () => {
         signUpSchema.safeParse({
           email: "ana@example.com",
           name,
-          password: "correct horse battery",
+          password: "Correct horse battery 7",
         }),
       ).name
 
@@ -66,22 +66,28 @@ describe("logInSchema", () => {
   })
 })
 
-describe("the new-password length rule", () => {
-  const password = (value: string) =>
-    messages(signUpSchema.safeParse({ email: "ana@example.com", name: "Ana", password: value })).password
+// A password of the given length with three character types: A b 1 A b 1 ...
+const mixed = (length: number) => "Ab1".repeat(Math.ceil(length / 3)).slice(0, length)
 
+const COMPOSITION_MESSAGE =
+  "A senha precisa ter pelo menos 3 destes tipos de caractere: letras minúsculas, letras maiúsculas, números e símbolos."
+
+const password = (value: string) =>
+  messages(signUpSchema.safeParse({ email: "ana@example.com", name: "Ana", password: value })).password
+
+describe("the new-password length rule", () => {
   it("accepts from 10 to 128 characters", () => {
-    expect(password("a".repeat(9))).toBe("A senha precisa ter pelo menos 10 caracteres.")
-    expect(password("x7".repeat(5))).toBeUndefined()
-    expect(password("x7".repeat(64))).toBeUndefined()
-    expect(password("x".repeat(129))).toBe("A senha pode ter no máximo 128 caracteres.")
+    expect(password(mixed(9))).toBe("A senha precisa ter pelo menos 10 caracteres.")
+    expect(password(mixed(10))).toBeUndefined()
+    expect(password(mixed(128))).toBeUndefined()
+    expect(password(mixed(129))).toBe("A senha pode ter no máximo 128 caracteres.")
   })
 
-  it("leaves everything else to the API: no composition rule and no common-password list here", () => {
-    expect(password("12345678901")).toBeUndefined()
-    expect(password("aaaaaaaaaa")).toBeUndefined()
-    expect(password("senha12345")).toBeUndefined()
-    expect(password("purplegiraffesdancequietly")).toBeUndefined()
+  it("leaves common passwords, sequences, the e-mail and the name to the API", () => {
+    expect(password("Senha12345!")).toBeUndefined()
+    expect(password("Abcdefghij1!")).toBeUndefined()
+    expect(password("Ab1!Ab1!Ab1!")).toBeUndefined()
+    expect(password("Ana.Souza@Example1")).toBeUndefined()
   })
 
   it("applies to the reset and the profile forms as well", () => {
@@ -97,5 +103,60 @@ describe("the new-password length rule", () => {
         }),
       ).newPassword,
     ).toBe("A senha precisa ter pelo menos 10 caracteres.")
+  })
+})
+
+describe("the new-password composition rule", () => {
+  it.each([
+    "1234512345",
+    "1234567890",
+    "aaaaaaaaaa",
+    "abcdefghijkl",
+    "ABCDEFGHIJKL",
+    "abcdefghij1",
+    "ABCDEFGHIJ1",
+    "Abcdefghijkl",
+    "the quick brown fox jumps",
+    "çãõéíóúàê1",
+    "ÇÃÕÉÍÓÚÀÊ1",
+    "!#$%&/()=?!",
+    "1234 5678 90",
+  ])("refuses %j: fewer than 3 of the 4 character types", (value) => {
+    expect(password(value)).toBe(COMPOSITION_MESSAGE)
+  })
+
+  it.each([
+    ["lowercase, uppercase and digit", "Zk3mPq9wLx"],
+    ["lowercase, digit and symbol", "nf8$kd29xq#w"],
+    ["uppercase, digit and symbol", "ZK3MPQ9W!L"],
+    ["all four", "Zk3!mPq9wLx"],
+    ["accented letters, a space and a symbol", "ação São 2024!"],
+    ["a non-ASCII symbol (em dash)", "senha—boa—7xy"],
+    ["accented upper and lower case", "Çãõéíóúàê1"],
+    ["a long mixed passphrase with spaces", "Li and Ana walk to the old market every morning"],
+  ])("accepts %s", (_kind, value) => {
+    expect(password(value)).toBeUndefined()
+  })
+
+  it("is judged after the length: a short password is told it is short", () => {
+    expect(password("short")).toBe("A senha precisa ter pelo menos 10 caracteres.")
+    expect(password("a".repeat(129))).toBe("A senha pode ter no máximo 128 caracteres.")
+  })
+
+  it("applies to the reset and the profile forms as well", () => {
+    expect(
+      messages(
+        resetPasswordSchema.safeParse({ password: "1234512345", confirmation: "1234512345" }),
+      ).password,
+    ).toBe(COMPOSITION_MESSAGE)
+    expect(
+      messages(
+        profilePasswordSchema.safeParse({
+          currentPassword: "x",
+          newPassword: "abcdefghijkl",
+          confirmation: "abcdefghijkl",
+        }),
+      ).newPassword,
+    ).toBe(COMPOSITION_MESSAGE)
   })
 })

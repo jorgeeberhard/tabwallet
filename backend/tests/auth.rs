@@ -6,7 +6,7 @@ use common::{SESSION_COOKIE, TEST_JWT_SECRET, TestApp};
 use reqwest::header::SET_COOKIE;
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 /// The sign-up itself (Pending signup, confirmation, replacement, notice,
 /// resending) is covered in `signup_confirmation.rs`; here only the rules that
@@ -92,7 +92,7 @@ async fn signup_counts_characters_not_bytes_for_the_length() {
     // Exactly ten characters.
     let ten = app
         .session()
-        .request_sign_up("ana@example.com", "Ana Souza", "çãõéíóúàêâ")
+        .request_sign_up("ana@example.com", "Ana Souza", "Çãõéíóúàê1")
         .await;
     assert_eq!(ten.status(), 202);
 }
@@ -100,15 +100,15 @@ async fn signup_counts_characters_not_bytes_for_the_length() {
 #[tokio::test]
 async fn signup_refuses_common_passwords_ignoring_case_and_trivial_endings() {
     for common in [
-        "1q2w3e4r5t",
-        "PASSWORD123",
-        "Password1234",
-        "SENHA123456",
+        "1Q2w3e4r5t",
+        "Password123",
+        "PASSWORD1234!",
+        "Senha123456",
         "senha1234!!",
         "Brasil12345",
-        "qwerty123456",
+        "Qwerty123456",
         "Qwerty@2024!",
-        "iloveyou!!!",
+        "Iloveyou!!!",
         "SuperMan#99",
         "p@ssw0rd123",
         "Corinthians1",
@@ -118,21 +118,81 @@ async fn signup_refuses_common_passwords_ignoring_case_and_trivial_endings() {
 }
 
 #[tokio::test]
-async fn signup_refuses_obvious_sequences_and_repetitions() {
-    for obvious in [
-        "aaaaaaaaaa",
-        "1111111111",
+async fn signup_refuses_a_password_with_fewer_than_three_character_types() {
+    for poor in [
+        "1234512345",
         "1234567890",
-        "0987654321",
-        "abcdefghij",
-        "zyxwvutsrqp",
-        "1234567890123",
-        "abababababab",
-        "123123123123",
-        "qwertyuiop",
-        "asdfghjkl;",
-        "aaaaaaaaaa1",
-        "ABCDEFGHIJ!",
+        "aaaaaaaaaa",
+        "abcdefghijkl",
+        "ABCDEFGHIJKL",
+        "abcdefghij1",
+        "ABCDEFGHIJ1",
+        "Abcdefghijkl",
+        "the quick brown fox jumps",
+        "çãõéíóúàê1",
+        "ÇÃÕÉÍÓÚÀÊ1",
+        "!#$%&/()=?!",
+        "1234 5678 90",
+    ] {
+        assert_signup_refuses("ana@example.com", poor, "password_composition").await;
+    }
+}
+
+#[tokio::test]
+async fn signup_judges_the_composition_before_the_patterns_the_e_mail_and_the_name() {
+    // Two types only: told how to fix the mix, not about a pattern, a common
+    // password or the e-mail.
+    for (password, email) in [
+        ("1234512345", "ana@example.com"),
+        ("qwertyuiop", "ana@example.com"),
+        ("password1234", "ana@example.com"),
+        ("brunolima1234", "bruno.lima@example.com"),
+        ("souza is my family", "ana@example.com"),
+    ] {
+        assert_signup_refuses(email, password, "password_composition").await;
+    }
+}
+
+#[tokio::test]
+async fn signup_accepts_three_or_four_character_types_of_any_kind() {
+    let app = TestApp::spawn().await;
+
+    for (n, password) in [
+        "Zk3mPq9wLx",          // lowercase, uppercase, digit
+        "nf8$kd29xq#w",        // lowercase, digit, symbol
+        "ZK3MPQ9W!L",          // uppercase, digit, symbol
+        "Zk3!mPq9wLx",         // all four
+        "ação São 2024!",      // accents, space and a symbol
+        "senha—boa—7xy",       // a non-ASCII symbol (em dash)
+        "Çãõéíóúàê1",          // accented upper and lower case letters
+        "Frase com espaços Z", // lowercase, uppercase, spaces
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = app
+            .session()
+            .request_sign_up(&format!("user{n}@example.com"), "Ana Souza", password)
+            .await;
+        assert_eq!(response.status(), 202, "{password:?} should be accepted");
+    }
+}
+
+#[tokio::test]
+async fn signup_refuses_obvious_sequences_and_repetitions() {
+    // Each has at least 3 character types, so the composition rule is met and
+    // the sequence rule is the one that fires.
+    for obvious in [
+        "Aaaaaaaaaa1",
+        "Abcdefghij1",
+        "Zyxwvutsrqp1!",
+        "Ab1Ab1Ab1Ab1",
+        "Ab1!Ab1!Ab1!",
+        "Abcdeabcde1",
+        "Senhasenha1",
+        "Qwertyuiop1!",
+        "Asdfghjkl;1",
+        "Abcdefghij!1",
     ] {
         assert_signup_refuses("ana@example.com", obvious, "password_sequence").await;
     }
@@ -143,10 +203,10 @@ async fn signup_refuses_a_password_that_contains_the_email_before_the_at_sign() 
     for password in [
         "xk!bruno.lima#92",
         "BRUNO.LIMA-rocks",
-        "my-brunolima-pass",
+        "My-brunolima-pass",
         "bruno_lima_2024!",
-        "bruno.lima@example.com",
-        "prefix+bruno.lima@example.com",
+        "Bruno.lima@example.com",
+        "Prefix+bruno.lima@example.com",
     ] {
         assert_signup_refuses(
             "Bruno.Lima@example.com",
@@ -163,14 +223,14 @@ async fn signup_ignores_a_very_short_email_fragment_to_avoid_false_positives() {
 
     let response = app
         .session()
-        .request_sign_up("ana@example.com", "Ana Souza", "ana paints blue cats")
+        .request_sign_up("ana@example.com", "Ana Souza", "Ana paints Blue cats")
         .await;
 
     assert_eq!(response.status(), 202);
 }
 
 #[tokio::test]
-async fn signup_accepts_a_long_passphrase_and_a_plain_lowercase_one_without_mixing_types() {
+async fn signup_accepts_a_long_passphrase_and_the_largest_size() {
     let app = TestApp::spawn().await;
 
     let passphrase = app
@@ -178,21 +238,19 @@ async fn signup_accepts_a_long_passphrase_and_a_plain_lowercase_one_without_mixi
         .request_sign_up(
             "ana@example.com",
             "Ana Souza",
-            "the quick brown fox jumps over the lazy dog",
+            "The quick brown fox jumps over the lazy dog",
         )
-        .await;
-    let lowercase = app
-        .session()
-        .request_sign_up("bia@example.com", "Bia Lima", "purplegiraffesdancequietly")
         .await;
 
     assert_eq!(passphrase.status(), 202);
-    assert_eq!(lowercase.status(), 202);
-    let longest: String = "the quick brown fox jumps over the lazy dog, "
-        .repeat(3)
-        .chars()
-        .take(128)
-        .collect();
+    // Not a repeated block: that would be refused as a repetition.
+    let mut longest = String::new();
+    let mut n = 0;
+    while longest.chars().count() < 128 {
+        longest.push_str(&format!("palavra{n} "));
+        n += 1;
+    }
+    let longest: String = longest.chars().take(128).collect();
     assert_eq!(longest.chars().count(), 128);
     assert_eq!(
         app.session()
@@ -210,7 +268,7 @@ async fn the_signed_up_password_is_the_one_that_logs_in() {
     app.session()
         .sign_up(
             "ana@example.com",
-            "the quick brown fox jumps over the lazy dog",
+            "The quick brown fox jumps over the lazy dog",
         )
         .await;
 
@@ -218,7 +276,7 @@ async fn the_signed_up_password_is_the_one_that_logs_in() {
         .session()
         .log_in(
             "ana@example.com",
-            "the quick brown fox jumps over the lazy dog",
+            "The quick brown fox jumps over the lazy dog",
         )
         .await;
 

@@ -22,7 +22,7 @@ _Avoid_: link de ativação
 Pedido de troca do e-mail de acesso de uma Conta, no máximo um por Conta. Só vale depois de o novo e-mail ser confirmado; até lá o e-mail antigo continua valendo, e ao concluir a troca o e-mail antigo recebe um aviso.
 
 **Regra de senha** (`PasswordPolicy`):
-Toda senha nova (cadastro, redefinição e perfil) tem de ter de 10 a 128 caracteres, não pode estar na lista de senhas comuns e não pode conter o e-mail nem o nome da pessoa. Não há exigência de mistura de tipos de caractere.
+Toda senha nova (cadastro, redefinição e perfil) tem de ter de 10 a 128 caracteres e pelo menos 3 dos 4 tipos de caractere (letra minúscula, letra maiúscula, número e símbolo), não pode ser uma sequência ou repetição óbvia (como `1234512345`), não pode estar na lista de senhas comuns e não pode conter o e-mail nem o nome da pessoa. Símbolo é qualquer caractere que não seja letra nem número, inclusive o espaço; letras acentuadas contam como letras. Não há exceção para frases longas.
 _Avoid_: senha forte
 
 ### Transações
