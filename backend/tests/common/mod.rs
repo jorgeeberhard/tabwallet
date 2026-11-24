@@ -200,9 +200,41 @@ impl Session {
             .await
     }
 
+    /// Asks to change the e-mail the way the profile form does: only the
+    /// e-mail and the current password go in the body. It only creates a
+    /// Pending e-mail change.
+    pub async fn request_email_change(&self, new_email: &str, current_password: &str) -> Response {
+        self.patch_json(
+            "/profile",
+            &json!({ "email": new_email, "current_password": current_password }),
+        )
+        .await
+    }
+
+    /// Opens the link of a Pending e-mail change: the token is the one in the
+    /// e-mailed link. Works with or without a session.
+    pub async fn confirm_email_change(&self, token: &str) -> Response {
+        self.post_json("/auth/email-change/confirm", &json!({ "token": token }))
+            .await
+    }
+
+    /// Asks for the link of the Pending e-mail change to be sent again.
+    pub async fn resend_email_change(&self) -> Response {
+        self.post_empty("/profile/email-change/resend").await
+    }
+
     /// The confirmation token in the latest e-mail sent to `email`.
     pub fn latest_confirmation_token(&self, email: &str) -> String {
-        let link = format!("{TEST_APP_URL}/confirm-email?token=");
+        self.latest_token(email, "confirm-email")
+    }
+
+    /// The token of the e-mail-change link in the latest e-mail sent to `email`.
+    pub fn latest_email_change_token(&self, email: &str) -> String {
+        self.latest_token(email, "confirm-email-change")
+    }
+
+    fn latest_token(&self, email: &str, page: &str) -> String {
+        let link = format!("{TEST_APP_URL}/{page}?token=");
         let message = self
             .emails
             .0
@@ -212,7 +244,7 @@ impl Session {
             .rev()
             .find(|message| message.to.eq_ignore_ascii_case(email) && message.text.contains(&link))
             .cloned()
-            .unwrap_or_else(|| panic!("no confirmation e-mail was sent to {email}"));
+            .unwrap_or_else(|| panic!("no e-mail with a {page} link was sent to {email}"));
         let rest = message.text.split_once(&link).unwrap().1;
         rest.split(char::is_whitespace).next().unwrap().to_string()
     }
