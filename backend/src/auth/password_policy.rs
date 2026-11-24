@@ -9,7 +9,8 @@
 //!
 //! 1. **Length**: 10 to 128 characters (characters, not bytes).
 //! 2. **Sequence or repetition** (`password_sequence`): `aaaaaaaaaa`,
-//!    `abababababab`, `1234567890`, `abcdefghij`, `zyxwvutsrqp`, a stretch of
+//!    `abababababab`, `1234512345` (any block repeated at least twice),
+//!    `1234567890`, `abcdefghij`, `zyxwvutsrqp`, a stretch of
 //!    a keyboard row (`qwertyuiop`).
 //! 3. **Common password** (`password_common`): the password is in the
 //!    embedded list (`common_passwords.txt`).
@@ -54,8 +55,6 @@ const MIN_PERSONAL_FRAGMENT: usize = 4;
 /// A stem (password minus trailing digits and symbols) shorter than this is
 /// not judged as a sequence or repetition.
 const MIN_PATTERN_STEM: usize = 8;
-/// A repetition is a block of up to this many characters, repeated.
-const MAX_REPEATED_BLOCK: usize = 4;
 
 /// Rows a password can be a stretch of, in either direction.
 const KEYBOARD_ROWS: [&str; 4] = ["qwertyuiop[]", "asdfghjkl;'", "zxcvbnm,./", "1234567890-="];
@@ -219,13 +218,12 @@ fn unleet(text: &str) -> String {
         .collect()
 }
 
-/// One block of up to [`MAX_REPEATED_BLOCK`] characters, repeated to fill the
-/// text (the last repetition may be cut short): `aaaa`, `abab`, `123123`.
+/// One block repeated at least twice to fill the text (the last repetition
+/// may be cut short): `aaaa`, `abab`, `123123`, `1234512345`. Any block up to
+/// half the length counts, so a doubled word or number is refused too.
 fn is_repetition(text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
-    (1..=MAX_REPEATED_BLOCK).any(|block| {
-        chars.len() > block && (block..chars.len()).all(|i| chars[i] == chars[i % block])
-    })
+    (1..=chars.len() / 2).any(|block| (block..chars.len()).all(|i| chars[i] == chars[i % block]))
 }
 
 /// Each character follows the previous in the alphabet or among the digits,

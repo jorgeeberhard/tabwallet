@@ -237,6 +237,7 @@ async fn the_reset_refuses_short_long_common_and_sequence_passwords_with_a_code_
             ("aaaaaaaaaa", "password_sequence"),
             ("1234567890", "password_sequence"),
             ("abcdefghij", "password_sequence"),
+            ("1234512345", "password_sequence"),
             ("PASSWORD123", "password_common"),
             ("Senha123456!", "password_common"),
             ("Brasil12345", "password_common"),

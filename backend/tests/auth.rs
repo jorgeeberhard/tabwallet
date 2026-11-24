@@ -129,6 +129,9 @@ async fn signup_refuses_obvious_sequences_and_repetitions() {
         "1234567890123",
         "abababababab",
         "123123123123",
+        "1234512345",
+        "abcdeabcde",
+        "senhasenha",
         "qwertyuiop",
         "asdfghjkl;",
         "aaaaaaaaaa1",
@@ -188,11 +191,14 @@ async fn signup_accepts_a_long_passphrase_and_a_plain_lowercase_one_without_mixi
 
     assert_eq!(passphrase.status(), 202);
     assert_eq!(lowercase.status(), 202);
-    let longest: String = "the quick brown fox jumps over the lazy dog, "
-        .repeat(3)
-        .chars()
-        .take(128)
-        .collect();
+    // Not a repeated block: that would be refused as a repetition.
+    let mut longest = String::new();
+    let mut n = 0;
+    while longest.chars().count() < 128 {
+        longest.push_str(&format!("palavra{n} "));
+        n += 1;
+    }
+    let longest: String = longest.chars().take(128).collect();
     assert_eq!(longest.chars().count(), 128);
     assert_eq!(
         app.session()
