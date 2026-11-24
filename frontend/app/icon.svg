@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<style>
+.tab{fill:#8B83F0}.body{fill:#4B3FD6}.clasp{fill:#4B3FD6}
+@media (prefers-color-scheme: dark){.tab{fill:#C9C4FA}.body{fill:#8B83F0}.clasp{fill:#8B83F0}.slot{fill:#161A23}}
+</style>
+<rect class="tab" x="8" y="8" width="26" height="16" rx="6"/>
+<rect class="body" x="4" y="16" width="56" height="42" rx="11"/>
+<rect class="tab slot" x="38" y="30" width="22" height="14" rx="7"/>
+<circle class="clasp" cx="46" cy="37" r="3"/>
+</svg>
