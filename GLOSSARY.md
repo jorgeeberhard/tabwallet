@@ -4,6 +4,27 @@ Sistema web de controle financeiro pessoal em que o próprio usuário registra r
 
 ## Language
 
+### Conta e acesso
+
+**Conta** (`User`):
+Acesso de uma pessoa ao sistema, identificado por um e-mail único. Só existe depois de o e-mail ser confirmado.
+_Avoid_: usuário cadastrado, perfil
+
+**Cadastro pendente** (`PendingSignup`):
+Pedido de cadastro cujo e-mail ainda não foi confirmado. Guarda e-mail, nome e o hash da senha fora das Contas e expira em 24 horas. Um novo cadastro com o mesmo e-mail o substitui, e ele não impede ninguém de se cadastrar com aquele e-mail.
+_Avoid_: conta não confirmada
+
+**Link de confirmação** (`ConfirmationLink`):
+Link de uso único, válido por 24 horas, enviado por e-mail para confirmar um Cadastro pendente ou uma Troca de e-mail pendente. Um novo pedido invalida o anterior.
+_Avoid_: link de ativação
+
+**Troca de e-mail pendente** (`PendingEmailChange`):
+Pedido de troca do e-mail de acesso de uma Conta, no máximo um por Conta. Só vale depois de o novo e-mail ser confirmado; até lá o e-mail antigo continua valendo, e ao concluir a troca o e-mail antigo recebe um aviso.
+
+**Regra de senha** (`PasswordPolicy`):
+Toda senha nova (cadastro, redefinição e perfil) tem de ter de 10 a 128 caracteres, não pode estar na lista de senhas comuns e não pode conter o e-mail nem o nome da pessoa. Não há exigência de mistura de tipos de caractere.
+_Avoid_: senha forte
+
 ### Transações
 
 **Transação** (`Transaction`):
