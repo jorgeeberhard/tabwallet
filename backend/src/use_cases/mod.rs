@@ -22,6 +22,8 @@ mod create_category;
 mod create_transaction;
 mod credit_card;
 mod delete_transaction;
+mod email_change;
+mod email_change_messages;
 mod get_current_user;
 mod installment_anticipation;
 mod installment_purchase;
@@ -68,6 +70,7 @@ pub use credit_card::{
     ListInvoicesUseCase, ReactivateCreditCardUseCase, UpdateCreditCardUseCase,
 };
 pub use delete_transaction::DeleteTransactionUseCase;
+pub use email_change::{ConfirmEmailChangeUseCase, ResendEmailChangeUseCase};
 pub use get_current_user::GetCurrentUserUseCase;
 pub use installment_anticipation::{
     AnticipableInstallments, AnticipateInstallmentsUseCase, AnticipationReceipt,
@@ -107,5 +110,5 @@ pub use set_category_active::{DeactivateCategoryUseCase, ReactivateCategoryUseCa
 pub use sign_up::SignUpUseCase;
 pub use sign_up_confirmation::{ConfirmSignUpUseCase, ResendConfirmationUseCase};
 pub use transaction_error::{CategoryProblem, TransactionError};
-pub use update_profile::{ProfileChanges, UpdateProfileUseCase};
+pub use update_profile::{ProfileChanges, ProfileView, UpdateProfileUseCase};
 pub use update_transaction::UpdateTransactionUseCase;

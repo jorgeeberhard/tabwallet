@@ -37,6 +37,13 @@ describe("decideAccess", () => {
     expect(decideAccess("/confirm-email", "valid")).toBeNull()
   })
 
+  it("opens the e-mail-change link page to visitors and to signed-in users", () => {
+    expect(decideAccess("/confirm-email-change", "none")).toBeNull()
+    expect(decideAccess("/confirm-email-change", "invalid")).toBeNull()
+    expect(decideAccess("/confirm-email-change", "unknown")).toBeNull()
+    expect(decideAccess("/confirm-email-change", "valid")).toBeNull()
+  })
+
   it("lets a signed-in user into private pages", () => {
     expect(decideAccess("/", "valid")).toBeNull()
   })

@@ -6,7 +6,7 @@ use validator::{Validate, ValidationError};
 
 use super::{
     extract::{ValidatedJson, trimmed},
-    profile::MAX_NAME_LEN,
+    profile::{MAX_NAME_LEN, ProfileEnvelope},
 };
 use crate::{
     app::AppState,
@@ -14,6 +14,7 @@ use crate::{
     error::ApiError,
     ids::UserId,
     repositories::{
+        pending_email_changes::PendingEmailChangeRepository,
         pending_signups::PendingSignupRepository,
         users::{User, UserRepository},
     },
@@ -140,15 +141,20 @@ pub async fn log_out(State(state): State<AppState>, jar: CookieJar) -> (StatusCo
     (StatusCode::NO_CONTENT, jar.add(state.auth.removal_cookie()))
 }
 
-/// `GET /auth/me` (protected): the signed-in user.
+/// `GET /auth/me` (protected): the signed-in user and the e-mail change
+/// waiting for confirmation, if any.
 pub async fn me(
     State(state): State<AppState>,
     auth_user: AuthUser,
-) -> Result<Json<UserEnvelope>, ApiError> {
-    let user = GetCurrentUserUseCase::new(UserRepository::new(state.pool.clone()))
-        .execute(auth_user.id)
-        .await?;
-    Ok(Json(UserEnvelope { user: user.into() }))
+) -> Result<Json<ProfileEnvelope>, ApiError> {
+    let view = GetCurrentUserUseCase::new(
+        UserRepository::new(state.pool.clone()),
+        PendingEmailChangeRepository::new(state.pool.clone()),
+        state.clock.clone(),
+    )
+    .execute(auth_user.id)
+    .await?;
+    Ok(Json(view.into()))
 }
 
 /// `POST /auth/signup`: asks for an account. It creates (or replaces) a

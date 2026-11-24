@@ -55,20 +55,42 @@ export async function api<T = void>(
   return (await response.json()) as T
 }
 
+/** A request to change the e-mail that waits for the link sent to the new address. */
+export interface PendingEmailChange {
+  /** The new address, as typed. */
+  email: string
+  /** When the link in the e-mail stops working (ISO 8601). */
+  expiresAt: string
+}
+
 export interface User {
   id: string
   email: string
   /** Empty when the person never set one. */
   name: string
   createdAt: string
+  /**
+   * The e-mail change waiting for confirmation, if any. The API sends it with
+   * `/auth/me` and the profile update only, so it is `null` after a login.
+   */
+  pendingEmailChange: PendingEmailChange | null
 }
 
 interface UserPayload {
   user: { id: string; email: string; name: string; created_at: string }
+  pending_email_change?: { email: string; expires_at: string } | null
 }
 
-function toUser({ user }: UserPayload): User {
-  return { id: user.id, email: user.email, name: user.name, createdAt: user.created_at }
+function toUser({ user, pending_email_change }: UserPayload): User {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    createdAt: user.created_at,
+    pendingEmailChange: pending_email_change
+      ? { email: pending_email_change.email, expiresAt: pending_email_change.expires_at }
+      : null,
+  }
 }
 
 /**
@@ -125,6 +147,19 @@ export async function updateProfile(changes: ProfileChanges): Promise<User> {
       },
     }),
   )
+}
+
+/**
+ * Opens the link of an e-mail change: the e-mail of the account becomes the
+ * new one. Works with or without a session and never signs anyone in.
+ */
+export async function confirmEmailChange(token: string): Promise<void> {
+  await api("/auth/email-change/confirm", { method: "POST", body: { token } })
+}
+
+/** Sends the link of the pending e-mail change again (the previous one stops working). */
+export async function resendEmailChange(): Promise<void> {
+  await api("/profile/email-change/resend", { method: "POST" })
 }
 
 /** Asks for a reset link. The API answers the same for any address. */

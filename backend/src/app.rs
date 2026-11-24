@@ -38,6 +38,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/auth/me", get(handlers::auth::me))
         .route("/profile", patch(handlers::profile::update))
         .route(
+            "/profile/email-change/resend",
+            post(handlers::profile::resend_email_change),
+        )
+        .route(
             "/categories",
             get(handlers::categories::list).post(handlers::categories::create),
         )
@@ -168,6 +172,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/auth/signup/resend",
             post(handlers::auth::resend_confirmation),
+        )
+        .route(
+            "/auth/email-change/confirm",
+            post(handlers::profile::confirm_email_change),
         )
         .route("/auth/login", post(handlers::auth::log_in))
         .route("/auth/logout", post(handlers::auth::log_out))

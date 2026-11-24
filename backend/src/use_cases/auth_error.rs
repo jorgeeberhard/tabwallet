@@ -26,6 +26,10 @@ pub enum AuthError {
     PasswordRejected(Rejection),
     #[error("the password reset link is invalid, expired or already used")]
     InvalidResetToken,
+    #[error("there is no pending e-mail change to resend")]
+    NoPendingEmailChange,
+    #[error("too many requests; try again in {retry_after_secs} seconds")]
+    TooManyRequests { retry_after_secs: u64 },
     #[error("there is no valid session")]
     Unauthenticated,
     #[error("unexpected failure: {0}")]

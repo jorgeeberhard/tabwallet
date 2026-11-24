@@ -234,17 +234,19 @@ async fn confirming_with_an_e_mail_that_became_an_account_meanwhile_is_refused()
     ana.request_sign_up("ana@example.com", "Ana Souza", PASSWORD)
         .await;
     let token = ana.latest_confirmation_token("ana@example.com");
-    // Someone else's account takes the address in the meantime (the profile
-    // still changes the e-mail directly).
+    // Someone else's account takes the address in the meantime, by an e-mail
+    // change confirmed from the profile.
     let bruno = app.session();
     bruno.sign_up("bruno@example.com", PASSWORD).await;
-    let taken = bruno
-        .patch_json(
-            "/profile",
-            &json!({ "email": "Ana@Example.com", "current_password": PASSWORD }),
-        )
+    let requested = bruno
+        .request_email_change("Ana@Example.com", PASSWORD)
         .await;
-    assert_eq!(taken.status(), 200);
+    assert_eq!(requested.status(), 200);
+    let change_token = bruno.latest_email_change_token("ana@example.com");
+    assert_eq!(
+        bruno.confirm_email_change(&change_token).await.status(),
+        204
+    );
 
     let response = ana.confirm_sign_up(&token).await;
 

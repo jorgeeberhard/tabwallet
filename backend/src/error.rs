@@ -40,6 +40,8 @@ pub enum ApiError {
     EmailNotConfirmed,
     /// The sign-up confirmation link is unknown, expired, used or replaced.
     InvalidConfirmationToken,
+    /// There is no live pending e-mail change to resend.
+    NoPendingEmailChange,
     /// The password-reset link is unknown, expired or already used.
     InvalidResetToken,
     /// No valid session.
@@ -150,6 +152,10 @@ impl From<AuthError> for ApiError {
             AuthError::EmailNotConfirmed => Self::EmailNotConfirmed,
             AuthError::InvalidConfirmationToken => Self::InvalidConfirmationToken,
             AuthError::InvalidResetToken => Self::InvalidResetToken,
+            AuthError::NoPendingEmailChange => Self::NoPendingEmailChange,
+            AuthError::TooManyRequests { retry_after_secs } => {
+                Self::TooManyRequests { retry_after_secs }
+            }
             AuthError::Unauthenticated => Self::Unauthenticated,
             AuthError::Internal(cause) => Self::Internal(cause),
         }
@@ -443,6 +449,12 @@ impl IntoResponse for ApiError {
                 StatusCode::BAD_REQUEST,
                 "invalid_confirmation_token",
                 "The confirmation link is invalid, expired, already used or replaced.",
+                None,
+            ),
+            Self::NoPendingEmailChange => (
+                StatusCode::NOT_FOUND,
+                "no_pending_email_change",
+                "There is no pending e-mail change to resend.",
                 None,
             ),
             Self::InvalidResetToken => (
