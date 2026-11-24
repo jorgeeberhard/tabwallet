@@ -45,7 +45,7 @@ function OverLimitBadge({ count }: { count: number }) {
 /**
  * The top bar of every signed-in page (Design System `AppHeader`): the logo
  * (link to the home page), the eight sections of the app and `right` (the
- * theme and account menus). From `lg` up the sections sit in the bar; below
+ * theme and account menus). From `xl` (1280 px) up the sections sit in the bar; below
  * it they fold into a menu that opens as a side sheet.
  */
 export function AppHeader({ right }: { right: ReactNode }) {
@@ -59,10 +59,10 @@ export function AppHeader({ right }: { right: ReactNode }) {
 
   return (
     <header className="sticky top-0 z-40 border-b bg-card">
-      <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center gap-2 px-4 md:px-6 lg:gap-4">
+      <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center gap-2 px-4 md:px-6 xl:gap-4">
         <Sheet open={menuOpen} onOpenChange={(open) => setOpenFor(open ? pathname : null)}>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Abrir menu" className="-ml-2 lg:hidden">
+            <Button variant="ghost" size="icon" aria-label="Abrir menu" className="-ml-2 xl:hidden">
               <MenuIcon strokeWidth={1.75} />
             </Button>
           </SheetTrigger>
@@ -91,11 +91,11 @@ export function AppHeader({ right }: { right: ReactNode }) {
           </SheetContent>
         </Sheet>
 
-        <Link href="/" className="inline-flex shrink-0 items-center rounded-md">
+        <Link href="/" className="inline-flex h-10 shrink-0 items-center rounded-md">
           <Logo height={28} />
         </Link>
 
-        <nav aria-label="Principal" className="hidden min-w-0 flex-1 items-center gap-0.5 lg:flex">
+        <nav aria-label="Principal" className="hidden min-w-0 flex-1 items-center gap-0.5 xl:flex">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
@@ -109,7 +109,7 @@ export function AppHeader({ right }: { right: ReactNode }) {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1 lg:ml-0">{right}</div>
+        <div className="ml-auto flex items-center gap-1 xl:ml-0">{right}</div>
       </div>
     </header>
   )

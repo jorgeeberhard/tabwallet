@@ -25,7 +25,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       <Suspense fallback={<div aria-hidden="true" className="h-14" />}>
         <BackButton />
       </Suspense>
-      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-8 px-4 py-8 md:px-6">
+      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-8 px-4 py-6 md:px-6">
         {children}
       </main>
     </>
