@@ -1,8 +1,11 @@
 import { z } from "zod"
 
-// Keep these limits in step with the API (backend/src/handlers/auth.rs).
-export const MIN_PASSWORD_LENGTH = 8
-export const MAX_PASSWORD_LENGTH = 128
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  PASSWORD_TOO_LONG_MESSAGE,
+  PASSWORD_TOO_SHORT_MESSAGE,
+} from "@/lib/password-rule"
 
 const email = z
   .string()
@@ -10,12 +13,17 @@ const email = z
   .min(1, "Digite seu e-mail.")
   .pipe(z.email("Digite um e-mail válido, como nome@dominio.com."))
 
+// A new password: the browser checks only the length. Everything else of the
+// Password policy (common passwords, sequences, e-mail, name) is decided by the
+// API and shown from its error codes.
+const newPassword = z
+  .string()
+  .min(MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE)
+  .max(MAX_PASSWORD_LENGTH, PASSWORD_TOO_LONG_MESSAGE)
+
 export const signUpSchema = z.object({
   email,
-  password: z
-    .string()
-    .min(MIN_PASSWORD_LENGTH, `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`)
-    .max(MAX_PASSWORD_LENGTH, `Use uma senha com no máximo ${MAX_PASSWORD_LENGTH} caracteres.`),
+  password: newPassword,
 })
 
 // At login the password is only checked for presence: the API decides.
@@ -23,11 +31,6 @@ export const logInSchema = z.object({
   email,
   password: z.string().min(1, "Digite sua senha."),
 })
-
-const newPassword = z
-  .string()
-  .min(MIN_PASSWORD_LENGTH, `Use uma senha com pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`)
-  .max(MAX_PASSWORD_LENGTH, `Use uma senha com no máximo ${MAX_PASSWORD_LENGTH} caracteres.`)
 
 export const forgotPasswordSchema = z.object({ email })
 

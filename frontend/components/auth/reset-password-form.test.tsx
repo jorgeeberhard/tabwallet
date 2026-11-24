@@ -70,3 +70,52 @@ describe("ResetPasswordForm", () => {
     )
   })
 })
+
+const refusals = [
+  ["password_too_short", "A senha precisa ter pelo menos 10 caracteres."],
+  ["password_too_long", "A senha pode ter no máximo 128 caracteres."],
+  [
+    "password_common",
+    "Essa senha é muito comum e fácil de adivinhar. Escolha outra, de preferência uma frase.",
+  ],
+  [
+    "password_sequence",
+    "Evite sequências e repetições, como 1234567890 ou aaaaaaaaaa. Escolha outra senha.",
+  ],
+  ["password_contains_email", "A senha não pode conter o seu e-mail. Escolha outra."],
+  ["password_contains_name", "A senha não pode conter o seu nome. Escolha outra."],
+] as const
+
+describe("ResetPasswordForm password rule", () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("shows a short hint of the rule next to the new password field", () => {
+    render(<ResetPasswordForm token="abc" />)
+
+    expect(screen.getByText("Use de 10 a 128 caracteres; uma frase longa é uma boa senha. Evite senhas comuns, sequências e o seu e-mail ou nome.")).toBeInTheDocument()
+  })
+
+  it.each(refusals)("shows the reason for %s under the new password field", async (code, message) => {
+    fetchMock.mockReturnValue(
+      answer(422, {
+        error: { code: "validation_failed", message: "invalid", fields: { password: code } },
+      }),
+    )
+    render(<ResetPasswordForm token="abc" />)
+
+    await fillAndSubmit("senha1234567", "senha1234567")
+
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.getByLabelText("Nova senha")).toHaveAttribute("aria-invalid", "true")
+    expect(screen.queryByText("Senha redefinida")).not.toBeInTheDocument()
+  })
+})

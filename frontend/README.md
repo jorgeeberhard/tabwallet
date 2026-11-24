@@ -19,6 +19,7 @@ Aplicação Next.js (App Router, TypeScript) com shadcn/ui sobre Tailwind CSS v4
 ## Perfil e recuperação de senha
 
 - `app/(app)/profile`: tela de perfil (`components/profile/profile-forms.tsx`) com três formulários independentes (nome, e-mail, senha). Trocar e-mail ou senha pede a senha atual. Acessível pelo menu da conta e pela página inicial.
+- **Regra de senha.** Cadastro, redefinição e perfil mostram, junto do campo de senha nova, uma dica curta da regra (`PASSWORD_HINT` em `lib/password-rule.ts`), sem medidor de força. Só o tamanho (10 a 128) é conferido no navegador (`lib/auth-schemas.ts`, que usa as constantes de `lib/password-rule.ts`); o resto (senha comum, sequência, e-mail ou nome na senha) é decidido pela API, que recusa com `422` e um código sob o campo da senha, e `lib/auth-messages.ts` traduz cada código (`password_too_short`, `password_too_long`, `password_common`, `password_sequence`, `password_contains_email`, `password_contains_name`) em uma mensagem em português mostrada sob o campo.
 - `app/(auth)/forgot-password`: pede o link de redefinição. A resposta é sempre a mesma ("se existir uma conta..."), porque a API não revela quais e-mails existem. O login tem o link "Esqueci a senha".
 - `app/(auth)/reset-password?token=...`: página aberta pelo link do e-mail; define a nova senha e leva ao login (não inicia sessão). Fica acessível mesmo para quem já está logado (`lib/access.ts`). Em desenvolvimento sem provedor de e-mail, o link aparece no log da API.
 

@@ -21,6 +21,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { signUp } from "@/lib/api"
 import { type SignUpValues, signUpSchema } from "@/lib/auth-schemas"
 import { genericFailure, isApiError, messageForCode } from "@/lib/auth-messages"
+import { PASSWORD_HINT } from "@/lib/password-rule"
 
 export function SignupForm() {
   const router = useRouter()
@@ -96,7 +97,7 @@ export function SignupForm() {
           {errors.password ? (
             <FieldError errors={[errors.password]} />
           ) : (
-            <FieldDescription>Use pelo menos 8 caracteres.</FieldDescription>
+            <FieldDescription>{PASSWORD_HINT}</FieldDescription>
           )}
         </Field>
       </FieldGroup>
