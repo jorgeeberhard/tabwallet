@@ -5,7 +5,7 @@ mod common;
 use common::TestApp;
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 #[tokio::test]
 async fn a_new_account_has_the_name_from_the_sign_up_and_the_user_can_change_it_without_the_password()
@@ -84,7 +84,7 @@ async fn changing_the_password_requires_the_current_one_and_the_new_one_replaces
     let app = TestApp::spawn().await;
     let browser = app.session();
     browser.sign_up("ana@example.com", PASSWORD).await;
-    let new_password = "a brand new passphrase";
+    let new_password = "A brand new passphrase 9";
 
     let missing = browser
         .patch_json("/profile", &json!({ "new_password": new_password }))
@@ -196,7 +196,8 @@ async fn assert_profile_refuses(app: &TestApp, email: &str, cases: &[(&str, &str
 }
 
 #[tokio::test]
-async fn the_profile_refuses_short_long_common_and_sequence_passwords_with_a_code_for_each() {
+async fn the_profile_refuses_short_long_poorly_mixed_common_and_sequence_passwords_with_a_code_for_each()
+ {
     let app = TestApp::spawn().await;
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let too_long = "the quick brown fox jumps over the lazy dog ".repeat(3);
@@ -209,14 +210,23 @@ async fn the_profile_refuses_short_long_common_and_sequence_passwords_with_a_cod
             ("password", "password_too_short"),
             ("senha123", "password_too_short"),
             (&too_long, "password_too_long"),
-            ("aaaaaaaaaa", "password_sequence"),
-            ("1234567890", "password_sequence"),
-            ("abcdefghij", "password_sequence"),
-            ("1234512345", "password_sequence"),
-            ("PASSWORD123", "password_common"),
+            ("1234512345", "password_composition"),
+            ("1234567890", "password_composition"),
+            ("aaaaaaaaaa", "password_composition"),
+            ("abcdefghijkl", "password_composition"),
+            ("ABCDEFGHIJKL", "password_composition"),
+            ("abcdefghij1", "password_composition"),
+            ("the quick brown fox jumps", "password_composition"),
+            ("qwertyuiop", "password_composition"),
+            ("password1234", "password_composition"),
+            ("Aaaaaaaaaa1!", "password_sequence"),
+            ("Abcdefghij1", "password_sequence"),
+            ("Ab1!Ab1!Ab1!", "password_sequence"),
+            ("Qwertyuiop1!", "password_sequence"),
+            ("Password123", "password_common"),
             ("Senha123456!", "password_common"),
             ("Brasil12345", "password_common"),
-            ("qwerty123456", "password_common"),
+            ("Qwerty@2024", "password_common"),
         ],
     )
     .await;
@@ -237,9 +247,9 @@ async fn the_profile_refuses_a_password_with_the_email_or_the_name_of_the_own_ac
         &[
             ("xk!bruno.lima#92", "password_contains_email"),
             ("BRUNOLIMA is here", "password_contains_email"),
-            ("my password is aparecida", "password_contains_name"),
+            ("My password is Aparecida", "password_contains_name"),
             ("trust-JOSE-with-everything", "password_contains_name"),
-            ("maria jose aparecida", "password_contains_name"),
+            ("Maria jose Aparecida", "password_contains_name"),
         ],
     )
     .await;
@@ -276,7 +286,7 @@ async fn the_profile_ignores_short_name_fragments_and_accepts_a_long_passphrase(
     browser
         .patch_json("/profile", &json!({ "name": "Ana Li" }))
         .await;
-    let passphrase = "li and ana walk to the old market every morning";
+    let passphrase = "Li and Ana walk to the old market every morning";
 
     let response = browser
         .patch_json(
@@ -296,6 +306,38 @@ async fn the_profile_ignores_short_name_fragments_and_accepts_a_long_passphrase(
 }
 
 #[tokio::test]
+async fn the_profile_accepts_a_password_with_three_or_four_character_types() {
+    let app = TestApp::spawn().await;
+    let browser = app.session();
+    browser.sign_up("ana@example.com", PASSWORD).await;
+
+    let mut current = PASSWORD;
+    for password in [
+        "Zk3mPq9wLx",
+        "nf8$kd29xq#w",
+        "Zk3!mPq9wLx",
+        "Frase com espaços Z",
+    ] {
+        let response = browser
+            .patch_json(
+                "/profile",
+                &json!({ "new_password": password, "current_password": current }),
+            )
+            .await;
+
+        assert_eq!(response.status(), 200, "{password:?} should be accepted");
+        assert_eq!(
+            app.session()
+                .log_in("ana@example.com", password)
+                .await
+                .status(),
+            200
+        );
+        current = password;
+    }
+}
+
+#[tokio::test]
 async fn a_weak_password_is_refused_before_the_current_password_is_checked() {
     let app = TestApp::spawn().await;
     let browser = app.session();
@@ -304,7 +346,7 @@ async fn a_weak_password_is_refused_before_the_current_password_is_checked() {
     let response = browser
         .patch_json(
             "/profile",
-            &json!({ "new_password": "1234567890", "current_password": "not my password" }),
+            &json!({ "new_password": "Abcdefghij1!", "current_password": "not my password" }),
         )
         .await;
 

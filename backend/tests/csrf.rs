@@ -7,7 +7,7 @@ mod common;
 use common::{Session, TEST_APP_URL, TestApp};
 use serde_json::{Value, json};
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 async fn error_code(response: reqwest::Response) -> (u16, String) {
     let status = response.status().as_u16();

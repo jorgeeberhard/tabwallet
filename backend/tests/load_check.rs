@@ -22,7 +22,7 @@ use common::{Session, TestApp};
 use serde_json::{Value, json};
 use tokio::task::JoinSet;
 
-const PASSWORD: &str = "correct horse battery";
+const PASSWORD: &str = "Correct horse battery 7";
 
 /// The requirement, in milliseconds. `LOAD_CHECK_P95_MS` overrides it.
 const DEFAULT_P95_LIMIT_MS: f64 = 300.0;

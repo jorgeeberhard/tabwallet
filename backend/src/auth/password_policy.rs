@@ -8,16 +8,28 @@
 //! The rules, checked in this order (the first that fails is the answer):
 //!
 //! 1. **Length**: 10 to 128 characters (characters, not bytes).
-//! 2. **Sequence or repetition** (`password_sequence`): `aaaaaaaaaa`,
+//! 2. **Composition** (`password_composition`): at least 3 of the 4 character
+//!    types (see below). It comes right after the length, before every
+//!    pattern rule, so that `1234512345` is told how to fix the mix and not
+//!    that it is a repetition.
+//! 3. **Sequence or repetition** (`password_sequence`): `aaaaaaaaaa`,
 //!    `abababababab`, `1234512345` (any block repeated at least twice),
 //!    `1234567890`, `abcdefghij`, `zyxwvutsrqp`, a stretch of
 //!    a keyboard row (`qwertyuiop`).
-//! 3. **Common password** (`password_common`): the password is in the
+//! 4. **Common password** (`password_common`): the password is in the
 //!    embedded list (`common_passwords.txt`).
-//! 4. **Contains the e-mail** (`password_contains_email`).
-//! 5. **Contains the name** (`password_contains_name`).
+//! 5. **Contains the e-mail** (`password_contains_email`).
+//! 6. **Contains the name** (`password_contains_name`).
 //!
-//! There is no composition rule: no demand for capitals, digits or symbols.
+//! # The four character types
+//!
+//! Counted on the password as typed (not folded): a **lowercase** letter, an
+//! **uppercase** letter, a **digit** (`0` to `9`) and a **symbol**, which is
+//! any character that is neither a letter nor a digit: punctuation, a space,
+//! non-ASCII punctuation such as an em dash. Accented letters are letters, and
+//! lowercase or uppercase by their case (`ç` is lowercase, `Ç` uppercase). A
+//! letter without case (Chinese, Arabic, ...) is not a symbol, but it counts
+//! for none of the four types. There is no exception for long passphrases.
 //!
 //! # How texts are compared
 //!
@@ -52,6 +64,8 @@ pub const MAX_LEN: usize = 128;
 
 /// E-mail and name fragments shorter than this are not searched for.
 const MIN_PERSONAL_FRAGMENT: usize = 4;
+/// A password needs at least this many of the four character types.
+const MIN_CHARACTER_TYPES: usize = 3;
 /// A stem (password minus trailing digits and symbols) shorter than this is
 /// not judged as a sequence or repetition.
 const MIN_PATTERN_STEM: usize = 8;
@@ -75,6 +89,7 @@ static COMMON: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 pub enum Rejection {
     TooShort,
     TooLong,
+    Composition,
     Common,
     Sequence,
     ContainsEmail,
@@ -87,6 +102,7 @@ impl Rejection {
         match self {
             Self::TooShort => "password_too_short",
             Self::TooLong => "password_too_long",
+            Self::Composition => "password_composition",
             Self::Common => "password_common",
             Self::Sequence => "password_sequence",
             Self::ContainsEmail => "password_contains_email",
@@ -111,6 +127,9 @@ pub fn check(password: &str, account: Account<'_>) -> Result<(), Rejection> {
     if length > MAX_LEN {
         return Err(Rejection::TooLong);
     }
+    if character_types(password) < MIN_CHARACTER_TYPES {
+        return Err(Rejection::Composition);
+    }
     let folded = fold(password);
     let variants = Variants::of(&folded);
     if variants.is_sequence_or_repetition() {
@@ -133,6 +152,27 @@ pub fn check(password: &str, account: Account<'_>) -> Result<(), Rejection> {
         return Err(Rejection::ContainsName);
     }
     Ok(())
+}
+
+/// How many of the four character types (lowercase, uppercase, digit,
+/// symbol) the password has. See the module header for what each one is.
+fn character_types(password: &str) -> usize {
+    let (mut lowercase, mut uppercase, mut digit, mut symbol) = (false, false, false, false);
+    for c in password.chars() {
+        if c.is_lowercase() {
+            lowercase = true;
+        } else if c.is_uppercase() {
+            uppercase = true;
+        } else if c.is_ascii_digit() {
+            digit = true;
+        } else if !c.is_alphabetic() {
+            symbol = true;
+        }
+    }
+    [lowercase, uppercase, digit, symbol]
+        .into_iter()
+        .filter(|present| *present)
+        .count()
 }
 
 /// The versions of a folded password the list and the patterns look at.
@@ -277,4 +317,74 @@ fn name_fragments(name: &str) -> Vec<String> {
         .chain(words.map(str::to_string))
         .filter(|fragment| fragment.chars().count() >= MIN_PERSONAL_FRAGMENT)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOBODY: Account<'static> = Account {
+        email: "",
+        name: "",
+    };
+
+    fn verdict(password: &str) -> Result<(), &'static str> {
+        check(password, NOBODY).map_err(Rejection::code)
+    }
+
+    #[test]
+    fn composition_is_judged_right_after_the_length_and_before_every_pattern_rule() {
+        assert_eq!(verdict("short"), Err("password_too_short"));
+        assert_eq!(verdict("1234512345"), Err("password_composition"));
+        assert_eq!(verdict("qwertyuiop"), Err("password_composition"));
+        assert_eq!(verdict("password1234"), Err("password_composition"));
+        assert_eq!(verdict("Ab1!Ab1!Ab1!"), Err("password_sequence"));
+    }
+
+    #[test]
+    fn two_types_are_not_enough_and_three_are() {
+        assert_eq!(verdict("abcdefghij1"), Err("password_composition"));
+        assert_eq!(verdict("ABCDEFGHIJ1"), Err("password_composition"));
+        assert_eq!(verdict("Abcdefghijkl"), Err("password_composition"));
+        assert_eq!(
+            verdict("the quick brown fox jumps"),
+            Err("password_composition")
+        );
+        assert_eq!(verdict("Zk3mPq9wLx"), Ok(()));
+        assert_eq!(verdict("nf8$kd29xq#w"), Ok(()));
+        assert_eq!(verdict("Zk3!mPq9wLx"), Ok(()));
+    }
+
+    #[test]
+    fn a_space_and_non_ascii_punctuation_are_symbols() {
+        assert_eq!(verdict("Frase com espaços Z"), Ok(()));
+        assert_eq!(verdict("senha—boa—7xy"), Ok(()));
+        assert_eq!(verdict("senha…boa…xyz"), Err("password_composition"));
+        assert_eq!(verdict("Senha…boa…xyz"), Ok(()));
+    }
+
+    #[test]
+    fn accented_letters_are_lowercase_or_uppercase_by_their_case() {
+        assert_eq!(verdict("çãõéíóúàê1"), Err("password_composition"));
+        assert_eq!(verdict("ÇÃÕÉÍÓÚÀÊ1"), Err("password_composition"));
+        assert_eq!(verdict("Çãõéíóúàê1"), Ok(()));
+    }
+
+    #[test]
+    fn a_letter_without_case_is_neither_a_symbol_nor_any_type() {
+        assert_eq!(verdict("日本語日本語日本語a1"), Err("password_composition"));
+        assert_eq!(verdict("日本語日本語日本語aB1"), Ok(()));
+    }
+
+    #[test]
+    fn a_long_passphrase_gets_no_exception() {
+        assert_eq!(
+            verdict("the quick brown fox jumps over the lazy dog"),
+            Err("password_composition")
+        );
+        assert_eq!(
+            verdict("The quick brown fox jumps over the lazy dog"),
+            Ok(())
+        );
+    }
 }
