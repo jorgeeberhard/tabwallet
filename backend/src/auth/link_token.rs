@@ -1,4 +1,4 @@
-//! Password-reset tokens.
+//! Tokens of the links sent by e-mail (password reset, sign-up confirmation).
 //!
 //! The token travels in the e-mailed link; the database keeps only its
 //! SHA-256 hash. The token is random, not derived from anything, so a fast

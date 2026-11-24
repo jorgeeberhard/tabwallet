@@ -71,10 +71,23 @@ function toUser({ user }: UserPayload): User {
   return { id: user.id, email: user.email, name: user.name, createdAt: user.created_at }
 }
 
-export async function signUp(email: string, password: string): Promise<User> {
-  return toUser(
-    await api<UserPayload>("/auth/signup", { method: "POST", body: { email, password } }),
-  )
+/**
+ * Asks for a sign-up: the API keeps a pending sign-up and e-mails a
+ * confirmation link. Nobody is signed in, and the answer is the same whether
+ * or not the e-mail already has an account.
+ */
+export async function signUp(email: string, name: string, password: string): Promise<void> {
+  await api("/auth/signup", { method: "POST", body: { email, name, password } })
+}
+
+/** Opens the confirmation link: creates the account. Does not sign in. */
+export async function confirmSignUp(token: string): Promise<void> {
+  await api("/auth/signup/confirm", { method: "POST", body: { token } })
+}
+
+/** Sends the confirmation e-mail again. The API answers the same for any address. */
+export async function resendConfirmation(email: string): Promise<void> {
+  await api("/auth/signup/resend", { method: "POST", body: { email } })
 }
 
 export async function logIn(email: string, password: string): Promise<User> {

@@ -17,20 +17,37 @@ describe("signUpSchema", () => {
   it("accepts a valid e-mail and password and trims the e-mail", () => {
     const result = signUpSchema.safeParse({
       email: "  ana@example.com ",
+      name: "  Ana Souza ",
       password: "correct horse battery",
     })
 
     expect(result.success).toBe(true)
     expect(result.data?.email).toBe("ana@example.com")
+    expect(result.data?.name).toBe("Ana Souza")
   })
 
   it("tells the person what to do about an invalid e-mail and a short password", () => {
-    const result = signUpSchema.safeParse({ email: "ana", password: "short" })
+    const result = signUpSchema.safeParse({ email: "ana", name: "Ana", password: "short" })
 
     expect(messages(result)).toEqual({
       email: "Digite um e-mail válido, como nome@dominio.com.",
       password: "A senha precisa ter pelo menos 10 caracteres.",
     })
+  })
+
+  it("requires a name of up to 100 characters", () => {
+    const withName = (name: string) =>
+      messages(
+        signUpSchema.safeParse({
+          email: "ana@example.com",
+          name,
+          password: "correct horse battery",
+        }),
+      ).name
+
+    expect(withName("   ")).toBe("Digite seu nome.")
+    expect(withName("a".repeat(100))).toBeUndefined()
+    expect(withName("a".repeat(101))).toBe("Use até 100 caracteres.")
   })
 })
 
@@ -51,7 +68,7 @@ describe("logInSchema", () => {
 
 describe("the new-password length rule", () => {
   const password = (value: string) =>
-    messages(signUpSchema.safeParse({ email: "ana@example.com", password: value })).password
+    messages(signUpSchema.safeParse({ email: "ana@example.com", name: "Ana", password: value })).password
 
   it("accepts from 10 to 128 characters", () => {
     expect(password("a".repeat(9))).toBe("A senha precisa ter pelo menos 10 caracteres.")

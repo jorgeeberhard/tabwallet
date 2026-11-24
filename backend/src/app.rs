@@ -22,11 +22,11 @@ pub struct AppState {
     pub pool: PgPool,
     pub clock: Arc<dyn Clock>,
     pub auth: Auth,
-    /// Sends transactional e-mail (password-reset links).
+    /// Sends transactional e-mail (confirmation and password-reset links).
     pub email: Arc<dyn EmailSender>,
     /// Public address of the front-end, for the links in e-mails.
     pub app_url: String,
-    /// Attempt limits for login and password-reset requests.
+    /// Attempt limits for login, sign-up and the requests that send e-mail.
     pub rate_limits: RateLimits,
 }
 
@@ -161,6 +161,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(handlers::health::health))
         .route("/live", get(handlers::health::live))
         .route("/auth/signup", post(handlers::auth::sign_up))
+        .route(
+            "/auth/signup/confirm",
+            post(handlers::auth::confirm_sign_up),
+        )
+        .route(
+            "/auth/signup/resend",
+            post(handlers::auth::resend_confirmation),
+        )
         .route("/auth/login", post(handlers::auth::log_in))
         .route("/auth/logout", post(handlers::auth::log_out))
         .route(

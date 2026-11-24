@@ -56,6 +56,43 @@ pub async fn empty_database() -> PgPool {
         .unwrap()
 }
 
+/// Drops a database made by `empty_database` (anything else is left alone),
+/// so a long test run does not pile up databases: each one is several
+/// megabytes, and the throwaway PostgreSQL keeps its data in memory. Runs on
+/// its own thread and runtime because it is called from `Drop`, possibly while
+/// a test's runtime is shutting down. `FORCE` closes the connections the
+/// test's API still holds. Failures are ignored: a leftover database is only
+/// untidy.
+pub fn drop_database(name: &str) {
+    let Some(admin_url) = ADMIN_URL.get().cloned() else {
+        return;
+    };
+    if !name.starts_with("test_") {
+        return;
+    }
+    let name = name.to_string();
+    let _ = std::thread::spawn(move || {
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+        runtime.block_on(async {
+            if let Ok(mut admin) = PgConnection::connect(&admin_url).await {
+                // The name starts with `test_` and is built from the pid and a
+                // counter, never from user input.
+                let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+                )))
+                .execute(&mut admin)
+                .await;
+            }
+        });
+    })
+    .join();
+}
+
 /// Starts the container on its own thread and runtime: a container started
 /// from a `#[tokio::test]` runtime would die with that test's runtime, while
 /// the tests of one binary share it. The container is never dropped here; the

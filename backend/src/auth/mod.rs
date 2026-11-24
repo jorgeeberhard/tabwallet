@@ -5,10 +5,10 @@
 //! asks for `AuthUser` as an argument and passes `auth_user.id` to its use
 //! case, so every query is scoped to the signed-in user.
 
+pub mod link_token;
 mod middleware;
 pub mod password;
 pub mod password_policy;
-pub mod reset_token;
 mod token;
 
 pub use middleware::{AuthUser, require_auth};

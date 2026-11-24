@@ -8,18 +8,21 @@ use serde_json::{Value, json};
 
 const PASSWORD: &str = "correct horse battery";
 
+/// The sign-up itself (Pending signup, confirmation, replacement, notice,
+/// resending) is covered in `signup_confirmation.rs`; here only the rules that
+/// do not depend on it.
 #[tokio::test]
-async fn signup_creates_the_account_and_signs_the_user_in_with_an_http_only_cookie() {
+async fn login_starts_a_session_with_an_http_only_cookie() {
     let app = TestApp::spawn().await;
     let browser = app.session();
 
     let response = browser.sign_up("ana@example.com", PASSWORD).await;
 
-    assert_eq!(response.status(), 201);
+    assert_eq!(response.status(), 200);
     let set_cookie = response
         .headers()
         .get(SET_COOKIE)
-        .expect("signup must set the session cookie")
+        .expect("login must set the session cookie")
         .to_str()
         .unwrap()
         .to_string();
@@ -36,40 +39,13 @@ async fn signup_creates_the_account_and_signs_the_user_in_with_an_http_only_cook
     );
 }
 
-#[tokio::test]
-async fn signup_rejects_an_email_already_registered_regardless_of_letter_case() {
-    let app = TestApp::spawn().await;
-    app.session().sign_up("ana@example.com", PASSWORD).await;
-    let other_browser = app.session();
-
-    let response = other_browser.sign_up("Ana@Example.COM", PASSWORD).await;
-
-    assert_eq!(response.status(), 409);
-    assert!(response.headers().get(SET_COOKIE).is_none());
-    let body: Value = response.json().await.unwrap();
-    assert_eq!(body["error"]["code"], json!("email_taken"));
-}
-
-#[tokio::test]
-async fn signup_rejects_an_invalid_email_naming_the_field() {
-    let app = TestApp::spawn().await;
-    let browser = app.session();
-
-    let response = browser.sign_up("not-an-email", PASSWORD).await;
-
-    assert_eq!(response.status(), 422);
-    let body: Value = response.json().await.unwrap();
-    assert_eq!(body["error"]["code"], json!("validation_failed"));
-    assert_eq!(body["error"]["fields"]["email"], json!("invalid_email"));
-}
-
 /// Signs up with a password the Password policy must refuse and checks the
 /// stable code under the `password` field, and that nobody is signed in.
 async fn assert_signup_refuses(email: &str, password: &str, code: &str) {
     let app = TestApp::spawn().await;
     let browser = app.session();
 
-    let response = browser.sign_up(email, password).await;
+    let response = browser.request_sign_up(email, "Ana Souza", password).await;
 
     assert_eq!(response.status(), 422, "{password:?} should be refused");
     assert!(response.headers().get(SET_COOKIE).is_none());
@@ -102,7 +78,10 @@ async fn signup_counts_characters_not_bytes_for_the_length() {
     let app = TestApp::spawn().await;
 
     // Nine characters, but more than ten bytes.
-    let nine = app.session().sign_up("ana@example.com", "çãõéíóúàê").await;
+    let nine = app
+        .session()
+        .request_sign_up("ana@example.com", "Ana Souza", "çãõéíóúàê")
+        .await;
     assert_eq!(nine.status(), 422);
     let body: Value = nine.json().await.unwrap();
     assert_eq!(
@@ -111,8 +90,11 @@ async fn signup_counts_characters_not_bytes_for_the_length() {
     );
 
     // Exactly ten characters.
-    let ten = app.session().sign_up("ana@example.com", "çãõéíóúàêâ").await;
-    assert_eq!(ten.status(), 201);
+    let ten = app
+        .session()
+        .request_sign_up("ana@example.com", "Ana Souza", "çãõéíóúàêâ")
+        .await;
+    assert_eq!(ten.status(), 202);
 }
 
 #[tokio::test]
@@ -181,10 +163,10 @@ async fn signup_ignores_a_very_short_email_fragment_to_avoid_false_positives() {
 
     let response = app
         .session()
-        .sign_up("ana@example.com", "ana paints blue cats")
+        .request_sign_up("ana@example.com", "Ana Souza", "ana paints blue cats")
         .await;
 
-    assert_eq!(response.status(), 201);
+    assert_eq!(response.status(), 202);
 }
 
 #[tokio::test]
@@ -193,18 +175,19 @@ async fn signup_accepts_a_long_passphrase_and_a_plain_lowercase_one_without_mixi
 
     let passphrase = app
         .session()
-        .sign_up(
+        .request_sign_up(
             "ana@example.com",
+            "Ana Souza",
             "the quick brown fox jumps over the lazy dog",
         )
         .await;
     let lowercase = app
         .session()
-        .sign_up("bia@example.com", "purplegiraffesdancequietly")
+        .request_sign_up("bia@example.com", "Bia Lima", "purplegiraffesdancequietly")
         .await;
 
-    assert_eq!(passphrase.status(), 201);
-    assert_eq!(lowercase.status(), 201);
+    assert_eq!(passphrase.status(), 202);
+    assert_eq!(lowercase.status(), 202);
     let longest: String = "the quick brown fox jumps over the lazy dog, "
         .repeat(3)
         .chars()
@@ -213,10 +196,10 @@ async fn signup_accepts_a_long_passphrase_and_a_plain_lowercase_one_without_mixi
     assert_eq!(longest.chars().count(), 128);
     assert_eq!(
         app.session()
-            .sign_up("cris@example.com", &longest)
+            .request_sign_up("cris@example.com", "Cris Melo", &longest)
             .await
             .status(),
-        201,
+        202,
         "128 characters is the largest accepted size"
     );
 }

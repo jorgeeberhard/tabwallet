@@ -15,7 +15,8 @@ export default function SignupPage() {
           </CardTitle>
         </h1>
         <CardDescription>
-          Só e-mail e senha. Seus dados ficam separados dos de outras pessoas.
+          Informe nome, e-mail e senha. Enviaremos um link para você confirmar o e-mail e ativar a
+          conta.
         </CardDescription>
       </CardHeader>
       <CardContent>

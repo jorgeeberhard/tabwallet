@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -16,6 +16,15 @@ function answer(status: number, body?: unknown) {
   )
 }
 
+async function fillAndSubmit(
+  { name = "Ana Souza", email = "ana@example.com", password = "correct horse battery" } = {},
+) {
+  if (name) await userEvent.type(screen.getByLabelText("Nome"), name)
+  await userEvent.type(screen.getByLabelText("E-mail"), email)
+  await userEvent.type(screen.getByLabelText("Senha"), password)
+  await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+}
+
 describe("SignupForm", () => {
   const fetchMock = vi.fn()
 
@@ -29,49 +38,105 @@ describe("SignupForm", () => {
     router.replace.mockReset()
   })
 
-  it("explains an invalid e-mail and a short password without calling the API", async () => {
+  it("explains a missing name, an invalid e-mail and a short password without calling the API", async () => {
     render(<SignupForm />)
 
     await userEvent.type(screen.getByLabelText("E-mail"), "ana")
     await userEvent.type(screen.getByLabelText("Senha"), "short")
     await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
 
-    expect(
-      await screen.findByText("Digite um e-mail válido, como nome@dominio.com."),
-    ).toBeInTheDocument()
+    expect(await screen.findByText("Digite seu nome.")).toBeInTheDocument()
+    expect(screen.getByText("Digite um e-mail válido, como nome@dominio.com.")).toBeInTheDocument()
     expect(screen.getByText("A senha precisa ter pelo menos 10 caracteres.")).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("creates the account and goes to the home page", async () => {
-    fetchMock.mockReturnValue(
-      answer(201, { user: { id: "1", email: "ana@example.com", created_at: "2026-01-15T00:00:00Z" } }),
-    )
+  it("asks for the sign-up with name, e-mail and password and shows the check-your-e-mail screen", async () => {
+    fetchMock.mockReturnValue(answer(202))
     render(<SignupForm />)
 
-    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "correct horse battery")
-    await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+    await fillAndSubmit()
 
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"))
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/signup")
+    expect(await screen.findByText("Confira seu e-mail")).toBeInTheDocument()
+    expect(screen.getByText(/Enviamos um e-mail de confirmação para ana@example.com/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Reenviar e-mail" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Voltar para entrar" })).toHaveAttribute(
+      "href",
+      "/login",
+    )
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/api/auth/signup")
+    expect(JSON.parse(init.body)).toEqual({
+      email: "ana@example.com",
+      name: "Ana Souza",
+      password: "correct horse battery",
+    })
+    expect(screen.queryByLabelText("Senha")).not.toBeInTheDocument()
   })
 
-  it("shows on the e-mail field that the e-mail is already registered", async () => {
+  it("does not go to the logged-in area: the account only exists after the e-mail is confirmed", async () => {
+    fetchMock.mockReturnValue(answer(202))
+    render(<SignupForm />)
+
+    await fillAndSubmit()
+
+    await screen.findByText("Confira seu e-mail")
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(router.refresh).not.toHaveBeenCalled()
+  })
+
+  it("resends the e-mail from the check-your-e-mail screen and says nothing about the account", async () => {
+    fetchMock.mockReturnValue(answer(202))
+    render(<SignupForm />)
+    await fillAndSubmit()
+    await screen.findByText("Confira seu e-mail")
+
+    await userEvent.click(screen.getByRole("button", { name: "Reenviar e-mail" }))
+
+    expect(await screen.findByText(/Se houver um cadastro aguardando confirmação/)).toBeInTheDocument()
+    const [url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe("/api/auth/signup/resend")
+    expect(JSON.parse(init.body)).toEqual({ email: "ana@example.com" })
+  })
+
+  it("tells the person to wait when the resend limit was reached", async () => {
+    fetchMock.mockReturnValueOnce(answer(202))
+    fetchMock.mockReturnValueOnce(
+      answer(429, { error: { code: "too_many_requests", message: "Too many attempts." } }),
+    )
+    render(<SignupForm />)
+    await fillAndSubmit()
+    await screen.findByText("Confira seu e-mail")
+
+    await userEvent.click(screen.getByRole("button", { name: "Reenviar e-mail" }))
+
+    expect(
+      await screen.findByText("Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo."),
+    ).toBeInTheDocument()
+  })
+
+  it("tells the person to wait when too many sign-ups were asked for the same e-mail", async () => {
     fetchMock.mockReturnValue(
-      answer(409, { error: { code: "email_taken", message: "An account with this e-mail already exists." } }),
+      answer(429, { error: { code: "too_many_requests", message: "Too many attempts." } }),
     )
     render(<SignupForm />)
 
-    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "correct horse battery")
-    await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+    await fillAndSubmit()
 
-    expect(
-      await screen.findByText("Já existe uma conta com este e-mail. Entre ou use outro e-mail."),
-    ).toBeInTheDocument()
-    expect(screen.getByLabelText("E-mail")).toHaveAttribute("aria-invalid", "true")
-    expect(router.replace).not.toHaveBeenCalled()
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.",
+    )
+  })
+
+  it("asks to check the connection when the API cannot be reached", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"))
+    render(<SignupForm />)
+
+    await fillAndSubmit()
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível criar a conta. Verifique a conexão e tente de novo.",
+    )
   })
 })
 
@@ -119,12 +184,10 @@ describe("SignupForm password rule", () => {
     )
     render(<SignupForm />)
 
-    await userEvent.type(screen.getByLabelText("E-mail"), "ana@example.com")
-    await userEvent.type(screen.getByLabelText("Senha"), "senha1234567")
-    await userEvent.click(screen.getByRole("button", { name: "Criar conta" }))
+    await fillAndSubmit({ password: "senha1234567" })
 
     expect(await screen.findByText(message)).toBeInTheDocument()
     expect(screen.getByLabelText("Senha")).toHaveAttribute("aria-invalid", "true")
-    expect(router.replace).not.toHaveBeenCalled()
+    expect(screen.queryByText("Confira seu e-mail")).not.toBeInTheDocument()
   })
 })

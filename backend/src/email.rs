@@ -1,4 +1,5 @@
-//! Transactional e-mail (today only the password-reset link).
+//! Transactional e-mail (the links of the sign-up confirmation and of the
+//! password reset).
 //!
 //! Use cases depend on the [`EmailSender`] trait. `main` picks the
 //! implementation from environment variables ([`EmailSettings::from_env`]);

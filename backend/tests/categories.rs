@@ -24,7 +24,7 @@ const DEFAULT_INCOMES: [&str; 2] = ["Salário", "Outros"];
 async fn signed_up(app: &TestApp, email: &str) -> Session {
     let browser = app.session();
     let response = browser.sign_up(email, PASSWORD).await;
-    assert_eq!(response.status(), 201);
+    assert_eq!(response.status(), 200);
     browser
 }
 

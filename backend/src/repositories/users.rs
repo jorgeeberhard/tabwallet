@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 
 use super::categories;
 use crate::ids::UserId;
@@ -109,29 +109,32 @@ impl UserRepository {
         tx.commit().await?;
         Ok(user)
     }
+}
 
-    /// Creates the user together with their default categories, in one
-    /// transaction: a new account never exists without them. The e-mail is
-    /// unique regardless of letter case; the database enforces it, so two
-    /// simultaneous sign-ups cannot both win.
-    pub async fn insert(&self, email: &str, password_hash: &str) -> Result<User, InsertUserError> {
-        let mut transaction = self.pool.begin().await?;
-        let user = sqlx::query_as::<_, User>(
-            "INSERT INTO users (email, password_hash) VALUES ($1, $2)
-             RETURNING id, email, name, created_at",
-        )
-        .bind(email)
-        .bind(password_hash)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(|error| match error {
-            sqlx::Error::Database(ref db) if db.is_unique_violation() => {
-                InsertUserError::EmailTaken
-            }
-            other => InsertUserError::Database(other),
-        })?;
-        categories::seed_default_categories(&mut transaction, user.id).await?;
-        transaction.commit().await?;
-        Ok(user)
-    }
+/// Creates the user together with their default categories, inside the
+/// caller's transaction: a new account never exists without them, and the
+/// confirmation of a sign-up can create the account and delete the pending
+/// signup atomically. The e-mail is unique regardless of letter case; the
+/// database enforces it, so two simultaneous confirmations cannot both win.
+pub(super) async fn insert_with_default_categories(
+    connection: &mut PgConnection,
+    email: &str,
+    name: &str,
+    password_hash: &str,
+) -> Result<User, InsertUserError> {
+    let user = sqlx::query_as::<_, User>(
+        "INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3)
+         RETURNING id, email, name, created_at",
+    )
+    .bind(email)
+    .bind(name)
+    .bind(password_hash)
+    .fetch_one(&mut *connection)
+    .await
+    .map_err(|error| match error {
+        sqlx::Error::Database(ref db) if db.is_unique_violation() => InsertUserError::EmailTaken,
+        other => InsertUserError::Database(other),
+    })?;
+    categories::seed_default_categories(connection, user.id).await?;
+    Ok(user)
 }

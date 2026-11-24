@@ -8,13 +8,14 @@ use serde_json::{Value, json};
 const PASSWORD: &str = "correct horse battery";
 
 #[tokio::test]
-async fn a_new_account_has_no_name_and_the_user_can_set_one_without_the_password() {
+async fn a_new_account_has_the_name_from_the_sign_up_and_the_user_can_change_it_without_the_password()
+ {
     let app = TestApp::spawn().await;
     let browser = app.session();
     browser.sign_up("ana@example.com", PASSWORD).await;
 
     let before: Value = browser.get("/auth/me").await.json().await.unwrap();
-    assert_eq!(before["user"]["name"], json!(""));
+    assert_eq!(before["user"]["name"], json!(common::DEFAULT_NAME));
 
     let response = browser
         .patch_json("/profile", &json!({ "name": "  Ana Souza  " }))
@@ -190,7 +191,7 @@ async fn the_profile_can_only_be_edited_while_signed_in_and_only_for_oneself() {
     let bia = app.session();
     bia.log_in("bia@example.com", PASSWORD).await;
     let me: Value = bia.get("/auth/me").await.json().await.unwrap();
-    assert_eq!(me["user"]["name"], json!(""));
+    assert_eq!(me["user"]["name"], json!(common::DEFAULT_NAME));
 }
 
 #[tokio::test]

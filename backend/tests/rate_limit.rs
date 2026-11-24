@@ -127,7 +127,12 @@ async fn the_fourth_password_reset_request_in_an_hour_is_refused_and_sends_nothi
 
     assert_eq!(refused.status(), 429);
     assert!(refused.headers().contains_key(RETRY_AFTER));
-    assert_eq!(app.sent_emails().len(), 3);
+    let reset_emails = app
+        .sent_emails()
+        .iter()
+        .filter(|message| message.text.contains("/reset-password?token="))
+        .count();
+    assert_eq!(reset_emails, 3);
     // An address without an account is counted the same way.
     for _ in 0..3 {
         assert_eq!(request("ghost@example.com").await.status(), 202);

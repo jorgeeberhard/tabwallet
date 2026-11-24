@@ -21,8 +21,17 @@ const newPassword = z
   .min(MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE)
   .max(MAX_PASSWORD_LENGTH, PASSWORD_TOO_LONG_MESSAGE)
 
+export const MAX_NAME_LENGTH = 100
+
+const name = z
+  .string()
+  .trim()
+  .min(1, "Digite seu nome.")
+  .max(MAX_NAME_LENGTH, `Use até ${MAX_NAME_LENGTH} caracteres.`)
+
 export const signUpSchema = z.object({
   email,
+  name,
   password: newPassword,
 })
 
@@ -34,6 +43,9 @@ export const logInSchema = z.object({
 
 export const forgotPasswordSchema = z.object({ email })
 
+/** Asks for the confirmation e-mail again, for an address the person types. */
+export const resendConfirmationSchema = z.object({ email })
+
 export const resetPasswordSchema = z
   .object({
     password: newPassword,
@@ -43,8 +55,6 @@ export const resetPasswordSchema = z
     path: ["confirmation"],
     message: "As senhas não são iguais.",
   })
-
-export const MAX_NAME_LENGTH = 100
 
 export const profileNameSchema = z.object({
   name: z.string().trim().max(MAX_NAME_LENGTH, `Use até ${MAX_NAME_LENGTH} caracteres.`),
@@ -67,6 +77,7 @@ export const profilePasswordSchema = z
   })
 
 export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>
+export type ResendConfirmationValues = z.infer<typeof resendConfirmationSchema>
 export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>
 export type ProfileNameValues = z.infer<typeof profileNameSchema>
 export type ProfileEmailValues = z.infer<typeof profileEmailSchema>

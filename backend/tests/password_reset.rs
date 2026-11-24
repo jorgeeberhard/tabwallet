@@ -22,6 +22,15 @@ fn token_in(email: &EmailMessage) -> String {
     rest.split(char::is_whitespace).next().unwrap().to_string()
 }
 
+/// The password-reset e-mails sent so far (signing a test user up sends a
+/// confirmation e-mail too).
+fn reset_emails(app: &TestApp) -> Vec<EmailMessage> {
+    app.sent_emails()
+        .into_iter()
+        .filter(|message| message.text.contains("/reset-password?token="))
+        .collect()
+}
+
 async fn request_reset(session: &Session, email: &str) -> reqwest::Response {
     session
         .post_json("/auth/password-reset/request", &json!({ "email": email }))
@@ -52,7 +61,7 @@ async fn the_reset_link_goes_to_the_login_email_and_an_unknown_email_gets_the_sa
 
     assert_eq!(known_status, 202);
     assert_eq!((known_status, known_body), (unknown_status, unknown_body));
-    let sent = app.sent_emails();
+    let sent = reset_emails(&app);
     assert_eq!(sent.len(), 1, "only the registered address gets an e-mail");
     assert_eq!(sent[0].to, "ana@example.com");
     assert!(!token_in(&sent[0]).is_empty());
@@ -67,7 +76,7 @@ async fn an_invalid_email_is_rejected_without_sending_anything() {
     assert_eq!(response.status(), 422);
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["error"]["fields"]["email"], json!("invalid_email"));
-    assert!(app.sent_emails().is_empty());
+    assert!(reset_emails(&app).is_empty());
 }
 
 #[tokio::test]
@@ -76,7 +85,7 @@ async fn the_link_sets_a_new_password_and_the_old_one_stops_working() {
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
 
     let response = confirm_reset(&visitor, &token, NEW_PASSWORD).await;
 
@@ -100,7 +109,7 @@ async fn a_link_that_was_already_used_is_rejected() {
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
     confirm_reset(&visitor, &token, NEW_PASSWORD).await;
 
     let again = confirm_reset(&visitor, &token, "yet another passphrase").await;
@@ -124,7 +133,7 @@ async fn a_link_stops_working_after_an_hour() {
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
 
     app.advance_time(Duration::minutes(61));
     let late = confirm_reset(&visitor, &token, NEW_PASSWORD).await;
@@ -144,7 +153,7 @@ async fn a_link_still_works_shortly_before_it_expires() {
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
 
     app.advance_time(Duration::minutes(59));
 
@@ -160,7 +169,7 @@ async fn an_unknown_token_and_a_short_new_password_are_rejected() {
     app.session().sign_up("ana@example.com", PASSWORD).await;
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
 
     let unknown = confirm_reset(&visitor, "0123456789abcdef", NEW_PASSWORD).await;
     assert_eq!(unknown.status(), 400);
@@ -185,7 +194,7 @@ async fn an_unknown_token_and_a_short_new_password_are_rejected() {
 async fn assert_reset_refuses(app: &TestApp, email: &str, cases: &[(&str, &str)]) {
     let visitor = app.session();
     request_reset(&visitor, email).await;
-    let token = token_in(app.sent_emails().last().unwrap());
+    let token = token_in(reset_emails(app).last().unwrap());
 
     for (password, code) in cases {
         let response = confirm_reset(&visitor, &token, password).await;
@@ -268,7 +277,7 @@ async fn the_reset_accepts_a_long_passphrase_and_ignores_short_name_fragments() 
         .await;
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
 
     let passphrase = "li and ana walk to the old market every morning";
     let response = confirm_reset(&visitor, &token, passphrase).await;
@@ -287,7 +296,7 @@ async fn asking_again_replaces_the_previous_link() {
     let visitor = app.session();
     request_reset(&visitor, "ana@example.com").await;
     request_reset(&visitor, "ana@example.com").await;
-    let sent = app.sent_emails();
+    let sent = reset_emails(&app);
     let (first, second) = (token_in(&sent[0]), token_in(&sent[1]));
     assert_ne!(first, second);
 
@@ -309,7 +318,7 @@ async fn changing_the_password_in_the_profile_cancels_pending_links() {
     let ana = app.session();
     ana.sign_up("ana@example.com", PASSWORD).await;
     request_reset(&app.session(), "ana@example.com").await;
-    let token = token_in(&app.sent_emails()[0]);
+    let token = token_in(&reset_emails(&app)[0]);
 
     ana.patch_json(
         "/profile",
