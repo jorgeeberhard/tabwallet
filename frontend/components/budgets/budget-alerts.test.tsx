@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { BudgetAlerts, BudgetsShortcut } from "@/components/budgets/budget-alerts"
+import { BudgetAlerts } from "@/components/budgets/budget-alerts"
 
 function json(status: number, body?: unknown) {
   return Promise.resolve(
@@ -96,21 +96,5 @@ describe("budget alerts on the home page", () => {
 
     expect(await screen.findAllByRole("alert")).toHaveLength(3)
     expect(screen.getByText(/E mais 2 categorias acima do limite/)).toBeInTheDocument()
-  })
-
-  it("puts the number of categories over their limit on the shortcut", async () => {
-    answerWith([line("c1", "Alimentação", 100000, 101000), line("c2", "Lazer", 40000, 52000)])
-    renderWithClient(<BudgetsShortcut className="shortcut" />)
-
-    expect(await screen.findByText("2 acima do limite")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: /Orçamentos/ })).toHaveAttribute("href", "/orcamentos")
-  })
-
-  it("has no badge on the shortcut without alerts", async () => {
-    answerWith([line("c1", "Alimentação", 100000, 1000)])
-    renderWithClient(<BudgetsShortcut className="shortcut" />)
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(screen.queryByText(/acima do limite/)).not.toBeInTheDocument()
   })
 })

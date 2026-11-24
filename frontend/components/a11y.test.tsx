@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CheckEmail } from "@/components/auth/check-email"
 import { ConfirmEmail } from "@/components/auth/confirm-email"
+import { AppHeader } from "@/components/app-header"
+import { BackButton } from "@/components/back-button"
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
 import { LoginForm } from "@/components/auth/login-form"
 import { ResetPasswordForm } from "@/components/auth/reset-password-form"
@@ -28,7 +30,8 @@ import { RecurringDialog } from "@/components/recurring/recurring-dialog"
 import { TransactionDialog } from "@/components/transactions/transaction-dialog"
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn(), push: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/transacoes",
 }))
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -67,6 +70,8 @@ async function violationsIn(container: HTMLElement) {
 const noop = () => {}
 
 const screens: Array<[string, () => ReactElement]> = [
+  ["app header", () => <AppHeader right={<button type="button" aria-label="Menu da conta" />} />],
+  ["back button", () => <BackButton />],
   ["login form", () => <LoginForm />],
   ["sign-up form", () => <SignupForm />],
   ["check-your-e-mail screen", () => <CheckEmail email="ana@example.com" />],
@@ -163,6 +168,20 @@ describe("accessibility of forms and dialogs (axe)", () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     // Dialogs render in a portal, outside the render container.
+    expect(await violationsIn(document.body)).toEqual([])
+  })
+
+  it("the open navigation menu has no axe violations", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AppHeader right={null} />
+      </QueryClientProvider>,
+    )
+
+    await userEvent.click(screen.getByRole("button", { name: "Abrir menu" }))
+    await screen.findByRole("dialog", { name: "Menu" })
+
     expect(await violationsIn(document.body)).toEqual([])
   })
 })
