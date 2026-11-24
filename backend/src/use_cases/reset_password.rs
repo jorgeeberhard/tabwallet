@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
-    auth::{self, reset_token},
+    auth::{
+        self,
+        password_policy::{self, Account},
+        reset_token,
+    },
     clock::Clock,
     repositories::password_resets::PasswordResetRepository,
 };
@@ -19,16 +23,33 @@ impl ResetPasswordUseCase {
         Self { resets, clock }
     }
 
-    /// `new_password` is already validated by the handler. A token that is
-    /// unknown, expired or already used fails the same way. Sessions already
-    /// open stay valid: the session token is a JWT, which cannot be revoked.
+    /// An unknown, expired or used token fails first, the same way for all of
+    /// them. Then the Password policy judges `new_password` against the
+    /// e-mail and name of the account the link belongs to; a refusal leaves
+    /// the link usable. Sessions already open stay valid: the session token is
+    /// a JWT, which cannot be revoked.
     pub async fn execute(&self, token: &str, new_password: &str) -> Result<(), AuthError> {
+        let token_hash = reset_token::hash(token);
+        let (email, name) = self
+            .resets
+            .find_account(&token_hash, self.clock.now())
+            .await
+            .map_err(AuthError::internal)?
+            .ok_or(AuthError::InvalidResetToken)?;
+        password_policy::check(
+            new_password,
+            Account {
+                email: &email,
+                name: &name,
+            },
+        )
+        .map_err(AuthError::PasswordRejected)?;
         let password_hash = auth::password::hash(new_password.to_string())
             .await
             .map_err(AuthError::Internal)?;
         let done = self
             .resets
-            .reset_password(&reset_token::hash(token), self.clock.now(), &password_hash)
+            .reset_password(&token_hash, self.clock.now(), &password_hash)
             .await
             .map_err(AuthError::internal)?;
         if done {

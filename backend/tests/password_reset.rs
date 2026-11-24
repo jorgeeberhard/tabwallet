@@ -170,12 +170,113 @@ async fn an_unknown_token_and_a_short_new_password_are_rejected() {
     let body: Value = short.json().await.unwrap();
     assert_eq!(
         body["error"]["fields"]["password"],
-        json!("password_length")
+        json!("password_too_short")
     );
     assert_eq!(
         confirm_reset(&visitor, &token, NEW_PASSWORD).await.status(),
         204,
         "a refused attempt must not burn the link"
+    );
+}
+
+/// Tries every `(password, code)` against one valid link: each must be
+/// refused with `code` under the `password` field, and the link must still
+/// work afterwards, with the old password still valid in between.
+async fn assert_reset_refuses(app: &TestApp, email: &str, cases: &[(&str, &str)]) {
+    let visitor = app.session();
+    request_reset(&visitor, email).await;
+    let token = token_in(app.sent_emails().last().unwrap());
+
+    for (password, code) in cases {
+        let response = confirm_reset(&visitor, &token, password).await;
+        assert_eq!(response.status(), 422, "{password:?} should be refused");
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["error"]["code"], json!("validation_failed"));
+        assert_eq!(
+            body["error"]["fields"]["password"],
+            json!(code),
+            "wrong code for {password:?}"
+        );
+    }
+
+    assert_eq!(
+        visitor.log_in(email, PASSWORD).await.status(),
+        200,
+        "refused attempts must keep the old password"
+    );
+    assert_eq!(
+        confirm_reset(&visitor, &token, NEW_PASSWORD).await.status(),
+        204,
+        "refused attempts must not burn the link"
+    );
+}
+
+#[tokio::test]
+async fn the_reset_refuses_short_long_common_and_sequence_passwords_with_a_code_for_each() {
+    let app = TestApp::spawn().await;
+    app.session().sign_up("ana@example.com", PASSWORD).await;
+    let too_long = "the quick brown fox jumps over the lazy dog ".repeat(3);
+
+    assert_reset_refuses(
+        &app,
+        "ana@example.com",
+        &[
+            ("12345678", "password_too_short"),
+            ("password", "password_too_short"),
+            ("senha123", "password_too_short"),
+            (&too_long, "password_too_long"),
+            ("aaaaaaaaaa", "password_sequence"),
+            ("1234567890", "password_sequence"),
+            ("abcdefghij", "password_sequence"),
+            ("PASSWORD123", "password_common"),
+            ("Senha123456!", "password_common"),
+            ("Brasil12345", "password_common"),
+            ("qwerty123456", "password_common"),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn the_reset_refuses_a_password_with_the_email_or_the_name_of_the_account() {
+    let app = TestApp::spawn().await;
+    let ana = app.session();
+    ana.sign_up("bruno.lima@example.com", PASSWORD).await;
+    ana.patch_json("/profile", &json!({ "name": "Maria José Aparecida" }))
+        .await;
+
+    assert_reset_refuses(
+        &app,
+        "bruno.lima@example.com",
+        &[
+            ("xk!bruno.lima#92", "password_contains_email"),
+            ("BRUNOLIMA is here", "password_contains_email"),
+            ("my password is aparecida", "password_contains_name"),
+            ("trust-JOSE-with-everything", "password_contains_name"),
+            ("maria jose aparecida", "password_contains_name"),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn the_reset_accepts_a_long_passphrase_and_ignores_short_name_fragments() {
+    let app = TestApp::spawn().await;
+    let ana = app.session();
+    ana.sign_up("ana@example.com", PASSWORD).await;
+    ana.patch_json("/profile", &json!({ "name": "Ana Li" }))
+        .await;
+    let visitor = app.session();
+    request_reset(&visitor, "ana@example.com").await;
+    let token = token_in(&app.sent_emails()[0]);
+
+    let passphrase = "li and ana walk to the old market every morning";
+    let response = confirm_reset(&visitor, &token, passphrase).await;
+
+    assert_eq!(response.status(), 204);
+    assert_eq!(
+        visitor.log_in("ana@example.com", passphrase).await.status(),
+        200
     );
 }
 

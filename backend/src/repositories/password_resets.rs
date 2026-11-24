@@ -39,6 +39,25 @@ impl PasswordResetRepository {
         tx.commit().await
     }
 
+    /// The e-mail and name of the account a link still valid at `now` belongs
+    /// to, without using the link up. The Password policy needs them to judge
+    /// the new password before the link is spent.
+    pub async fn find_account(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<(String, String)>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT u.email::text, u.name
+             FROM password_reset_tokens t JOIN users u ON u.id = t.user_id
+             WHERE t.token_hash = $1 AND t.used_at IS NULL AND t.expires_at > $2",
+        )
+        .bind(token_hash)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await
+    }
+
     /// Uses the token to set the user's password, if the token exists, has
     /// not been used and has not expired at `now`. Returns whether it did.
     ///

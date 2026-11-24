@@ -3,9 +3,6 @@ use serde::Deserialize;
 use validator::Validate;
 
 use super::extract::ValidatedJson;
-
-const MIN_PASSWORD_LEN: u64 = 8;
-const MAX_PASSWORD_LEN: u64 = 128;
 use crate::{
     app::AppState,
     error::ApiError,
@@ -25,7 +22,8 @@ pub struct ConfirmResetRequest {
     #[serde(deserialize_with = "trimmed")]
     #[validate(length(min = 1, code = "required"))]
     token: String,
-    #[validate(length(min = MIN_PASSWORD_LEN, max = MAX_PASSWORD_LEN, code = "password_length"))]
+    /// Judged by the Password policy in the use case, which also knows the
+    /// account the link belongs to.
     password: String,
 }
 
