@@ -1,11 +1,10 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { PiggyBankIcon, TriangleAlertIcon } from "lucide-react"
+import { TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { budgetStatusKey, type BudgetStatusLine, getBudgetStatus } from "@/lib/budgets-api"
 import { formatBRLCents, formatMonthOfYear } from "@/lib/format"
 
@@ -66,20 +65,8 @@ export function BudgetAlerts() {
   )
 }
 
-/**
- * The "Orçamentos" shortcut of the home page, with a badge counting the
- * categories over their limit this month.
- */
-export function BudgetsShortcut({ className }: { className: string }) {
+/** How many categories are over their limit this month (0 while loading). */
+export function useExceededBudgetCount(): number {
   const status = useCurrentBudgetStatus()
-  const count = status.data?.exceededCount ?? 0
-  return (
-    <Link href="/orcamentos" className={className}>
-      <PiggyBankIcon strokeWidth={1.75} className="size-4" />
-      Orçamentos
-      {count > 0 && (
-        <Badge variant="expense">{count} acima do limite</Badge>
-      )}
-    </Link>
-  )
+  return status.data?.exceededCount ?? 0
 }
