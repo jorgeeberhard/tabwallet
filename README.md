@@ -158,7 +158,7 @@ O pipeline foi escrito e revisado (o YAML passa no `actionlint`), mas um deploy 
 - **Sessão de 7 dias sem revogação**: o JWT vale até expirar; sair da conta apaga o cookie do navegador, mas um token copiado continua válido até vencer. Trocar `JWT_SECRET` encerra todas as sessões.
 - **Limite de tentativas em memória**: o limite de login (5 falhas por 15 minutos por e-mail) e de pedidos de recuperação de senha (3 por hora por e-mail) fica na memória de cada instância da API; com várias instâncias, vale por instância, e um reinício zera as contagens.
 - **CSP com `'unsafe-inline'`**: a Content-Security-Policy permite scripts e estilos inline, porque nonces exigiriam renderização 100% dinâmica e são incompatíveis com a pré-renderização parcial usada (veja `docs/nao-funcionais.md`).
-- **Sem verificação de e-mail** no cadastro, sem exclusão de conta e sem notificações por e-mail ou push (fora do escopo do MVP).
+- Sem exclusão de conta e sem notificações por e-mail ou push (fora do escopo do MVP). O cadastro exige confirmação por e-mail.
 - **Saldo projetado** até 12 meses e só com o que já foi lançado; sem moedas múltiplas, contas ou carteiras.
 - **Implantação**: o pipeline de deploy (Fly.io, Vercel e Neon) está descrito em [Deploy](#deploy); o primeiro deploy real acontece no merge do ticket #6.
 - **Safari**: não foi possível testar em Safari neste ambiente; veja `docs/nao-funcionais.md`.
